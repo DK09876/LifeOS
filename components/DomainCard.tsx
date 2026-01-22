@@ -1,6 +1,11 @@
 'use client';
 
-import { Domain } from '@/types/notion';
+interface Domain {
+  id: string;
+  name: string;
+  priority: string;
+  taskCount?: number;
+}
 
 interface DomainCardProps {
   domain: Domain;
@@ -24,24 +29,18 @@ export default function DomainCard({ domain }: DomainCardProps) {
     <div className="p-4 rounded-lg border-2 bg-white shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <h3 className="font-semibold text-lg mb-2">{domain.domain}</h3>
+          <h3 className="font-semibold text-lg mb-2">{domain.name}</h3>
           <div className="flex flex-wrap gap-2 mb-2">
-            <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(domain.domainPriority)}`}>
-              {domain.domainPriority}
+            <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(domain.priority)}`}>
+              {domain.priority}
             </span>
-            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-              {domain.taskCount} tasks
-            </span>
+            {domain.taskCount !== undefined && (
+              <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                {domain.taskCount} tasks
+              </span>
+            )}
           </div>
         </div>
-        <a
-          href={domain.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          Open
-        </a>
       </div>
     </div>
   );

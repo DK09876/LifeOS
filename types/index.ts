@@ -1,3 +1,5 @@
+// LifeOS Types - Independent of any external service
+
 export interface Task {
   id: string;
   taskName: string;
@@ -8,20 +10,25 @@ export interface Task {
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Quarterly' | 'Yearly';
   lastCompleted: string | null;
-  needsReset: boolean;
   actionPoints: string | null;
   notes: string;
-  domain: Domain | null;
-  domainPriority: string | null;
-  url: string;
+  domainId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Computed fields (not stored, calculated at runtime)
+  needsReset?: boolean;
+  domain?: Domain | null;
+  domainPriority?: string | null;
 }
 
 export interface Domain {
   id: string;
-  domain: string;
-  domainPriority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
-  taskCount: number;
-  url: string;
+  name: string;
+  priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
+  createdAt: string;
+  updatedAt: string;
+  // Computed fields
+  taskCount?: number;
 }
 
 export interface TaskFilter {
@@ -30,3 +37,8 @@ export interface TaskFilter {
   domain?: string[];
   dueDate?: 'overdue' | 'today' | 'week' | 'all';
 }
+
+export type TaskStatus = Task['status'];
+export type TaskPriority = Task['taskPriority'];
+export type DomainPriority = Domain['priority'];
+export type RecurrenceType = Task['recurrence'];

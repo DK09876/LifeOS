@@ -1,7 +1,21 @@
 'use client';
 
-import { Task } from '@/types/notion';
 import { format } from 'date-fns';
+
+interface Task {
+  id: string;
+  taskName: string;
+  status: string;
+  taskPriority: string;
+  taskScore: number;
+  dueDate: string | null;
+  recurrence: string;
+  lastCompleted: string | null;
+  needsReset?: boolean;
+  actionPoints: string | null;
+  notes: string;
+  domainPriority?: string | null;
+}
 
 interface TaskCardProps {
   task: Task;
@@ -72,12 +86,12 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
             </span>
             {task.recurrence && task.recurrence !== 'None' && (
               <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-800">
-                🔄 {task.recurrence}
+                {task.recurrence}
               </span>
             )}
             {task.domainPriority && (
               <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-800">
-                📂 {task.domainPriority}
+                {task.domainPriority}
               </span>
             )}
           </div>
@@ -98,10 +112,10 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
           <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
             <span>Score: {Math.round(task.taskScore)}</span>
             {task.lastCompleted && (
-              <span>• Last: {format(new Date(task.lastCompleted), 'MMM dd')}</span>
+              <span>Last: {format(new Date(task.lastCompleted), 'MMM dd')}</span>
             )}
             {task.needsReset && (
-              <span className="text-orange-600 font-medium">• Needs Reset</span>
+              <span className="text-orange-600 font-medium">Needs Reset</span>
             )}
           </div>
         </div>
@@ -112,7 +126,7 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
               onClick={() => onMarkDone(task.id)}
               className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              ✓ Done
+              Done
             </button>
           )}
           {isDone && (
@@ -120,7 +134,7 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
               onClick={() => onUndo(task.id)}
               className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              ↶ Undo
+              Undo
             </button>
           )}
           {task.needsReset && (
@@ -128,17 +142,9 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
               onClick={() => onReset(task.id)}
               className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              🔄 Reset
+              Reset
             </button>
           )}
-          <a
-            href={task.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors text-center"
-          >
-            Open
-          </a>
         </div>
       </div>
     </div>
