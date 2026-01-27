@@ -21,6 +21,7 @@ export interface Task {
 export interface Domain {
   id: string;
   name: string;
+  icon: string | null;
   priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
   createdAt: string;
   updatedAt: string;
@@ -46,6 +47,20 @@ class LifeOSDatabase extends Dexie {
       tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
       domains: 'id, name, priority, updatedAt',
       syncMetadata: 'id',
+    });
+
+    // Version 2: Add icon field to domains
+    this.version(2).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+    }).upgrade(tx => {
+      // Add icon: null to all existing domains
+      return tx.table('domains').toCollection().modify(domain => {
+        if (domain.icon === undefined) {
+          domain.icon = null;
+        }
+      });
     });
   }
 }
@@ -99,6 +114,7 @@ export async function createDomain(domain: Omit<Domain, 'id' | 'createdAt' | 'up
   const id = crypto.randomUUID();
   await db.domains.add({
     ...domain,
+    icon: domain.icon ?? null,
     id,
     createdAt: now,
     updatedAt: now,

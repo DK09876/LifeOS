@@ -1,20 +1,13 @@
 'use client';
 
 import { format } from 'date-fns';
+import { Task as BaseTask, Domain } from '@/types';
 
-interface Task {
-  id: string;
-  taskName: string;
-  status: string;
-  taskPriority: string;
-  taskScore: number;
-  dueDate: string | null;
-  recurrence: string;
-  lastCompleted: string | null;
+// Extended Task type with computed fields from useTasks hook
+interface Task extends BaseTask {
   needsReset?: boolean;
-  actionPoints: string | null;
-  notes: string;
   domainPriority?: string | null;
+  domain?: (Domain & { icon: string | null }) | null;
 }
 
 interface TaskCardProps {
@@ -22,9 +15,11 @@ interface TaskCardProps {
   onMarkDone: (taskId: string) => void;
   onUndo: (taskId: string) => void;
   onReset: (taskId: string) => void;
+  onEdit?: (task: Task) => void;
+  onDelete?: (taskId: string) => void;
 }
 
-export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCardProps) {
+export default function TaskCard({ task, onMarkDone, onUndo, onReset, onEdit, onDelete }: TaskCardProps) {
   const isDone = task.status === 'Done';
   const isArchived = task.status === 'Archived';
 
@@ -89,19 +84,32 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
                 {task.recurrence}
               </span>
             )}
-            {task.domainPriority && (
-              <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-800">
-                {task.domainPriority}
+            {task.domain && (
+              <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-800 flex items-center gap-1">
+                {task.domain.icon && <span>{task.domain.icon}</span>}
+                {task.domain.name}
               </span>
             )}
           </div>
 
-          {task.dueDate && (
-            <div className="text-sm mb-2">
-              <span className="text-gray-600">Due: </span>
-              <span className={`font-medium ${new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-gray-900'}`}>
-                {format(new Date(task.dueDate), 'MMM dd, yyyy')}
-              </span>
+          {(task.dueDate || task.plannedDate) && (
+            <div className="flex flex-wrap gap-4 text-sm mb-2">
+              {task.dueDate && (
+                <div>
+                  <span className="text-gray-600">Due: </span>
+                  <span className={`font-medium ${new Date(task.dueDate) < new Date() ? 'text-red-600' : 'text-gray-900'}`}>
+                    {format(new Date(task.dueDate), 'MMM dd, yyyy')}
+                  </span>
+                </div>
+              )}
+              {task.plannedDate && (
+                <div>
+                  <span className="text-gray-600">Planned: </span>
+                  <span className="font-medium text-blue-600">
+                    {format(new Date(task.plannedDate), 'MMM dd, yyyy')}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -143,6 +151,22 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset }: TaskCard
               className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
               Reset
+            </button>
+          )}
+          {onEdit && (
+            <button
+              onClick={() => onEdit(task)}
+              className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(task.id)}
+              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Delete
             </button>
           )}
         </div>

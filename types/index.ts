@@ -24,6 +24,7 @@ export interface Task {
 export interface Domain {
   id: string;
   name: string;
+  icon: string | null;
   priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
   createdAt: string;
   updatedAt: string;

@@ -45,3 +45,6 @@ next-env.d.ts
 *.db
 *.db-journal
 /prisma/dev.db
+
+# notion data export (contains personal data)
+/notion-data

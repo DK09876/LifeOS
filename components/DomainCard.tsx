@@ -1,17 +1,19 @@
 'use client';
 
-interface Domain {
-  id: string;
-  name: string;
-  priority: string;
+import { Domain as BaseDomain } from '@/types';
+
+// Extended Domain type with computed fields from useDomains hook
+interface Domain extends BaseDomain {
   taskCount?: number;
 }
 
 interface DomainCardProps {
   domain: Domain;
+  onEdit?: (domain: Domain) => void;
+  onDelete?: (domainId: string) => void;
 }
 
-export default function DomainCard({ domain }: DomainCardProps) {
+export default function DomainCard({ domain, onEdit, onDelete }: DomainCardProps) {
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case '1 - Critical':
@@ -29,7 +31,12 @@ export default function DomainCard({ domain }: DomainCardProps) {
     <div className="p-4 rounded-lg border-2 bg-white shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
-          <h3 className="font-semibold text-lg mb-2">{domain.name}</h3>
+          <div className="flex items-center gap-2 mb-2">
+            {domain.icon && (
+              <span className="text-2xl">{domain.icon}</span>
+            )}
+            <h3 className="font-semibold text-lg">{domain.name}</h3>
+          </div>
           <div className="flex flex-wrap gap-2 mb-2">
             <span className={`text-xs px-2 py-1 rounded-full border ${getPriorityColor(domain.priority)}`}>
               {domain.priority}
@@ -40,6 +47,24 @@ export default function DomainCard({ domain }: DomainCardProps) {
               </span>
             )}
           </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(domain)}
+              className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Edit
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(domain.id)}
+              className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              Delete
+            </button>
+          )}
         </div>
       </div>
     </div>

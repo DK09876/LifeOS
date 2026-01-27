@@ -168,6 +168,7 @@ export async function deleteTask(taskId: string): Promise<void> {
 // Domain actions
 export async function createDomain(domainData: {
   name: string;
+  icon?: string | null;
   priority?: Domain['priority'];
 }): Promise<string> {
   const now = new Date().toISOString();
@@ -176,6 +177,7 @@ export async function createDomain(domainData: {
   const domain: Domain = {
     id,
     name: domainData.name,
+    icon: domainData.icon ?? null,
     priority: domainData.priority || '3 - Maintenance',
     createdAt: now,
     updatedAt: now,

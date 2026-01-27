@@ -1,11 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import AppLayout from "@/components/AppLayout";
 
 export const metadata: Metadata = {
-  title: "LifeOS - Your Personal Productivity System",
+  title: "LifeOS",
   description: "Manage your tasks and domains with LifeOS",
   manifest: "/manifest.json",
+  icons: {
+    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👾</text></svg>",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -17,7 +21,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#4f46e5",
+  themeColor: "#191919",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -35,7 +39,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className="antialiased">
-        {children}
+        <AppLayout>{children}</AppLayout>
         <ServiceWorkerRegistration />
       </body>
     </html>
