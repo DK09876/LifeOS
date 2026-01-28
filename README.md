@@ -147,6 +147,8 @@ LifeOS/
 
 ## Roadmap
 
+- [ ] Habits tracking
+- [ ] Recurring tasks improvements
 - [ ] Google Drive sync for cross-device access
 - [ ] Data export/import
 - [ ] Custom themes
