@@ -1,31 +1,69 @@
 # LifeOS
 
-A modern, local-first Progressive Web App for personal productivity and task management. Your data stays on your device and syncs across all your devices via your own Google Drive.
+A modern, local-first Progressive Web App for personal productivity and task management. Your data stays on your device — no account required.
+
+**Live App: [my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
+
+## Quick Start
+
+1. Visit **[my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
+2. Create your first **Domain** (life area like Work, Health, Finance)
+3. Add **Tasks** and assign them to domains
+4. Use **Today** and **Week** views to focus on what matters
+5. Check the **How it Works** page in the sidebar for detailed guidance
+
+That's it! Your data is saved automatically in your browser.
 
 ## Features
 
 ### Local-First Architecture
 - **Works Offline**: Full functionality even without internet
-- **Your Data, Your Control**: Data stored locally in IndexedDB on each device
-- **Google Drive Sync**: Sync across devices using your own Google Drive account
-- **No Central Server**: No third-party database - you own all your data
+- **No Account Required**: Start using immediately, no sign-up
+- **Your Data, Your Device**: Data stored locally in your browser's IndexedDB
+- **Privacy First**: No server, no tracking, no data collection
+
+### Pages
+
+| Page | Description |
+|------|-------------|
+| **Today** | Tasks due or planned for today with completion stats |
+| **Week** | Calendar view of your week, navigate between weeks |
+| **Plan** | Triage tasks needing attention, manage your backlog |
+| **Tasks** | Full database with sorting, filtering, and search |
+| **Domains** | Manage life areas (Work, Health, Finance, etc.) |
+| **How it Works** | In-app guide explaining features and workflow |
 
 ### Task Management
-- **Smart Priority Scoring**: Automatic task scoring based on priority, domain importance, and due dates
-- **Multiple Views**: View all tasks, today's tasks, or this week's tasks
-- **Status Filtering**: Filter by active, done, or all tasks
-- **Recurring Tasks**: Support for daily, weekly, biweekly, monthly, quarterly, and yearly recurring tasks with automatic reset functionality
-- **Action Points**: Gamification with action point system
+- **Smart Priority Scoring**: Automatic scoring based on priority, domain, and due date
+- **Multiple Statuses**: Needs Details, Backlog, Blocked, Done, Archived
+- **Recurring Tasks**: Daily, weekly, biweekly, monthly, quarterly, yearly
+- **Planned Dates**: Schedule tasks for specific days
 
 ### Domain Organization
-- **Priority Levels**: Critical, Important, or Maintenance categorization
-- **Task Tracking**: See how many tasks are associated with each domain
-- **Visual Indicators**: Color-coded priority levels for quick identification
+- **Priority Levels**: Critical, Important, or Maintenance
+- **Icons**: Emoji icons for quick visual identification
+- **Task Tracking**: See task counts per domain
 
 ### Progressive Web App
-- **Installable**: Add to home screen on iOS, Android, Windows, and macOS
-- **Offline Support**: Works without internet using cached data
-- **Auto Sync**: Syncs on app startup and with manual refresh button
+- **Installable**: Add to home screen on iOS, Android, Windows, macOS
+- **Offline Support**: Works without internet
+- **Daily Quotes**: Inspirational quotes from ZenQuotes API
+
+## How Task Score Works
+
+Tasks are automatically scored to help you prioritize:
+
+```
+Score = Task Priority + Domain Priority + Due Date Urgency
+```
+
+| Factor | Values |
+|--------|--------|
+| Task Priority | Urgent (50), High (40), Normal (30), Low (20), Optional (10) |
+| Domain Priority | Critical (30), Important (20), Maintenance (10) |
+| Due Date | Overdue (+25), Today (+20), Within 7 days (+15), Within 30 days (+10) |
+
+Higher score = more urgent. Range: 20-105.
 
 ## Tech Stack
 
@@ -33,52 +71,23 @@ A modern, local-first Progressive Web App for personal productivity and task man
 - **UI**: React 19 + Tailwind CSS 4
 - **Language**: TypeScript 5
 - **Local Database**: Dexie.js (IndexedDB)
-- **Sync**: Google Drive API
 - **Date Handling**: date-fns
 
-## Getting Started
+## Running Locally
 
 ### Prerequisites
-
-- Node.js 20+ installed
-- A Google account (for cross-device sync)
+- Node.js 20+
 
 ### Installation
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/DK09876/LifeOS.git
 cd LifeOS
-```
-
-2. Install dependencies:
-```bash
 npm install
-```
-
-3. (Optional) Set up Google OAuth for cross-device sync:
-
-   a. Go to [Google Cloud Console](https://console.cloud.google.com/)
-   b. Create a new project or select an existing one
-   c. Enable the Google Drive API
-   d. Go to Credentials > Create Credentials > OAuth 2.0 Client ID
-   e. Select "Web application"
-   f. Add your domains to Authorized JavaScript origins:
-      - `http://localhost:3000` (for development)
-      - Your production domain
-   g. Copy the Client ID
-
-4. Create a `.env.local` file:
-```env
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-```
-
-5. Run the development server:
-```bash
 npm run dev
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000) in your browser
+Open [http://localhost:3000](http://localhost:3000)
 
 ### Building for Production
 
@@ -92,111 +101,61 @@ npm start
 ```
 LifeOS/
 ├── app/
-│   ├── page.tsx          # Main application page
-│   ├── layout.tsx        # Root layout with PWA config
-│   └── globals.css       # Global styles
+│   ├── page.tsx          # Today view
+│   ├── week/page.tsx     # Week calendar view
+│   ├── plan/page.tsx     # Planning & triage
+│   ├── tasks/page.tsx    # Tasks database
+│   ├── domains/page.tsx  # Domains database
+│   ├── help/page.tsx     # How it Works guide
+│   ├── layout.tsx        # Root layout
+│   └── globals.css       # Dark theme styles
 ├── components/
-│   ├── TaskCard.tsx      # Task display component
-│   ├── DomainCard.tsx    # Domain display component
-│   └── ServiceWorkerRegistration.tsx  # PWA service worker
+│   ├── AppLayout.tsx     # Main layout with sidebar
+│   ├── Sidebar.tsx       # Navigation sidebar
+│   ├── Modal.tsx         # Reusable modal
+│   ├── TaskForm.tsx      # Task create/edit form
+│   ├── DomainForm.tsx    # Domain create/edit form
+│   └── ConfirmDialog.tsx # Delete confirmation
 ├── lib/
-│   ├── db.ts             # Dexie database schema & operations
-│   ├── hooks.ts          # React hooks for data access
-│   ├── google-auth.ts    # Google OAuth authentication
-│   └── sync.ts           # Google Drive sync service
+│   ├── db.ts             # Dexie database & scoring
+│   ├── hooks.ts          # React hooks for data
+│   ├── quotes.ts         # Daily quote fetching
+│   ├── google-auth.ts    # Google OAuth (coming soon)
+│   └── sync.ts           # Google Drive sync (coming soon)
 ├── types/
-│   └── index.ts          # TypeScript type definitions
-├── public/
-│   ├── manifest.json     # PWA manifest
-│   ├── sw.js             # Service worker
-│   └── icons/            # App icons
-└── .env.local            # Environment variables (not committed)
+│   └── index.ts          # TypeScript types
+└── public/
+    ├── manifest.json     # PWA manifest
+    ├── sw.js             # Service worker
+    └── icons/            # App icons
 ```
 
-## How It Works
-
-### Data Flow
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Your Device                            │
-│  ┌─────────────┐     ┌─────────────┐     ┌──────────────┐  │
-│  │  React UI   │────▶│  IndexedDB  │────▶│  Sync Engine │  │
-│  │             │◀────│  (Local DB) │◀────│              │  │
-│  └─────────────┘     └─────────────┘     └──────┬───────┘  │
-└─────────────────────────────────────────────────┼──────────┘
-                                                  │
-                                                  ▼
-                                    ┌─────────────────────────┐
-                                    │   Your Google Drive     │
-                                    │   (lifeos-data.json)    │
-                                    └─────────────────────────┘
-```
-
-1. **Local Storage**: All data is stored in IndexedDB on your device
-2. **Instant Updates**: Changes are saved locally immediately
-3. **Background Sync**: Data syncs to Google Drive in the background
-4. **Cross-Device**: Other devices pull updates from Google Drive
-
-### Sync Behavior
-
-- **On App Open**: Automatically fetches from Google Drive and merges with local data
-- **Manual Refresh**: Click "Sync" button to force sync
-- **Conflict Resolution**: Last-write-wins based on timestamps
-
-## Usage
-
-### Installing as an App
+## Installing as an App
 
 | Platform | How to Install |
 |----------|----------------|
 | **iOS Safari** | Share button → "Add to Home Screen" |
-| **Android Chrome** | Menu → "Install app" or automatic prompt |
-| **Windows/Mac Chrome** | URL bar install icon or Menu → "Install" |
-| **Windows/Mac Edge** | URL bar install icon |
-
-### Using Without Google Sign-In
-
-The app works fully offline without Google sign-in. Your data is stored locally and persists across browser sessions. Sign in with Google only when you want to sync across multiple devices.
-
-### Task Actions
-
-- **Mark Done**: Complete a task and record the completion time
-- **Undo**: Revert a completed task back to backlog
-- **Reset**: Reset a recurring task (appears for completed recurring tasks)
-
-### Understanding Task Scores
-
-Task scores are automatically calculated based on:
-- Task Priority (1-Urgent to 5-Optional)
-- Domain Priority (Critical, Important, Maintenance)
-- Due Date proximity (overdue, today, this week, etc.)
-
-Higher scores indicate more urgent/important tasks.
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google OAuth Client ID | No (only for sync) |
+| **Android Chrome** | Menu → "Install app" |
+| **Desktop Chrome** | URL bar install icon → "Install" |
 
 ## Privacy
 
-- **No Server Required**: LifeOS runs entirely in your browser
-- **Your Data, Your Drive**: Data syncs only to your personal Google Drive
-- **No Analytics**: No tracking or data collection
-- **Open Source**: Full transparency into what the code does
+- **No Server**: Runs entirely in your browser
+- **No Account**: No sign-up or login required
+- **No Tracking**: Zero analytics or data collection
+- **Open Source**: Full code transparency
+
+## Roadmap
+
+- [ ] Google Drive sync for cross-device access
+- [ ] Data export/import
+- [ ] Custom themes
+- [ ] Keyboard shortcuts
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- Built with [Next.js](https://nextjs.org/)
-- Local database powered by [Dexie.js](https://dexie.org/)
-- Styled with [Tailwind CSS](https://tailwindcss.com/)
+MIT License - see LICENSE file for details.
