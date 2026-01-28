@@ -50,6 +50,8 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset, onEdit, on
         return 'bg-yellow-100 text-yellow-800';
       case 'Backlog':
         return 'bg-red-100 text-red-800';
+      case 'Planned':
+        return 'bg-purple-100 text-purple-800';
       case 'Archived':
         return 'bg-gray-100 text-gray-600';
       default:

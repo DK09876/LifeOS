@@ -19,6 +19,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -91,10 +92,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Sidebar />
+      <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
       {/* Main content area */}
-      <div className="ml-56">
+      <div className={`${sidebarCollapsed ? 'ml-14' : 'ml-56'} transition-all duration-200`}>
         {/* Top bar */}
         <header className="h-14 border-b border-[var(--border-color)] flex items-center px-6 gap-4 sticky top-0 bg-[var(--background)] z-10">
           {/* Quote */}

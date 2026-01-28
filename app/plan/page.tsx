@@ -48,7 +48,7 @@ export default function PlanPage() {
   // Stats
   const stats = useMemo(() => ({
     needsAttention: triageTasks.needsDetails.length + triageTasks.blocked.length + triageTasks.needsReset.length,
-    activeTasks: tasks.filter(t => t.status === 'Backlog').length,
+    activeTasks: tasks.filter(t => t.status === 'Backlog' || t.status === 'Planned').length,
     highPriority: tasks.filter(t => t.taskPriority.startsWith('1') || t.taskPriority.startsWith('2')).filter(t => t.status !== 'Done' && t.status !== 'Archived').length,
   }), [tasks, triageTasks]);
 
@@ -264,9 +264,20 @@ export default function PlanPage() {
                     </td>
                     <td className="px-4 py-3">
                       {task.actionPoints ? (
-                        <span className="px-2 py-0.5 bg-blue-900/50 text-blue-300 rounded text-xs">
-                          {task.actionPoints}
-                        </span>
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((dot) => {
+                            const ap = parseInt(task.actionPoints!);
+                            const colors = ['bg-green-500', 'bg-lime-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500'];
+                            return (
+                              <div
+                                key={dot}
+                                className={`w-2 h-2 rounded-full ${
+                                  dot <= ap ? colors[ap - 1] : 'bg-[var(--border-color)]'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
                       ) : (
                         <span className="text-[var(--muted)]">—</span>
                       )}

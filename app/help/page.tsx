@@ -81,6 +81,10 @@ export default function HelpPage() {
               <p className="text-[var(--muted)]">Ready to be worked on. Assign a planned date to schedule it.</p>
             </div>
             <div className="flex items-center gap-3">
+              <span className="px-2 py-1 rounded bg-purple-500/20 text-purple-400 text-xs">Planned</span>
+              <p className="text-[var(--muted)]">Scheduled for a specific date. Automatically set when a planned date is assigned.</p>
+            </div>
+            <div className="flex items-center gap-3">
               <span className="px-2 py-1 rounded bg-gray-500/20 text-gray-400 text-xs">Blocked</span>
               <p className="text-[var(--muted)]">Waiting on something external. Can't be worked on right now.</p>
             </div>

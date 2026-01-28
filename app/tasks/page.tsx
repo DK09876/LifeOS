@@ -10,7 +10,7 @@ import { Task } from '@/types';
 
 type SortField = 'taskName' | 'status' | 'taskPriority' | 'dueDate' | 'plannedDate' | 'domain' | 'taskScore';
 type SortDirection = 'asc' | 'desc';
-type StatusFilter = 'all' | 'Needs Details' | 'Backlog' | 'Blocked' | 'Done' | 'Archived';
+type StatusFilter = 'all' | 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
 
 export default function TasksPage() {
   const tasks = useTasks();
@@ -126,6 +126,7 @@ export default function TasksPage() {
       case 'Blocked': return 'bg-gray-500/20 text-gray-400';
       case 'Needs Details': return 'bg-yellow-500/20 text-yellow-400';
       case 'Backlog': return 'bg-blue-500/20 text-blue-400';
+      case 'Planned': return 'bg-purple-500/20 text-purple-400';
       case 'Archived': return 'bg-gray-600/20 text-gray-500';
       default: return 'bg-blue-500/20 text-blue-400';
     }
@@ -180,6 +181,7 @@ export default function TasksPage() {
           <option value="all">All Status</option>
           <option value="Needs Details">Needs Details</option>
           <option value="Backlog">Backlog</option>
+          <option value="Planned">Planned</option>
           <option value="Blocked">Blocked</option>
           <option value="Done">Done</option>
           <option value="Archived">Archived</option>
@@ -237,6 +239,9 @@ export default function TasksPage() {
               >
                 Domain <SortIcon field="domain" />
               </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-20">
+                AP
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">
                 Recurrence
               </th>
@@ -254,7 +259,7 @@ export default function TasksPage() {
           <tbody className="divide-y divide-[var(--border-color)]">
             {filteredTasks.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-[var(--muted)]">
+                <td colSpan={10} className="px-4 py-8 text-center text-[var(--muted)]">
                   No tasks found
                 </td>
               </tr>
@@ -293,6 +298,26 @@ export default function TasksPage() {
                         <span>{task.domain.icon || '📁'}</span>
                         <span className="text-[var(--muted)]">{task.domain.name}</span>
                       </span>
+                    ) : (
+                      <span className="text-[var(--muted)]">—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {task.actionPoints ? (
+                      <div className="flex gap-0.5">
+                        {[1, 2, 3, 4, 5].map((dot) => {
+                          const ap = parseInt(task.actionPoints!);
+                          const colors = ['bg-green-500', 'bg-lime-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500'];
+                          return (
+                            <div
+                              key={dot}
+                              className={`w-2 h-2 rounded-full ${
+                                dot <= ap ? colors[ap - 1] : 'bg-[var(--border-color)]'
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
                     ) : (
                       <span className="text-[var(--muted)]">—</span>
                     )}

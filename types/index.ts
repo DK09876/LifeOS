@@ -3,7 +3,7 @@
 export interface Task {
   id: string;
   taskName: string;
-  status: 'Needs Details' | 'Backlog' | 'Blocked' | 'Done' | 'Archived';
+  status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
   taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
   taskScore: number;
   dueDate: string | null;

@@ -68,6 +68,33 @@ export function useDomain(id: string) {
   }, [id]);
 }
 
+// Check if a task has all required fields filled for auto-promotion
+function isTaskComplete(task: Partial<Task>): boolean {
+  return !!(
+    task.taskName?.trim() &&
+    task.taskPriority &&
+    task.domainId &&
+    task.actionPoints
+  );
+}
+
+// Determine auto-status based on required field completeness and planned date
+function autoStatus(task: Task): Task['status'] {
+  if (task.status === 'Needs Details' && isTaskComplete(task)) {
+    return task.plannedDate ? 'Planned' : 'Backlog';
+  }
+  if ((task.status === 'Backlog' || task.status === 'Planned') && !isTaskComplete(task)) {
+    return 'Needs Details';
+  }
+  if (task.status === 'Backlog' && task.plannedDate) {
+    return 'Planned';
+  }
+  if (task.status === 'Planned' && !task.plannedDate) {
+    return 'Backlog';
+  }
+  return task.status;
+}
+
 // Task actions
 export async function markTaskDone(taskId: string): Promise<void> {
   const now = new Date().toISOString();
@@ -79,15 +106,17 @@ export async function markTaskDone(taskId: string): Promise<void> {
 }
 
 export async function undoTaskDone(taskId: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
   await db.tasks.update(taskId, {
-    status: 'Backlog',
+    status: task?.plannedDate ? 'Planned' : 'Backlog',
     updatedAt: new Date().toISOString(),
   });
 }
 
 export async function resetTask(taskId: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
   await db.tasks.update(taskId, {
-    status: 'Backlog',
+    status: task?.plannedDate ? 'Planned' : 'Backlog',
     lastCompleted: null,
     updatedAt: new Date().toISOString(),
   });
@@ -117,7 +146,7 @@ export async function createTask(taskData: {
   const task: Task = {
     id,
     taskName: taskData.taskName,
-    status: taskData.status || 'Backlog',
+    status: taskData.status || 'Needs Details',
     taskPriority: taskData.taskPriority || '3 - Normal',
     taskScore: 0, // Will be calculated
     dueDate: taskData.dueDate || null,
@@ -130,6 +159,9 @@ export async function createTask(taskData: {
     createdAt: now,
     updatedAt: now,
   };
+
+  // Auto-promote/demote based on required fields
+  task.status = autoStatus(task);
 
   // Calculate score
   task.taskScore = calculateTaskScore(task, domainPriority);
@@ -144,7 +176,7 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
 
   // Recalculate score if relevant fields changed
   let taskScore = task.taskScore;
-  if (updates.taskPriority || updates.dueDate !== undefined || updates.domainId !== undefined) {
+  if (updates.taskPriority || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
     const domainId = updates.domainId !== undefined ? updates.domainId : task.domainId;
     let domainPriority: string | undefined;
     if (domainId) {
@@ -154,8 +186,13 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
     taskScore = calculateTaskScore({ ...task, ...updates }, domainPriority);
   }
 
+  // Auto-promote/demote based on required fields
+  const merged = { ...task, ...updates, taskScore };
+  const newStatus = autoStatus(merged);
+
   await db.tasks.update(taskId, {
     ...updates,
+    status: updates.status !== undefined ? autoStatus({ ...merged, status: updates.status }) : newStatus,
     taskScore,
     updatedAt: new Date().toISOString(),
   });

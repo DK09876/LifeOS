@@ -4,7 +4,7 @@ import Dexie, { Table } from 'dexie';
 export interface Task {
   id: string;
   taskName: string;
-  status: 'Needs Details' | 'Backlog' | 'Blocked' | 'Done' | 'Archived';
+  status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
   taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
   taskScore: number;
   dueDate: string | null;
@@ -59,6 +59,20 @@ class LifeOSDatabase extends Dexie {
       return tx.table('domains').toCollection().modify(domain => {
         if (domain.icon === undefined) {
           domain.icon = null;
+        }
+      });
+    });
+
+    // Version 3: Promote Backlog tasks with plannedDate to Planned status
+    this.version(3).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+    }).upgrade(tx => {
+      return tx.table('tasks').toCollection().modify(task => {
+        if (task.plannedDate && task.status === 'Backlog') {
+          task.status = 'Planned';
+          task.updatedAt = new Date().toISOString();
         }
       });
     });

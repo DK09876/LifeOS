@@ -22,7 +22,7 @@ export interface TaskFormData {
   domainId: string | null;
 }
 
-const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Blocked', 'Done', 'Archived'];
+const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
 const PRIORITY_OPTIONS: Task['taskPriority'][] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
 const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Quarterly', 'Yearly'];
 
@@ -32,7 +32,7 @@ const labelClass = "block text-sm font-medium text-[var(--muted)] mb-1";
 export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskFormProps) {
   const [formData, setFormData] = useState<TaskFormData>({
     taskName: '',
-    status: 'Backlog',
+    status: 'Needs Details',
     taskPriority: '3 - Normal',
     dueDate: null,
     plannedDate: null,
@@ -206,18 +206,41 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
 
       {/* Action Points */}
       <div>
-        <label htmlFor="actionPoints" className={labelClass}>
+        <label className={labelClass}>
           Action Points
         </label>
-        <input
-          type="text"
-          id="actionPoints"
-          name="actionPoints"
-          value={formData.actionPoints || ''}
-          onChange={handleChange}
-          className={inputClass}
-          placeholder="e.g., 5"
-        />
+        <div className="flex gap-1">
+          {[1, 2, 3, 4, 5].map((level) => {
+            const selected = formData.actionPoints === String(level);
+            const colors = [
+              'bg-green-600 hover:bg-green-500',
+              'bg-lime-600 hover:bg-lime-500',
+              'bg-yellow-600 hover:bg-yellow-500',
+              'bg-orange-600 hover:bg-orange-500',
+              'bg-red-600 hover:bg-red-500',
+            ];
+            const labels = ['Low', '', '', '', 'High'];
+            return (
+              <button
+                key={level}
+                type="button"
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    actionPoints: prev.actionPoints === String(level) ? null : String(level),
+                  }))
+                }
+                className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${
+                  selected
+                    ? `${colors[level - 1]} text-white ring-2 ring-white/30`
+                    : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                }`}
+              >
+                {level}{labels[level - 1] ? ` ${labels[level - 1]}` : ''}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Notes */}
