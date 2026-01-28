@@ -23,7 +23,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     async function init() {
       try {
-        await seedDatabase();
+        // seedDatabase() disabled — users start with a clean slate
         await initGoogleAuth();
         const storedUser = getStoredAuth();
         setUser(storedUser);
