@@ -5,12 +5,53 @@ import { format } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
+import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters } from '@/components/ViewControls';
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 
-type SortField = 'taskName' | 'status' | 'taskPriority' | 'dueDate' | 'plannedDate' | 'domain' | 'taskScore';
-type SortDirection = 'asc' | 'desc';
-type StatusFilter = 'all' | 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
+const TASK_FILTERS: FilterDef[] = [
+  {
+    key: 'status', label: 'Status',
+    options: [
+      { value: 'all', label: 'All Status' },
+      { value: 'Needs Details', label: 'Needs Details' },
+      { value: 'Backlog', label: 'Backlog' },
+      { value: 'Planned', label: 'Planned' },
+      { value: 'Blocked', label: 'Blocked' },
+      { value: 'Done', label: 'Done' },
+      { value: 'Archived', label: 'Archived' },
+    ],
+  },
+  {
+    key: 'priority', label: 'Priority',
+    options: [
+      { value: 'all', label: 'All Priorities' },
+      { value: '1 - Urgent', label: 'Urgent' },
+      { value: '2 - High', label: 'High' },
+      { value: '3 - Normal', label: 'Normal' },
+      { value: '4 - Low', label: 'Low' },
+      { value: '5 - Optional', label: 'Optional' },
+    ],
+  },
+];
+
+const TASK_COLUMNS: ColumnDef[] = [
+  { key: 'taskName', label: 'Task', defaultVisible: true },
+  { key: 'status', label: 'Status', defaultVisible: true },
+  { key: 'taskPriority', label: 'Priority', defaultVisible: true },
+  { key: 'dueDate', label: 'Due', defaultVisible: true },
+  { key: 'plannedDate', label: 'Planned', defaultVisible: true },
+  { key: 'domain', label: 'Domain', defaultVisible: true },
+  { key: 'actionPoints', label: 'AP', defaultVisible: true },
+  { key: 'recurrence', label: 'Recurrence', defaultVisible: false },
+  { key: 'taskScore', label: 'Score', defaultVisible: true },
+  { key: 'notes', label: 'Notes', defaultVisible: false },
+  { key: 'createdAt', label: 'Created', defaultVisible: false },
+];
+
+const SORTABLE_COLUMNS = TASK_COLUMNS.filter(c => !['notes', 'recurrence'].includes(c.key));
+
+const DEFAULT_VISIBLE = new Set(TASK_COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
 
 export default function TasksPage() {
   const tasks = useTasks();
@@ -18,21 +59,44 @@ export default function TasksPage() {
 
   // State
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [domainFilter, setDomainFilter] = useState<string>('all');
-  const [sortField, setSortField] = useState<SortField>('taskScore');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [visibleColumns, setVisibleColumns] = usePersistedSet('tasks-visible-columns', DEFAULT_VISIBLE);
+  const [sortLevels, setSortLevels] = usePersistedSortLevels('tasks-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
+  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: 'all', priority: 'all', domain: 'all' });
+
+  // Build filters with dynamic domain options
+  const taskFilters = useMemo<FilterDef[]>(() => [
+    ...TASK_FILTERS,
+    {
+      key: 'domain', label: 'Domain',
+      options: [
+        { value: 'all', label: 'All Domains' },
+        ...domains.map(d => ({ value: d.id, label: `${d.icon || '📁'} ${d.name}` })),
+      ],
+    },
+  ], [domains]);
 
   // Modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
+  // Comparators for multi-level sort
+  const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
+    taskName: (a, b) => a.taskName.localeCompare(b.taskName),
+    status: (a, b) => a.status.localeCompare(b.status),
+    taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
+    dueDate: (a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''),
+    plannedDate: (a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''),
+    domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
+    actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
+    taskScore: (a, b) => a.taskScore - b.taskScore,
+    createdAt: (a, b) => a.createdAt.localeCompare(b.createdAt),
+  }), []);
+
   // Filter and sort tasks
   const filteredTasks = useMemo(() => {
     let result = [...tasks];
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(t =>
@@ -41,58 +105,22 @@ export default function TasksPage() {
       );
     }
 
-    // Status filter
-    if (statusFilter !== 'all') {
-      result = result.filter(t => t.status === statusFilter);
+    if (filterValues.status !== 'all') {
+      result = result.filter(t => t.status === filterValues.status);
     }
 
-    // Domain filter
-    if (domainFilter !== 'all') {
-      result = result.filter(t => t.domainId === domainFilter);
+    if (filterValues.priority !== 'all') {
+      result = result.filter(t => t.taskPriority === filterValues.priority);
     }
 
-    // Sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'taskName':
-          comparison = a.taskName.localeCompare(b.taskName);
-          break;
-        case 'status':
-          comparison = a.status.localeCompare(b.status);
-          break;
-        case 'taskPriority':
-          comparison = a.taskPriority.localeCompare(b.taskPriority);
-          break;
-        case 'dueDate':
-          comparison = (a.dueDate || '').localeCompare(b.dueDate || '');
-          break;
-        case 'plannedDate':
-          comparison = (a.plannedDate || '').localeCompare(b.plannedDate || '');
-          break;
-        case 'domain':
-          comparison = (a.domain?.name || '').localeCompare(b.domain?.name || '');
-          break;
-        case 'taskScore':
-          comparison = a.taskScore - b.taskScore;
-          break;
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
+    if (filterValues.domain !== 'all') {
+      result = result.filter(t => t.domainId === filterValues.domain);
+    }
 
-    return result;
-  }, [tasks, searchQuery, statusFilter, domainFilter, sortField, sortDirection]);
+    return multiLevelSort(result, sortLevels, comparators);
+  }, [tasks, searchQuery, filterValues, sortLevels, comparators]);
 
   // Handlers
-  function handleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  }
-
   function handleOpenCreateTask() {
     setEditingTask(null);
     setIsTaskModalOpen(true);
@@ -143,10 +171,8 @@ export default function TasksPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <span className="opacity-30">↕</span>;
-    return sortDirection === 'asc' ? <span>↑</span> : <span>↓</span>;
-  };
+  const show = (key: string) => visibleColumns.has(key);
+  const colCount = Array.from(visibleColumns).length + 1; // +1 for actions
 
   return (
     <div>
@@ -164,102 +190,65 @@ export default function TasksPage() {
         </button>
       </div>
 
-      {/* Filters */}
+      {/* Filters + View Controls */}
       <div className="flex items-center gap-4 mb-6">
         <input
           type="text"
           placeholder="Search tasks..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="flex-1 px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white placeholder-[var(--muted)] focus:outline-none focus:border-blue-500"
+          className="flex-1 max-w-md px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white placeholder-[var(--muted)] focus:outline-none focus:border-blue-500"
         />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="all">All Status</option>
-          <option value="Needs Details">Needs Details</option>
-          <option value="Backlog">Backlog</option>
-          <option value="Planned">Planned</option>
-          <option value="Blocked">Blocked</option>
-          <option value="Done">Done</option>
-          <option value="Archived">Archived</option>
-        </select>
-        <select
-          value={domainFilter}
-          onChange={(e) => setDomainFilter(e.target.value)}
-          className="px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:border-blue-500"
-        >
-          <option value="all">All Domains</option>
-          {domains.map(d => (
-            <option key={d.id} value={d.id}>{d.icon} {d.name}</option>
-          ))}
-        </select>
+        <FilterButton filters={taskFilters} values={filterValues} onChange={setFilterValues} />
+        <ColumnsButton columns={TASK_COLUMNS} visibleColumns={visibleColumns} onChange={setVisibleColumns} />
+        <SortButton columns={SORTABLE_COLUMNS} sortLevels={sortLevels} onChange={setSortLevels} />
       </div>
 
       {/* Table */}
       <div className="bg-[var(--card-bg)] rounded-lg overflow-hidden overflow-x-auto">
-        <table className="w-full min-w-[1000px]">
+        <table className="w-full min-w-[800px]">
           <thead>
             <tr className="border-b border-[var(--border-color)]">
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white"
-                onClick={() => handleSort('taskName')}
-              >
-                Task <SortIcon field="taskName" />
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-28"
-                onClick={() => handleSort('status')}
-              >
-                Status <SortIcon field="status" />
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-28"
-                onClick={() => handleSort('taskPriority')}
-              >
-                Priority <SortIcon field="taskPriority" />
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-24"
-                onClick={() => handleSort('dueDate')}
-              >
-                Due <SortIcon field="dueDate" />
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-24"
-                onClick={() => handleSort('plannedDate')}
-              >
-                Planned <SortIcon field="plannedDate" />
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-32"
-                onClick={() => handleSort('domain')}
-              >
-                Domain <SortIcon field="domain" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-20">
-                AP
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">
-                Recurrence
-              </th>
-              <th
-                className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider cursor-pointer hover:text-white w-20"
-                onClick={() => handleSort('taskScore')}
-              >
-                Score <SortIcon field="taskScore" />
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-16">
-                Actions
-              </th>
+              {show('taskName') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Task</th>
+              )}
+              {show('status') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-28">Status</th>
+              )}
+              {show('taskPriority') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-28">Priority</th>
+              )}
+              {show('dueDate') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Due</th>
+              )}
+              {show('plannedDate') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Planned</th>
+              )}
+              {show('domain') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-32">Domain</th>
+              )}
+              {show('actionPoints') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-20">AP</th>
+              )}
+              {show('recurrence') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Recurrence</th>
+              )}
+              {show('taskScore') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-20">Score</th>
+              )}
+              {show('notes') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-48">Notes</th>
+              )}
+              {show('createdAt') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Created</th>
+              )}
+              <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-16">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-color)]">
             {filteredTasks.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-[var(--muted)]">
+                <td colSpan={colCount} className="px-4 py-8 text-center text-[var(--muted)]">
                   No tasks found
                 </td>
               </tr>
@@ -270,64 +259,89 @@ export default function TasksPage() {
                   className="hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
                   onClick={() => handleEditTask(task)}
                 >
-                  <td className="px-4 py-3">
-                    <div className="text-white font-medium">{task.taskName}</div>
-                    {task.notes && (
-                      <div className="text-xs text-[var(--muted)] truncate max-w-[300px]">{task.notes}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(task.status)}`}>
-                      {task.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(task.taskPriority)}`}>
-                      {task.taskPriority.split(' - ')[1]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                    {task.dueDate ? format(new Date(task.dueDate), 'MMM d') : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                    {task.plannedDate ? format(new Date(task.plannedDate), 'MMM d') : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {task.domain ? (
-                      <span className="flex items-center gap-1">
-                        <span>{task.domain.icon || '📁'}</span>
-                        <span className="text-[var(--muted)]">{task.domain.name}</span>
+                  {show('taskName') && (
+                    <td className="px-4 py-3">
+                      <div className="text-white font-medium">{task.taskName}</div>
+                    </td>
+                  )}
+                  {show('status') && (
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(task.status)}`}>
+                        {task.status}
                       </span>
-                    ) : (
-                      <span className="text-[var(--muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {task.actionPoints ? (
-                      <div className="flex gap-0.5">
-                        {[1, 2, 3, 4, 5].map((dot) => {
-                          const ap = parseInt(task.actionPoints!);
-                          const colors = ['bg-green-500', 'bg-lime-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500'];
-                          return (
-                            <div
-                              key={dot}
-                              className={`w-2 h-2 rounded-full ${
-                                dot <= ap ? colors[ap - 1] : 'bg-[var(--border-color)]'
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <span className="text-[var(--muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                    {task.recurrence !== 'None' ? task.recurrence : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                    {task.taskScore}
-                  </td>
+                    </td>
+                  )}
+                  {show('taskPriority') && (
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(task.taskPriority)}`}>
+                        {task.taskPriority.split(' - ')[1]}
+                      </span>
+                    </td>
+                  )}
+                  {show('dueDate') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {task.dueDate ? format(new Date(task.dueDate), 'MMM d') : '—'}
+                    </td>
+                  )}
+                  {show('plannedDate') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {task.plannedDate ? format(new Date(task.plannedDate), 'MMM d') : '—'}
+                    </td>
+                  )}
+                  {show('domain') && (
+                    <td className="px-4 py-3 text-sm">
+                      {task.domain ? (
+                        <span className="flex items-center gap-1">
+                          <span>{task.domain.icon || '📁'}</span>
+                          <span className="text-[var(--muted)]">{task.domain.name}</span>
+                        </span>
+                      ) : (
+                        <span className="text-[var(--muted)]">—</span>
+                      )}
+                    </td>
+                  )}
+                  {show('actionPoints') && (
+                    <td className="px-4 py-3">
+                      {task.actionPoints ? (
+                        <div className="flex gap-0.5">
+                          {[1, 2, 3, 4, 5].map((dot) => {
+                            const ap = parseInt(task.actionPoints!);
+                            const colors = ['bg-green-500', 'bg-lime-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500'];
+                            return (
+                              <div
+                                key={dot}
+                                className={`w-2 h-2 rounded-full ${
+                                  dot <= ap ? colors[ap - 1] : 'bg-[var(--border-color)]'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-[var(--muted)]">—</span>
+                      )}
+                    </td>
+                  )}
+                  {show('recurrence') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {task.recurrence !== 'None' ? task.recurrence : '—'}
+                    </td>
+                  )}
+                  {show('taskScore') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {task.taskScore}
+                    </td>
+                  )}
+                  {show('notes') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      <div className="truncate max-w-[200px]">{task.notes || '—'}</div>
+                    </td>
+                  )}
+                  {show('createdAt') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {format(new Date(task.createdAt), 'MMM d')}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <button
                       onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); }}
