@@ -8,7 +8,7 @@ export interface Task {
   taskScore: number;
   dueDate: string | null;
   plannedDate: string | null;
-  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Quarterly' | 'Yearly';
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;
   actionPoints: string | null;
   notes: string;

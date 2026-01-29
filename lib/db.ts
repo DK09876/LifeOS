@@ -9,7 +9,7 @@ export interface Task {
   taskScore: number;
   dueDate: string | null;
   plannedDate: string | null;
-  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Quarterly' | 'Yearly';
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;
   actionPoints: string | null;
   notes: string;
@@ -228,10 +228,19 @@ export function checkNeedsReset(task: Task): boolean {
       return now.getTime() - lastCompleted.getTime() >= 14 * 24 * 60 * 60 * 1000;
     case 'Monthly':
       return now.getMonth() !== lastCompleted.getMonth() || now.getFullYear() !== lastCompleted.getFullYear();
-    case 'Quarterly':
+    case 'Bimonthly': {
+      const diffMonths = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonths >= 2;
+    }
+    case 'Quarterly': {
       const lastQ = Math.floor(lastCompleted.getMonth() / 3);
       const nowQ = Math.floor(now.getMonth() / 3);
       return nowQ !== lastQ || now.getFullYear() !== lastCompleted.getFullYear();
+    }
+    case 'Half-Yearly': {
+      const diffMonthsHY = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonthsHY >= 6;
+    }
     case 'Yearly':
       return now.getFullYear() !== lastCompleted.getFullYear();
     default:

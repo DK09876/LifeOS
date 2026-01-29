@@ -33,6 +33,21 @@ const TASK_FILTERS: FilterDef[] = [
       { value: '5 - Optional', label: 'Optional' },
     ],
   },
+  {
+    key: 'recurrence', label: 'Recurrence',
+    options: [
+      { value: 'all', label: 'All' },
+      { value: 'None', label: 'None' },
+      { value: 'Daily', label: 'Daily' },
+      { value: 'Weekly', label: 'Weekly' },
+      { value: 'Biweekly', label: 'Biweekly' },
+      { value: 'Monthly', label: 'Monthly' },
+      { value: 'Bimonthly', label: 'Bimonthly' },
+      { value: 'Quarterly', label: 'Quarterly' },
+      { value: 'Half-Yearly', label: 'Half-Yearly' },
+      { value: 'Yearly', label: 'Yearly' },
+    ],
+  },
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
@@ -49,7 +64,7 @@ const TASK_COLUMNS: ColumnDef[] = [
   { key: 'createdAt', label: 'Created', defaultVisible: false },
 ];
 
-const SORTABLE_COLUMNS = TASK_COLUMNS.filter(c => !['notes', 'recurrence'].includes(c.key));
+const SORTABLE_COLUMNS = TASK_COLUMNS.filter(c => !['notes'].includes(c.key));
 
 const DEFAULT_VISIBLE = new Set(TASK_COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
 
@@ -61,7 +76,7 @@ export default function TasksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleColumns, setVisibleColumns] = usePersistedSet('tasks-visible-columns', DEFAULT_VISIBLE);
   const [sortLevels, setSortLevels] = usePersistedSortLevels('tasks-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: 'all', priority: 'all', domain: 'all' });
+  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: 'all', priority: 'all', domain: 'all', recurrence: 'all' });
 
   // Build filters with dynamic domain options
   const taskFilters = useMemo<FilterDef[]>(() => [
@@ -89,6 +104,10 @@ export default function TasksPage() {
     plannedDate: (a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''),
     domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
     actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
+    recurrence: (a, b) => {
+      const order: Record<string, number> = { None: 0, Yearly: 1, 'Half-Yearly': 2, Quarterly: 3, Bimonthly: 4, Monthly: 5, Biweekly: 6, Weekly: 7, Daily: 8 };
+      return (order[a.recurrence] ?? 0) - (order[b.recurrence] ?? 0);
+    },
     taskScore: (a, b) => a.taskScore - b.taskScore,
     createdAt: (a, b) => a.createdAt.localeCompare(b.createdAt),
   }), []);
@@ -115,6 +134,10 @@ export default function TasksPage() {
 
     if (filterValues.domain !== 'all') {
       result = result.filter(t => t.domainId === filterValues.domain);
+    }
+
+    if (filterValues.recurrence !== 'all') {
+      result = result.filter(t => t.recurrence === filterValues.recurrence);
     }
 
     return multiLevelSort(result, sortLevels, comparators);
