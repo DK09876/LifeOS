@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
@@ -56,6 +56,7 @@ const TASK_COLUMNS: ColumnDef[] = [
   { key: 'taskPriority', label: 'Priority', defaultVisible: true },
   { key: 'dueDate', label: 'Due', defaultVisible: true },
   { key: 'plannedDate', label: 'Planned', defaultVisible: true },
+  { key: 'doneDate', label: 'Done', defaultVisible: false },
   { key: 'domain', label: 'Domain', defaultVisible: true },
   { key: 'actionPoints', label: 'AP', defaultVisible: true },
   { key: 'recurrence', label: 'Recurrence', defaultVisible: false },
@@ -102,6 +103,7 @@ export default function TasksPage() {
     taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
     dueDate: (a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''),
     plannedDate: (a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''),
+    doneDate: (a, b) => (a.doneDate || '').localeCompare(b.doneDate || ''),
     domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
     actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
     recurrence: (a, b) => {
@@ -194,6 +196,19 @@ export default function TasksPage() {
     }
   };
 
+  const getDueDateColor = (dueDate: string | null) => {
+    if (!dueDate) return 'text-[var(--muted)]';
+    const due = startOfDay(new Date(dueDate));
+    const today = startOfDay(new Date());
+    const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysUntil < 0) return 'text-red-400 font-medium'; // Overdue
+    if (daysUntil === 0) return 'text-orange-400 font-medium'; // Today
+    if (daysUntil <= 2) return 'text-yellow-400'; // Very soon
+    if (daysUntil <= 7) return 'text-blue-400'; // This week
+    return 'text-[var(--muted)]'; // Later
+  };
+
   const show = (key: string) => visibleColumns.has(key);
   const colCount = Array.from(visibleColumns).length + 1; // +1 for actions
 
@@ -246,6 +261,9 @@ export default function TasksPage() {
               )}
               {show('plannedDate') && (
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Planned</th>
+              )}
+              {show('doneDate') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Done</th>
               )}
               {show('domain') && (
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-32">Domain</th>
@@ -302,13 +320,18 @@ export default function TasksPage() {
                     </td>
                   )}
                   {show('dueDate') && (
-                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                    <td className={`px-4 py-3 text-sm ${getDueDateColor(task.dueDate)}`}>
                       {task.dueDate ? format(new Date(task.dueDate), 'MMM d') : '—'}
                     </td>
                   )}
                   {show('plannedDate') && (
                     <td className="px-4 py-3 text-sm text-[var(--muted)]">
                       {task.plannedDate ? format(new Date(task.plannedDate), 'MMM d') : '—'}
+                    </td>
+                  )}
+                  {show('doneDate') && (
+                    <td className="px-4 py-3 text-sm text-[var(--muted)]">
+                      {task.doneDate ? format(new Date(task.doneDate), 'MMM d') : '—'}
                     </td>
                   )}
                   {show('domain') && (

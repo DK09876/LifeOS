@@ -7,12 +7,14 @@ import { initGoogleAuth, signInWithGoogle, signOut, getStoredAuth, GoogleUser } 
 import { syncWithGoogleDrive, getSyncStatus } from '@/lib/sync';
 import { seedDatabase } from '@/lib/seed';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
+import { useRecurrenceCheck } from '@/lib/hooks';
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  useRecurrenceCheck();
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);

@@ -10,13 +10,13 @@ export interface Task {
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;
+  doneDate: string | null;
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
   createdAt: string;
   updatedAt: string;
   // Computed fields (not stored, calculated at runtime)
-  needsReset?: boolean;
   domain?: Domain | null;
   domainPriority?: string | null;
 }

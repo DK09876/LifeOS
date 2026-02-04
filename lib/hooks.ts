@@ -1,7 +1,39 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Task, Domain, checkNeedsReset, calculateTaskScore } from './db';
+import { db, Task, Domain, FilterPreset, checkNeedsReset, calculateTaskScore } from './db';
+
+// Hook to run daily auto-reset check for recurring tasks
+export function useRecurrenceCheck() {
+  useEffect(() => {
+    (async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const meta = await db.syncMetadata.get('recurrenceCheck');
+      if (meta?.lastSyncedAt === today) return;
+
+      const allTasks = await db.tasks.toArray();
+      for (const task of allTasks) {
+        if (checkNeedsReset(task)) {
+          const newStatus = task.plannedDate ? 'Planned' : 'Backlog';
+          await db.tasks.update(task.id, {
+            status: newStatus,
+            lastCompleted: null,
+            doneDate: null,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      await db.syncMetadata.put({
+        id: 'recurrenceCheck',
+        lastSyncedAt: today,
+        googleDriveFileId: null,
+        userEmail: null,
+      });
+    })();
+  }, []);
+}
 
 // Hook to get all tasks with computed fields
 export function useTasks() {
@@ -15,7 +47,6 @@ export function useTasks() {
       const domain = task.domainId ? domainMap.get(task.domainId) : null;
       return {
         ...task,
-        needsReset: checkNeedsReset(task),
         domain: domain || null,
         domainPriority: domain?.priority || null,
       };
@@ -50,7 +81,6 @@ export function useTask(id: string) {
     const domain = task.domainId ? await db.domains.get(task.domainId) : null;
     return {
       ...task,
-      needsReset: checkNeedsReset(task),
       domain: domain || null,
       domainPriority: domain?.priority || null,
     };
@@ -66,6 +96,76 @@ export function useDomain(id: string) {
     const taskCount = await db.tasks.where('domainId').equals(id).count();
     return { ...domain, taskCount };
   }, [id]);
+}
+
+// Hook to get all filter presets
+export function useFilterPresets() {
+  const presets = useLiveQuery(async () => {
+    return db.filterPresets.orderBy('order').toArray();
+  }, []);
+
+  return presets || [];
+}
+
+// Hook to get visible filter presets only
+export function useVisibleFilterPresets() {
+  const presets = useLiveQuery(async () => {
+    const all = await db.filterPresets.orderBy('order').toArray();
+    return all.filter(p => p.visible);
+  }, []);
+
+  return presets || [];
+}
+
+// Filter preset actions
+export async function createFilterPreset(presetData: {
+  name: string;
+  color: string;
+  filters: FilterPreset['filters'];
+  visible?: boolean;
+}): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  // Get max order
+  const allPresets = await db.filterPresets.toArray();
+  const maxOrder = allPresets.length > 0 ? Math.max(...allPresets.map(p => p.order)) : -1;
+
+  const preset: FilterPreset = {
+    id,
+    name: presetData.name,
+    color: presetData.color,
+    filters: presetData.filters,
+    visible: presetData.visible ?? true,
+    isDefault: false,
+    order: maxOrder + 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.filterPresets.add(preset);
+  return id;
+}
+
+export async function updateFilterPreset(presetId: string, updates: Partial<FilterPreset>): Promise<void> {
+  await db.filterPresets.update(presetId, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteFilterPreset(presetId: string): Promise<void> {
+  await db.filterPresets.delete(presetId);
+}
+
+export async function toggleFilterPresetVisibility(presetId: string): Promise<void> {
+  const preset = await db.filterPresets.get(presetId);
+  if (preset) {
+    await db.filterPresets.update(presetId, {
+      visible: !preset.visible,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 }
 
 // Check if a task has all required fields filled for auto-promotion
@@ -101,6 +201,7 @@ export async function markTaskDone(taskId: string): Promise<void> {
   await db.tasks.update(taskId, {
     status: 'Done',
     lastCompleted: now,
+    doneDate: now,
     updatedAt: now,
   });
 }
@@ -109,6 +210,7 @@ export async function undoTaskDone(taskId: string): Promise<void> {
   const task = await db.tasks.get(taskId);
   await db.tasks.update(taskId, {
     status: task?.plannedDate ? 'Planned' : 'Backlog',
+    doneDate: null,
     updatedAt: new Date().toISOString(),
   });
 }
@@ -118,6 +220,7 @@ export async function resetTask(taskId: string): Promise<void> {
   await db.tasks.update(taskId, {
     status: task?.plannedDate ? 'Planned' : 'Backlog',
     lastCompleted: null,
+    doneDate: null,
     updatedAt: new Date().toISOString(),
   });
 }
@@ -153,6 +256,7 @@ export async function createTask(taskData: {
     plannedDate: taskData.plannedDate || null,
     recurrence: taskData.recurrence || 'None',
     lastCompleted: null,
+    doneDate: null,
     actionPoints: taskData.actionPoints || null,
     notes: taskData.notes || '',
     domainId: taskData.domainId || null,

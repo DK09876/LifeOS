@@ -11,6 +11,7 @@ export interface Task {
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;
+  doneDate: string | null;
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
@@ -34,11 +35,29 @@ export interface SyncMetadata {
   userEmail: string | null;
 }
 
+export interface FilterPreset {
+  id: string;
+  name: string;
+  color: string;
+  filters: {
+    priority?: string;
+    actionPoints?: string;
+    domain?: string;
+    recurrence?: string;
+  };
+  visible: boolean;
+  isDefault: boolean;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Dexie database class
 class LifeOSDatabase extends Dexie {
   tasks!: Table<Task, string>;
   domains!: Table<Domain, string>;
   syncMetadata!: Table<SyncMetadata, string>;
+  filterPresets!: Table<FilterPreset, string>;
 
   constructor() {
     super('LifeOSDatabase');
@@ -75,6 +94,87 @@ class LifeOSDatabase extends Dexie {
           task.updatedAt = new Date().toISOString();
         }
       });
+    });
+
+    // Version 4: Add doneDate field to tasks
+    this.version(4).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+    }).upgrade(tx => {
+      return tx.table('tasks').toCollection().modify(task => {
+        if (task.doneDate === undefined) {
+          task.doneDate = null;
+        }
+      });
+    });
+
+    // Version 5: Add filter presets table with default presets
+    this.version(5).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order',
+    }).upgrade(async tx => {
+      const now = new Date().toISOString();
+      const defaultPresets: FilterPreset[] = [
+        {
+          id: 'preset-all',
+          name: 'All',
+          color: 'blue',
+          filters: { priority: 'all', actionPoints: 'all' },
+          visible: true,
+          isDefault: true,
+          order: 0,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'preset-urgent',
+          name: 'Urgent',
+          color: 'red',
+          filters: { priority: '1 - Urgent', actionPoints: 'all' },
+          visible: true,
+          isDefault: true,
+          order: 1,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'preset-low-ap',
+          name: 'Low AP',
+          color: 'green',
+          filters: { priority: 'all', actionPoints: 'low' },
+          visible: true,
+          isDefault: true,
+          order: 2,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'preset-med-ap',
+          name: 'Med AP',
+          color: 'yellow',
+          filters: { priority: 'all', actionPoints: 'med' },
+          visible: true,
+          isDefault: true,
+          order: 3,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'preset-high-ap',
+          name: 'High AP',
+          color: 'red',
+          filters: { priority: 'all', actionPoints: 'high' },
+          visible: true,
+          isDefault: true,
+          order: 4,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      await tx.table('filterPresets').bulkAdd(defaultPresets);
     });
   }
 }
@@ -288,5 +388,50 @@ export async function clearAllData(): Promise<void> {
     await db.tasks.clear();
     await db.domains.clear();
     await db.syncMetadata.clear();
+  });
+}
+
+// Filter Preset CRUD operations
+
+export async function getAllFilterPresets(): Promise<FilterPreset[]> {
+  return db.filterPresets.orderBy('order').toArray();
+}
+
+export async function getVisibleFilterPresets(): Promise<FilterPreset[]> {
+  return db.filterPresets.where('order').above(-1).filter(p => p.visible).sortBy('order');
+}
+
+export async function getFilterPresetById(id: string): Promise<FilterPreset | undefined> {
+  return db.filterPresets.get(id);
+}
+
+export async function createFilterPreset(preset: Omit<FilterPreset, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.filterPresets.add({
+    ...preset,
+    id,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function updateFilterPreset(id: string, updates: Partial<FilterPreset>): Promise<void> {
+  await db.filterPresets.update(id, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteFilterPreset(id: string): Promise<void> {
+  await db.filterPresets.delete(id);
+}
+
+export async function reorderFilterPresets(orderedIds: string[]): Promise<void> {
+  await db.transaction('rw', db.filterPresets, async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      await db.filterPresets.update(orderedIds[i], { order: i, updatedAt: new Date().toISOString() });
+    }
   });
 }

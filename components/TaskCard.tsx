@@ -5,7 +5,6 @@ import { Task as BaseTask, Domain } from '@/types';
 
 // Extended Task type with computed fields from useTasks hook
 interface Task extends BaseTask {
-  needsReset?: boolean;
   domainPriority?: string | null;
   domain?: (Domain & { icon: string | null }) | null;
 }
@@ -14,12 +13,11 @@ interface TaskCardProps {
   task: Task;
   onMarkDone: (taskId: string) => void;
   onUndo: (taskId: string) => void;
-  onReset: (taskId: string) => void;
   onEdit?: (task: Task) => void;
   onDelete?: (taskId: string) => void;
 }
 
-export default function TaskCard({ task, onMarkDone, onUndo, onReset, onEdit, onDelete }: TaskCardProps) {
+export default function TaskCard({ task, onMarkDone, onUndo, onEdit, onDelete }: TaskCardProps) {
   const isDone = task.status === 'Done';
   const isArchived = task.status === 'Archived';
 
@@ -124,9 +122,6 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset, onEdit, on
             {task.lastCompleted && (
               <span>Last: {format(new Date(task.lastCompleted), 'MMM dd')}</span>
             )}
-            {task.needsReset && (
-              <span className="text-orange-600 font-medium">Needs Reset</span>
-            )}
           </div>
         </div>
 
@@ -145,14 +140,6 @@ export default function TaskCard({ task, onMarkDone, onUndo, onReset, onEdit, on
               className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
             >
               Undo
-            </button>
-          )}
-          {task.needsReset && (
-            <button
-              onClick={() => onReset(task.id)}
-              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              Reset
             </button>
           )}
           {onEdit && (

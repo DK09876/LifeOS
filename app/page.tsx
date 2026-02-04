@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useTasks, useDomains, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
+import { getTodayString } from '@/lib/dates';
 
 export default function TodayPage() {
   const tasks = useTasks();
@@ -19,10 +20,12 @@ export default function TodayPage() {
 
   // Filter tasks for today
   const todayTasks = useMemo(() => {
+    const todayStr = getTodayString();
     return tasks.filter(t => {
       if (t.status === 'Done' || t.status === 'Archived') return false;
-      if (t.plannedDate && isToday(new Date(t.plannedDate))) return true;
-      if (t.dueDate && isToday(new Date(t.dueDate))) return true;
+      // Use string comparison to avoid timezone issues
+      if (t.plannedDate === todayStr) return true;
+      if (t.dueDate === todayStr) return true;
       return false;
     }).sort((a, b) => {
       // Sort by priority (1 = highest)

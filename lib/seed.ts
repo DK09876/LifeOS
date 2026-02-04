@@ -97,6 +97,7 @@ export async function seedDatabase(): Promise<boolean> {
       plannedDate: null,
       recurrence,
       lastCompleted: nt.lastCompleted,
+      doneDate: null,
       actionPoints: nt.actionPoints?.toString() || null,
       notes: nt.notes || '',
       domainId: nt.domainId,

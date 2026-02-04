@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { format, startOfWeek, addDays, isToday, isSameDay, addWeeks, subWeeks } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, addWeeks } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
@@ -33,19 +33,23 @@ export default function WeekPage() {
 
   // Filter tasks by week
   const weekTasks = useMemo(() => {
-    return weekDays.map(day => ({
-      date: day,
-      tasks: tasks.filter(t => {
-        if (t.status === 'Done' || t.status === 'Archived') return false;
-        if (t.plannedDate && isSameDay(new Date(t.plannedDate), day)) return true;
-        if (t.dueDate && isSameDay(new Date(t.dueDate), day)) return true;
-        return false;
-      }).sort((a, b) => {
-        const priorityA = parseInt(a.taskPriority[0]) || 3;
-        const priorityB = parseInt(b.taskPriority[0]) || 3;
-        return priorityA - priorityB;
-      })
-    }));
+    return weekDays.map(day => {
+      const dayStr = format(day, 'yyyy-MM-dd');
+      return {
+        date: day,
+        tasks: tasks.filter(t => {
+          if (t.status === 'Done' || t.status === 'Archived') return false;
+          // Compare date strings directly to avoid timezone issues
+          if (t.plannedDate === dayStr) return true;
+          if (t.dueDate === dayStr) return true;
+          return false;
+        }).sort((a, b) => {
+          const priorityA = parseInt(a.taskPriority[0]) || 3;
+          const priorityB = parseInt(b.taskPriority[0]) || 3;
+          return priorityA - priorityB;
+        })
+      };
+    });
   }, [tasks, weekDays]);
 
   // Task handlers
