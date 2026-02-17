@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useTasks, useDomains, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
+import { getPriorityDotColor } from '@/lib/colors';
 
 export default function WeekPage() {
   const tasks = useTasks();
@@ -91,17 +92,6 @@ export default function WeekPage() {
     }
   }
 
-  const getPriorityDot = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'bg-red-500';
-      case '2 - High': return 'bg-orange-500';
-      case '3 - Normal': return 'bg-blue-500';
-      case '4 - Low': return 'bg-gray-500';
-      case '5 - Optional': return 'bg-gray-600';
-      default: return 'bg-blue-500';
-    }
-  };
-
   const totalTasks = weekTasks.reduce((sum, day) => sum + day.tasks.length, 0);
 
   return (
@@ -175,7 +165,7 @@ export default function WeekPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm line-clamp-2">{task.taskName}</p>
                       <div className="flex items-center gap-1 mt-1">
-                        <span className={`w-2 h-2 rounded-full ${getPriorityDot(task.taskPriority)}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
                         {task.domain?.icon && (
                           <span className="text-xs">{task.domain.icon}</span>
                         )}

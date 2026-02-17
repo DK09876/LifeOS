@@ -716,3 +716,9 @@ export async function deleteHabit(id: string): Promise<void> {
   const now = new Date().toISOString();
   await db.habits.update(id, { deletedAt: now, updatedAt: now });
 }
+
+// Prune completionDates older than retentionDays to prevent unbounded growth
+export function pruneCompletionDates(dates: string[], retentionDays: number = 90): string[] {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return dates.filter(d => d >= cutoff);
+}

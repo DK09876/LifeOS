@@ -26,8 +26,15 @@ const steps = [
   },
   {
     number: 4,
+    title: 'Create a Habit',
+    description: 'Track recurring habits like exercise, reading, or meditation. Set a recurrence (daily, weekly, etc.) and mark them done from the Today page.',
+    href: '/habits',
+    cta: 'Go to Habits',
+  },
+  {
+    number: 5,
     title: 'Plan Your Week',
-    description: 'Use the Plan page to triage tasks that need attention, then prioritize your backlog by effort and importance.',
+    description: 'Use the Plan page to triage tasks that need attention, then drag tasks onto the calendar to schedule your week.',
     href: '/plan',
     cta: 'Go to Plan',
   },
@@ -38,7 +45,7 @@ export default function GetStartedPage() {
     <div className="max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white mb-1">Get Started</h1>
-        <p className="text-[var(--muted)]">Set up LifeOS in 4 steps</p>
+        <p className="text-[var(--muted)]">Set up LifeOS in 5 steps</p>
       </div>
 
       <div className="space-y-4">

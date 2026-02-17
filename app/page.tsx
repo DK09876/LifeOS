@@ -10,6 +10,7 @@ import HabitCard from '@/components/HabitCard';
 import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit } from '@/lib/hooks';
 import { Task, Habit } from '@/types';
 import { getTodayString } from '@/lib/dates';
+import { getTaskPriorityBorder } from '@/lib/colors';
 
 export default function TodayPage() {
   const tasks = useTasks();
@@ -120,17 +121,6 @@ export default function TodayPage() {
     }
   }
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'border-l-red-500 bg-red-500/5';
-      case '2 - High': return 'border-l-orange-500 bg-orange-500/5';
-      case '3 - Normal': return 'border-l-blue-500 bg-blue-500/5';
-      case '4 - Low': return 'border-l-gray-500 bg-gray-500/5';
-      case '5 - Optional': return 'border-l-gray-600 bg-gray-600/5';
-      default: return 'border-l-blue-500';
-    }
-  };
-
   return (
     <div>
       {/* Page Header */}
@@ -205,7 +195,7 @@ export default function TodayPage() {
             {todayTasks.map(task => (
               <div
                 key={task.id}
-                className={`bg-[var(--card-bg)] rounded-lg border-l-4 ${getPriorityColor(task.taskPriority)} p-4 flex items-start gap-4 group hover:bg-[var(--card-hover)] cursor-pointer transition-colors`}
+                className={`bg-[var(--card-bg)] rounded-lg border-l-4 ${getTaskPriorityBorder(task.taskPriority)} p-4 flex items-start gap-4 group hover:bg-[var(--card-hover)] cursor-pointer transition-colors`}
                 onClick={() => handleEditTask(task)}
               >
                 <button

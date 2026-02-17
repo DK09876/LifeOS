@@ -49,6 +49,13 @@ export default function HelpPage() {
                 <p className="text-[var(--muted)]">Life areas like Work, Health, Finance, etc. Each domain has a priority that affects task scoring. Assign tasks to domains to organize your life.</p>
               </div>
             </div>
+            <div className="flex gap-4">
+              <span className="text-xl w-8">🔄</span>
+              <div>
+                <p className="text-white font-medium">Habits</p>
+                <p className="text-[var(--muted)]">Track recurring habits with daily, weekly, or monthly recurrence. Due habits appear on Today. View weekly completion progress on the Habits page.</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -135,7 +142,9 @@ export default function HelpPage() {
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Weekly</span>
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Biweekly</span>
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Monthly</span>
+            <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Bimonthly</span>
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Quarterly</span>
+            <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Half-Yearly</span>
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Yearly</span>
           </div>
         </section>
@@ -183,10 +192,16 @@ export default function HelpPage() {
               <span className="text-white">Local First:</span> All data is stored locally in your browser using IndexedDB. The app works fully offline.
             </p>
             <p>
-              <span className="text-white">Google Drive Sync:</span> Sign in with Google to sync your data across devices. Data is stored in your personal Google Drive as a JSON file.
+              <span className="text-white">Google Drive Backup:</span> Sign in with Google to back up your data. Data is stored in your personal Google Drive as a JSON file including tasks, domains, habits, filter presets, and preferences.
             </p>
             <p>
-              <span className="text-white">Conflict Resolution:</span> When syncing, the most recently updated version of each task wins (based on timestamps).
+              <span className="text-white">Push:</span> Uploads your local data to Google Drive, replacing the remote backup. Tombstones older than 30 days are cleaned up before pushing.
+            </p>
+            <p>
+              <span className="text-white">Pull:</span> Downloads data from Google Drive and replaces all local data. You'll be warned if you have unpushed local changes.
+            </p>
+            <p>
+              <span className="text-white">Deletions:</span> Deleted items are soft-deleted (tombstoned) so they propagate across devices. Push on one device, pull on another to stay in sync.
             </p>
             <p>
               <span className="text-white">Privacy:</span> No central server. Your data stays on your devices and your Google Drive.

@@ -28,6 +28,17 @@ All notable changes to LifeOS will be documented in this file.
 - Add `userinfo.email` and `userinfo.profile` OAuth scopes for user profile display
 - Fix `clearAllData()` to also clear filter presets table
 
+### Code Quality
+- Extract shared color utilities to `lib/colors.ts` (removes duplication across 5 pages)
+- Fix domains card delete button not appearing on hover (missing `group` class)
+- Replace `window.confirm` with styled `ConfirmDialog` component for Pull warnings
+- Remove dead components (`TaskCard.tsx`, `DomainCard.tsx`) and unused imports
+- Remove unused `activePresetId` state from Plan page
+- Add `pruneCompletionDates()` to limit habit completion history to 90 days
+- Update CLAUDE.md with current architecture, data models, and maintenance instructions
+- Update "How it Works" page: add Habits section, fix sync docs (Push/Pull, not merge)
+- Update "Get Started" page: add habits step, update step count to 5
+
 ### Other
 - Add drag-and-drop calendar scheduling in planning dashboard
 - Split planning into separate Triage and Planning views with week calendar

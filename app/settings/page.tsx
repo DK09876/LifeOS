@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
 import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
@@ -62,6 +63,7 @@ export default function SettingsPage() {
   const [pullRunning, setPullRunning] = useState(false);
   const [pullResult, setPullResult] = useState<string | null>(null);
   const [isSignedIn, setIsSignedIn] = useState(false);
+  const [showPullConfirm, setShowPullConfirm] = useState(false);
 
   useEffect(() => {
     setHideGetStarted(localStorage.getItem('hideGetStarted') === 'true');
@@ -123,20 +125,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handlePullFromDrive = async () => {
-    // Check for unsaved changes before pulling
-    try {
-      const unsaved = await hasUnsavedChanges();
-      if (unsaved) {
-        const confirmed = window.confirm(
-          'Pull will replace all local data. You have changes that haven\'t been pushed. Continue?'
-        );
-        if (!confirmed) return;
-      }
-    } catch {
-      // If check fails, proceed anyway
-    }
-
+  const executePull = useCallback(async () => {
     setPullRunning(true);
     setPullResult(null);
     try {
@@ -145,12 +134,25 @@ export default function SettingsPage() {
         setSyncLastRun(result.lastSyncedAt);
       }
       setPullResult(result.message);
-    } catch (err) {
+    } catch {
       setPullResult('Pull failed');
     } finally {
       setPullRunning(false);
       setTimeout(() => setPullResult(null), 3000);
     }
+  }, []);
+
+  const handlePullFromDrive = async () => {
+    try {
+      const unsaved = await hasUnsavedChanges();
+      if (unsaved) {
+        setShowPullConfirm(true);
+        return;
+      }
+    } catch {
+      // If check fails, proceed anyway
+    }
+    executePull();
   };
 
   const formatLastRun = (dateStr: string | null) => {
@@ -562,6 +564,16 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={showPullConfirm}
+        onClose={() => setShowPullConfirm(false)}
+        onConfirm={executePull}
+        title="Pull from Google Drive"
+        message="Pull will replace all local data. You have changes that haven't been pushed. Continue?"
+        confirmLabel="Pull"
+        variant="warning"
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLe
 import { useTasks, useDomains, useVisibleFilterPresets, markTaskDone, createTask, updateTaskData } from '@/lib/hooks';
 import { Task } from '@/types';
 import { FilterPreset } from '@/lib/db';
+import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor } from '@/lib/colors';
 
 type MainView = 'triage' | 'planning';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -82,8 +83,6 @@ export default function PlanPage() {
   // Planning view state
   const [sortLevels, setSortLevels] = usePersistedSortLevels('plan-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
   const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], domain: [], recurrence: [], actionPoints: [] });
-  const [activePresetId, setActivePresetId] = useState<string | null>(null);
-
   // Build filters with dynamic domain options
   const planFilters = useMemo<FilterDef[]>(() => [
     ...PLAN_FILTERS,
@@ -348,7 +347,6 @@ export default function PlanPage() {
       domain: presetToArray(preset.filters.domain),
       recurrence: presetToArray(preset.filters.recurrence),
     });
-    setActivePresetId(preset.id);
   };
 
   // Navigate to a specific day in the day view
@@ -357,41 +355,6 @@ export default function PlanPage() {
     const diffDays = differenceInCalendarDays(date, today);
     setCalendarView('day');
     setDateOffset(diffDays);
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'bg-red-500/20 text-red-400';
-      case '2 - High': return 'bg-orange-500/20 text-orange-400';
-      case '3 - Normal': return 'bg-blue-500/20 text-blue-400';
-      case '4 - Low': return 'bg-gray-500/20 text-gray-400';
-      case '5 - Optional': return 'bg-gray-600/20 text-gray-500';
-      default: return 'bg-blue-500/20 text-blue-400';
-    }
-  };
-
-  const getPriorityDot = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'bg-red-500';
-      case '2 - High': return 'bg-orange-500';
-      case '3 - Normal': return 'bg-blue-500';
-      case '4 - Low': return 'bg-gray-500';
-      case '5 - Optional': return 'bg-gray-600';
-      default: return 'bg-blue-500';
-    }
-  };
-
-  const getDueDateColor = (dueDate: string | null) => {
-    if (!dueDate) return 'text-[var(--muted)]';
-    const due = startOfDay(new Date(dueDate));
-    const today = startOfDay(new Date());
-    const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysUntil < 0) return 'text-red-400 font-medium';
-    if (daysUntil === 0) return 'text-orange-400 font-medium';
-    if (daysUntil <= 2) return 'text-yellow-400';
-    if (daysUntil <= 7) return 'text-blue-400';
-    return 'text-[var(--muted)]';
   };
 
   // Render a draggable task card (for unscheduled list)
@@ -416,7 +379,7 @@ export default function PlanPage() {
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm truncate">{task.taskName}</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`w-2 h-2 rounded-full ${getPriorityDot(task.taskPriority)}`}></span>
+            <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
             {task.domain?.icon && <span className="text-xs">{task.domain.icon}</span>}
             {task.dueDate && (
               <span className={`text-xs ${getDueDateColor(task.dueDate)}`}>
@@ -454,7 +417,7 @@ export default function PlanPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-white font-medium">{task.taskName}</h3>
-            <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(task.taskPriority)}`}>
+            <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
               {task.taskPriority.split(' - ')[1]}
             </span>
           </div>
@@ -510,7 +473,7 @@ export default function PlanPage() {
         <div className="flex-1 min-w-0">
           <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
           <div className="flex items-center gap-1 mt-0.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDot(task.taskPriority)}`}></span>
+            <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
             {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
           </div>
         </div>
@@ -635,7 +598,7 @@ export default function PlanPage() {
                           Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
                         </span>
                       )}
-                      <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(task.taskPriority)}`}>
+                      <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
                         {task.taskPriority.split(' - ')[1]}
                       </span>
                     </div>
@@ -886,7 +849,7 @@ export default function PlanPage() {
                               onDragEnd={handleDragEnd}
                               onClick={() => handleEditTask(task)}
                               className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
-                                getPriorityDot(task.taskPriority).replace('bg-', 'bg-').replace('-500', '-500/20')
+                                getPriorityDotColor(task.taskPriority).replace('bg-', 'bg-').replace('-500', '-500/20')
                               } text-white hover:opacity-80 ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
                             >
                               {task.taskName}

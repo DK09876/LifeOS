@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Task, Domain, FilterPreset, Habit, checkNeedsReset, calculateTaskScore, isHabitDueToday } from './db';
+import { db, Task, Domain, FilterPreset, Habit, checkNeedsReset, calculateTaskScore, isHabitDueToday, pruneCompletionDates } from './db';
 
 // Core recurrence check logic - resets recurring tasks that are due
 async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
@@ -426,8 +426,8 @@ export async function markHabitDone(habitId: string): Promise<void> {
   const now = new Date().toISOString();
   const todayStr = now.slice(0, 10); // YYYY-MM-DD
 
-  // Add today to completionDates if not already there
-  const completionDates = habit.completionDates || [];
+  // Add today to completionDates if not already there, and prune old entries
+  let completionDates = pruneCompletionDates(habit.completionDates || []);
   if (!completionDates.includes(todayStr)) {
     completionDates.push(todayStr);
   }

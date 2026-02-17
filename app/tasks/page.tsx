@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { format, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
+import { getStatusColor, getTaskPriorityColor, getDueDateColor } from '@/lib/colors';
 
 const TASK_FILTERS: FilterDef[] = [
   {
@@ -163,42 +164,6 @@ export default function TasksPage() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Done': return 'bg-green-500/20 text-green-400';
-      case 'Blocked': return 'bg-gray-500/20 text-gray-400';
-      case 'Needs Details': return 'bg-yellow-500/20 text-yellow-400';
-      case 'Backlog': return 'bg-blue-500/20 text-blue-400';
-      case 'Planned': return 'bg-purple-500/20 text-purple-400';
-      case 'Archived': return 'bg-gray-600/20 text-gray-500';
-      default: return 'bg-blue-500/20 text-blue-400';
-    }
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'bg-red-500/20 text-red-400';
-      case '2 - High': return 'bg-orange-500/20 text-orange-400';
-      case '3 - Normal': return 'bg-blue-500/20 text-blue-400';
-      case '4 - Low': return 'bg-gray-500/20 text-gray-400';
-      case '5 - Optional': return 'bg-gray-600/20 text-gray-500';
-      default: return 'bg-blue-500/20 text-blue-400';
-    }
-  };
-
-  const getDueDateColor = (dueDate: string | null) => {
-    if (!dueDate) return 'text-[var(--muted)]';
-    const due = startOfDay(new Date(dueDate));
-    const today = startOfDay(new Date());
-    const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysUntil < 0) return 'text-red-400 font-medium'; // Overdue
-    if (daysUntil === 0) return 'text-orange-400 font-medium'; // Today
-    if (daysUntil <= 2) return 'text-yellow-400'; // Very soon
-    if (daysUntil <= 7) return 'text-blue-400'; // This week
-    return 'text-[var(--muted)]'; // Later
-  };
-
   const show = (key: string) => visibleColumns.has(key);
   const colCount = Array.from(visibleColumns).length + 1; // +1 for actions
 
@@ -304,7 +269,7 @@ export default function TasksPage() {
                   )}
                   {show('taskPriority') && (
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(task.taskPriority)}`}>
+                      <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
                         {task.taskPriority.split(' - ')[1]}
                       </span>
                     </td>

@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
+import ConfirmDialog from './ConfirmDialog';
 import { initGoogleAuth, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
 import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
-import { seedDatabase } from '@/lib/seed';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
 
@@ -23,11 +23,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [initialized, setInitialized] = useState(false);
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showPullConfirm, setShowPullConfirm] = useState(false);
 
   useEffect(() => {
     async function init() {
       try {
-        // seedDatabase() disabled — users start with a clean slate
         await initGoogleAuth();
         const storedUser = getStoredAuth();
         setUser(storedUser);
@@ -62,20 +62,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     }
   };
 
-  const handlePull = async () => {
-    // Check for unsaved changes before pulling
-    try {
-      const unsaved = await hasUnsavedChanges();
-      if (unsaved) {
-        const confirmed = window.confirm(
-          'Pull will replace all local data. You have changes that haven\'t been pushed. Continue?'
-        );
-        if (!confirmed) return;
-      }
-    } catch {
-      // If check fails, proceed anyway
-    }
-
+  const executePull = useCallback(async () => {
     setPulling(true);
     setStatusMessage(null);
     try {
@@ -90,6 +77,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
     } finally {
       setPulling(false);
     }
+  }, []);
+
+  const handlePull = async () => {
+    try {
+      const unsaved = await hasUnsavedChanges();
+      if (unsaved) {
+        setShowPullConfirm(true);
+        return;
+      }
+    } catch {
+      // If check fails, proceed anyway
+    }
+    executePull();
   };
 
   const handleSignIn = async () => {
@@ -189,6 +189,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
           {children}
         </main>
       </div>
+
+      <ConfirmDialog
+        isOpen={showPullConfirm}
+        onClose={() => setShowPullConfirm(false)}
+        onConfirm={executePull}
+        title="Pull from Google Drive"
+        message="Pull will replace all local data. You have changes that haven't been pushed. Continue?"
+        confirmLabel="Pull"
+        variant="warning"
+      />
     </div>
   );
 }

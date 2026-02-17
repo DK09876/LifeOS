@@ -7,6 +7,7 @@ import DomainForm, { DomainFormData } from '@/components/DomainForm';
 import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
 import { useTasks, useDomains, createDomain, updateDomainData, deleteDomain } from '@/lib/hooks';
 import { Domain } from '@/types';
+import { getDomainPriorityColor } from '@/lib/colors';
 
 const DOMAIN_COLUMNS: ColumnDef[] = [
   { key: 'icon', label: 'Icon', defaultVisible: true },
@@ -122,15 +123,6 @@ export default function DomainsPage() {
     }
   }
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case '1 - Critical': return 'bg-red-500/20 text-red-400';
-      case '2 - Important': return 'bg-orange-500/20 text-orange-400';
-      case '3 - Maintenance': return 'bg-blue-500/20 text-blue-400';
-      default: return 'bg-blue-500/20 text-blue-400';
-    }
-  };
-
   const show = (key: string) => visibleColumns.has(key);
   const colCount = Array.from(visibleColumns).length + 1; // +1 for actions
 
@@ -185,7 +177,7 @@ export default function DomainsPage() {
         {filteredDomains.map(domain => (
           <div
             key={domain.id}
-            className="bg-[var(--card-bg)] rounded-lg p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
+            className="group bg-[var(--card-bg)] rounded-lg p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
             onClick={() => handleEditDomain(domain)}
           >
             <div className="flex items-start justify-between mb-3">
@@ -193,7 +185,7 @@ export default function DomainsPage() {
                 <span className="text-2xl">{domain.icon || '📁'}</span>
                 <div>
                   <h3 className="text-white font-medium">{domain.name}</h3>
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs mt-1 ${getPriorityColor(domain.priority)}`}>
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs mt-1 ${getDomainPriorityColor(domain.priority)}`}>
                     {domain.priority.split(' - ')[1]}
                   </span>
                 </div>
@@ -272,7 +264,7 @@ export default function DomainsPage() {
                   )}
                   {show('priority') && (
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${getPriorityColor(domain.priority)}`}>
+                      <span className={`px-2 py-0.5 rounded text-xs ${getDomainPriorityColor(domain.priority)}`}>
                         {domain.priority.split(' - ')[1]}
                       </span>
                     </td>
