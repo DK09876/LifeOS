@@ -2,9 +2,40 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Task, Domain, FilterPreset, checkNeedsReset, calculateTaskScore } from './db';
+import { db, Task, Domain, FilterPreset, Habit, checkNeedsReset, calculateTaskScore, isHabitDueToday } from './db';
 
-// Hook to run daily auto-reset check for recurring tasks
+// Core recurrence check logic - resets recurring tasks that are due
+async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
+  const allTasks = await db.tasks.toArray();
+  let tasksReset = 0;
+
+  for (const task of allTasks) {
+    if (task.deletedAt) continue;
+    if (checkNeedsReset(task)) {
+      const newStatus = task.plannedDate ? 'Planned' : 'Backlog';
+      await db.tasks.update(task.id, {
+        status: newStatus,
+        lastCompleted: null,
+        doneDate: null,
+        updatedAt: new Date().toISOString(),
+      });
+      tasksReset++;
+    }
+  }
+
+  // Update the timestamp to mark when this ran
+  const today = new Date().toISOString().slice(0, 10);
+  await db.syncMetadata.put({
+    id: 'recurrenceCheck',
+    lastSyncedAt: today,
+    googleDriveFileId: null,
+    userEmail: null,
+  });
+
+  return { tasksReset };
+}
+
+// Hook to run daily auto-reset check for recurring tasks (runs once on app load)
 export function useRecurrenceCheck() {
   useEffect(() => {
     (async () => {
@@ -12,34 +43,31 @@ export function useRecurrenceCheck() {
       const meta = await db.syncMetadata.get('recurrenceCheck');
       if (meta?.lastSyncedAt === today) return;
 
-      const allTasks = await db.tasks.toArray();
-      for (const task of allTasks) {
-        if (checkNeedsReset(task)) {
-          const newStatus = task.plannedDate ? 'Planned' : 'Backlog';
-          await db.tasks.update(task.id, {
-            status: newStatus,
-            lastCompleted: null,
-            doneDate: null,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      }
-
-      await db.syncMetadata.put({
-        id: 'recurrenceCheck',
-        lastSyncedAt: today,
-        googleDriveFileId: null,
-        userEmail: null,
-      });
+      await runRecurrenceCheckCore();
     })();
   }, []);
+}
+
+// Manual trigger for recurrence check - always runs regardless of last run time
+export async function runRecurrenceCheck(): Promise<{ tasksReset: number; lastRun: string }> {
+  const result = await runRecurrenceCheckCore();
+  return {
+    ...result,
+    lastRun: new Date().toISOString(),
+  };
+}
+
+// Get the last time recurrence check ran
+export async function getRecurrenceCheckStatus(): Promise<{ lastRun: string | null }> {
+  const meta = await db.syncMetadata.get('recurrenceCheck');
+  return { lastRun: meta?.lastSyncedAt || null };
 }
 
 // Hook to get all tasks with computed fields
 export function useTasks() {
   const tasks = useLiveQuery(async () => {
-    const allTasks = await db.tasks.toArray();
-    const domains = await db.domains.toArray();
+    const allTasks = (await db.tasks.toArray()).filter(t => !t.deletedAt);
+    const domains = (await db.domains.toArray()).filter(d => !d.deletedAt);
     const domainMap = new Map(domains.map(d => [d.id, d]));
 
     // Add computed fields
@@ -59,8 +87,8 @@ export function useTasks() {
 // Hook to get all domains with task counts
 export function useDomains() {
   const domains = useLiveQuery(async () => {
-    const allDomains = await db.domains.toArray();
-    const allTasks = await db.tasks.toArray();
+    const allDomains = (await db.domains.toArray()).filter(d => !d.deletedAt);
+    const allTasks = (await db.tasks.toArray()).filter(t => !t.deletedAt);
 
     // Add task counts
     return allDomains.map(domain => ({
@@ -101,7 +129,8 @@ export function useDomain(id: string) {
 // Hook to get all filter presets
 export function useFilterPresets() {
   const presets = useLiveQuery(async () => {
-    return db.filterPresets.orderBy('order').toArray();
+    const all = await db.filterPresets.orderBy('order').toArray();
+    return all.filter(p => !p.deletedAt);
   }, []);
 
   return presets || [];
@@ -111,7 +140,7 @@ export function useFilterPresets() {
 export function useVisibleFilterPresets() {
   const presets = useLiveQuery(async () => {
     const all = await db.filterPresets.orderBy('order').toArray();
-    return all.filter(p => p.visible);
+    return all.filter(p => p.visible && !p.deletedAt);
   }, []);
 
   return presets || [];
@@ -127,8 +156,8 @@ export async function createFilterPreset(presetData: {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
-  // Get max order
-  const allPresets = await db.filterPresets.toArray();
+  // Get max order (exclude tombstones)
+  const allPresets = (await db.filterPresets.toArray()).filter(p => !p.deletedAt);
   const maxOrder = allPresets.length > 0 ? Math.max(...allPresets.map(p => p.order)) : -1;
 
   const preset: FilterPreset = {
@@ -139,6 +168,7 @@ export async function createFilterPreset(presetData: {
     visible: presetData.visible ?? true,
     isDefault: false,
     order: maxOrder + 1,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -155,7 +185,8 @@ export async function updateFilterPreset(presetId: string, updates: Partial<Filt
 }
 
 export async function deleteFilterPreset(presetId: string): Promise<void> {
-  await db.filterPresets.delete(presetId);
+  const now = new Date().toISOString();
+  await db.filterPresets.update(presetId, { deletedAt: now, updatedAt: now });
 }
 
 export async function toggleFilterPresetVisibility(presetId: string): Promise<void> {
@@ -260,6 +291,7 @@ export async function createTask(taskData: {
     actionPoints: taskData.actionPoints || null,
     notes: taskData.notes || '',
     domainId: taskData.domainId || null,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -303,7 +335,8 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
-  await db.tasks.delete(taskId);
+  const now = new Date().toISOString();
+  await db.tasks.update(taskId, { deletedAt: now, updatedAt: now });
 }
 
 // Domain actions
@@ -320,6 +353,7 @@ export async function createDomain(domainData: {
     name: domainData.name,
     icon: domainData.icon ?? null,
     priority: domainData.priority || '3 - Maintenance',
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -348,15 +382,149 @@ export async function updateDomainData(domainId: string, updates: Partial<Domain
 }
 
 export async function deleteDomain(domainId: string): Promise<void> {
-  // Clear domain reference from tasks
-  const tasks = await db.tasks.where('domainId').equals(domainId).toArray();
+  const now = new Date().toISOString();
+  // Clear domain reference from non-deleted tasks
+  const tasks = (await db.tasks.where('domainId').equals(domainId).toArray()).filter(t => !t.deletedAt);
   for (const task of tasks) {
     await db.tasks.update(task.id, {
       domainId: null,
       taskScore: calculateTaskScore(task, undefined),
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     });
   }
 
-  await db.domains.delete(domainId);
+  await db.domains.update(domainId, { deletedAt: now, updatedAt: now });
+}
+
+// Habit hooks and actions
+
+// Hook to get all habits
+export function useHabits() {
+  const habits = useLiveQuery(async () => {
+    const all = await db.habits.orderBy('habitName').toArray();
+    return all.filter(h => !h.deletedAt);
+  }, []);
+
+  return habits || [];
+}
+
+// Hook to get habits that are due today (active and need completion)
+export function useHabitsDueToday() {
+  const habits = useLiveQuery(async () => {
+    const allHabits = (await db.habits.toArray()).filter(h => !h.deletedAt);
+    return allHabits.filter(habit => isHabitDueToday(habit));
+  }, []);
+
+  return habits || [];
+}
+
+// Mark a habit as done (sets lastCompleted to now and adds to completionDates)
+export async function markHabitDone(habitId: string): Promise<void> {
+  const habit = await db.habits.get(habitId);
+  if (!habit) return;
+
+  const now = new Date().toISOString();
+  const todayStr = now.slice(0, 10); // YYYY-MM-DD
+
+  // Add today to completionDates if not already there
+  const completionDates = habit.completionDates || [];
+  if (!completionDates.includes(todayStr)) {
+    completionDates.push(todayStr);
+  }
+
+  await db.habits.update(habitId, {
+    lastCompleted: now,
+    completionDates,
+    updatedAt: now,
+  });
+}
+
+// Undo habit completion for today (removes today from completionDates)
+export async function undoHabitDone(habitId: string): Promise<void> {
+  const habit = await db.habits.get(habitId);
+  if (!habit) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+  // Remove today from completionDates
+  const completionDates = (habit.completionDates || []).filter(d => d !== todayStr);
+
+  // Find the most recent completion that's not today for lastCompleted
+  const sortedDates = completionDates.sort().reverse();
+  const lastCompleted = sortedDates.length > 0 ? new Date(sortedDates[0]).toISOString() : null;
+
+  await db.habits.update(habitId, {
+    lastCompleted,
+    completionDates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Hook to get habits completed today (for showing in Today view's completed section)
+export function useHabitsCompletedToday() {
+  const habits = useLiveQuery(async () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const allHabits = (await db.habits.toArray()).filter(h => !h.deletedAt);
+    return allHabits.filter(habit =>
+      habit.isActive && (habit.completionDates || []).includes(todayStr)
+    );
+  }, []);
+
+  return habits || [];
+}
+
+// Create a new habit
+export async function createHabit(habitData: {
+  habitName: string;
+  recurrence?: Habit['recurrence'];
+  targetPerWeek?: number | null;
+  notes?: string;
+  icon?: string | null;
+  isActive?: boolean;
+}): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  const habit: Habit = {
+    id,
+    habitName: habitData.habitName,
+    recurrence: habitData.recurrence || 'Daily',
+    lastCompleted: null,
+    targetPerWeek: habitData.targetPerWeek ?? null,
+    completionDates: [],
+    notes: habitData.notes || '',
+    icon: habitData.icon ?? null,
+    isActive: habitData.isActive ?? true,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.habits.add(habit);
+  return id;
+}
+
+// Update an existing habit
+export async function updateHabitData(habitId: string, updates: Partial<Habit>): Promise<void> {
+  await db.habits.update(habitId, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Delete a habit
+export async function deleteHabit(habitId: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.habits.update(habitId, { deletedAt: now, updatedAt: now });
+}
+
+// Toggle habit active/paused state
+export async function toggleHabitActive(habitId: string): Promise<void> {
+  const habit = await db.habits.get(habitId);
+  if (habit) {
+    await db.habits.update(habitId, {
+      isActive: !habit.isActive,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 }

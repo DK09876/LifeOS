@@ -5,7 +5,7 @@ import { format, startOfDay } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
-import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters } from '@/components/ViewControls';
+import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 
@@ -77,7 +77,7 @@ export default function TasksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleColumns, setVisibleColumns] = usePersistedSet('tasks-visible-columns', DEFAULT_VISIBLE);
   const [sortLevels, setSortLevels] = usePersistedSortLevels('tasks-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: 'all', priority: 'all', domain: 'all', recurrence: 'all' });
+  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: [], priority: [], domain: [], recurrence: [] });
 
   // Build filters with dynamic domain options
   const taskFilters = useMemo<FilterDef[]>(() => [
@@ -126,21 +126,11 @@ export default function TasksPage() {
       );
     }
 
-    if (filterValues.status !== 'all') {
-      result = result.filter(t => t.status === filterValues.status);
-    }
-
-    if (filterValues.priority !== 'all') {
-      result = result.filter(t => t.taskPriority === filterValues.priority);
-    }
-
-    if (filterValues.domain !== 'all') {
-      result = result.filter(t => t.domainId === filterValues.domain);
-    }
-
-    if (filterValues.recurrence !== 'all') {
-      result = result.filter(t => t.recurrence === filterValues.recurrence);
-    }
+    // Apply multi-select filters
+    result = result.filter(t => matchesFilter(filterValues.status || [], t.status));
+    result = result.filter(t => matchesFilter(filterValues.priority || [], t.taskPriority));
+    result = result.filter(t => matchesFilter(filterValues.domain || [], t.domainId || ''));
+    result = result.filter(t => matchesFilter(filterValues.recurrence || [], t.recurrence));
 
     return multiLevelSort(result, sortLevels, comparators);
   }, [tasks, searchQuery, filterValues, sortLevels, comparators]);

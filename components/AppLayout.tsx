@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
 import { initGoogleAuth, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
-import { syncWithGoogleDrive, getSyncStatus } from '@/lib/sync';
+import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { seedDatabase } from '@/lib/seed';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
@@ -16,8 +16,9 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   useRecurrenceCheck();
   const [user, setUser] = useState<GoogleUser | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
@@ -32,9 +33,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
         setUser(storedUser);
         const status = await getSyncStatus();
         setLastSynced(status.lastSyncedAt);
-        if (storedUser) {
-          handleSync();
-        }
         // Fetch daily quote
         const liveQuote = await fetchDailyQuote();
         setQuote(liveQuote);
@@ -47,20 +45,50 @@ export default function AppLayout({ children }: AppLayoutProps) {
     init();
   }, []);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setSyncMessage(null);
+  const handlePush = async () => {
+    setPushing(true);
+    setStatusMessage(null);
     try {
-      const result = await syncWithGoogleDrive();
-      setSyncMessage(result.message);
+      const result = await pushToGoogleDrive();
+      setStatusMessage(result.message);
       if (result.lastSyncedAt) {
         setLastSynced(result.lastSyncedAt);
       }
-      setTimeout(() => setSyncMessage(null), 3000);
+      setTimeout(() => setStatusMessage(null), 3000);
     } catch {
-      setSyncMessage('Sync failed');
+      setStatusMessage('Push failed');
     } finally {
-      setSyncing(false);
+      setPushing(false);
+    }
+  };
+
+  const handlePull = async () => {
+    // Check for unsaved changes before pulling
+    try {
+      const unsaved = await hasUnsavedChanges();
+      if (unsaved) {
+        const confirmed = window.confirm(
+          'Pull will replace all local data. You have changes that haven\'t been pushed. Continue?'
+        );
+        if (!confirmed) return;
+      }
+    } catch {
+      // If check fails, proceed anyway
+    }
+
+    setPulling(true);
+    setStatusMessage(null);
+    try {
+      const result = await pullFromGoogleDrive();
+      setStatusMessage(result.message);
+      if (result.lastSyncedAt) {
+        setLastSynced(result.lastSyncedAt);
+      }
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch {
+      setStatusMessage('Pull failed');
+    } finally {
+      setPulling(false);
     }
   };
 
@@ -68,10 +96,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
     try {
       const googleUser = await signInWithGoogle();
       setUser(googleUser);
-      handleSync();
     } catch (error) {
       console.error('Sign in failed:', error);
-      setSyncMessage('Sign in failed');
+      setStatusMessage('Sign in failed');
     }
   };
 
@@ -91,6 +118,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </div>
     );
   }
+
+  const isBusy = pushing || pulling;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -120,11 +149,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 </span>
               )}
               <button
-                onClick={handleSync}
-                disabled={syncing}
+                onClick={handlePull}
+                disabled={isBusy}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-sm"
+              >
+                {pulling ? 'Pulling...' : 'Pull'}
+              </button>
+              <button
+                onClick={handlePush}
+                disabled={isBusy}
                 className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-sm"
               >
-                {syncing ? 'Syncing...' : 'Sync'}
+                {pushing ? 'Pushing...' : 'Push'}
               </button>
               <button
                 onClick={handleSignOut}
@@ -135,16 +171,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </>
           ) : (
             <button
-              disabled
-              className="px-4 py-1.5 bg-blue-600/50 text-white/50 rounded text-sm cursor-not-allowed"
-              title="Coming soon"
+              onClick={handleSignIn}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
             >
               Sign in with Google
             </button>
           )}
-          {syncMessage && (
-            <span className={`text-sm ${syncMessage.includes('failed') ? 'text-red-400' : 'text-green-400'}`}>
-              {syncMessage}
+          {statusMessage && (
+            <span className={`text-sm ${statusMessage.includes('failed') || statusMessage.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>
+              {statusMessage}
             </span>
           )}
         </header>

@@ -76,6 +76,7 @@ export async function seedDatabase(): Promise<boolean> {
       name: nd.name,
       icon: nd.icon,
       priority,
+      deletedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -101,6 +102,7 @@ export async function seedDatabase(): Promise<boolean> {
       actionPoints: nt.actionPoints?.toString() || null,
       notes: nt.notes || '',
       domainId: nt.domainId,
+      deletedAt: null,
       createdAt: now,
       updatedAt: now,
     };

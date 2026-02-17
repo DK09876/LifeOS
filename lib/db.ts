@@ -15,6 +15,7 @@ export interface Task {
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -24,6 +25,7 @@ export interface Domain {
   name: string;
   icon: string | null;
   priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,9 +50,49 @@ export interface FilterPreset {
   visible: boolean;
   isDefault: boolean;
   order: number;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Habit {
+  id: string;
+  habitName: string;
+  recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  targetPerWeek: number | null;
+  completionDates: string[];
+  notes: string;
+  icon: string | null;
+  isActive: boolean;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Sync payload types
+export interface SyncPayload {
+  version: 2;
+  tasks: Task[];
+  domains: Domain[];
+  habits: Habit[];
+  filterPresets: FilterPreset[];
+  preferences: Record<string, string>;
+  exportedAt: string;
+}
+
+export const SYNCABLE_LOCALSTORAGE_KEYS = [
+  'hideGetStarted',
+  'domains-view-mode',
+  'tasks-visible-columns',
+  'tasks-sort-levels',
+  'tasks-filters',
+  'domains-visible-columns',
+  'domains-sort-levels',
+  'domains-filters',
+  'plan-sort-levels',
+  'plan-filters',
+];
 
 // Dexie database class
 class LifeOSDatabase extends Dexie {
@@ -58,6 +100,7 @@ class LifeOSDatabase extends Dexie {
   domains!: Table<Domain, string>;
   syncMetadata!: Table<SyncMetadata, string>;
   filterPresets!: Table<FilterPreset, string>;
+  habits!: Table<Habit, string>;
 
   constructor() {
     super('LifeOSDatabase');
@@ -126,6 +169,7 @@ class LifeOSDatabase extends Dexie {
           visible: true,
           isDefault: true,
           order: 0,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -137,6 +181,7 @@ class LifeOSDatabase extends Dexie {
           visible: true,
           isDefault: true,
           order: 1,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -148,6 +193,7 @@ class LifeOSDatabase extends Dexie {
           visible: true,
           isDefault: true,
           order: 2,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -159,6 +205,7 @@ class LifeOSDatabase extends Dexie {
           visible: true,
           isDefault: true,
           order: 3,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         },
@@ -170,11 +217,61 @@ class LifeOSDatabase extends Dexie {
           visible: true,
           isDefault: true,
           order: 4,
+          deletedAt: null,
           createdAt: now,
           updatedAt: now,
         },
       ];
       await tx.table('filterPresets').bulkAdd(defaultPresets);
+    });
+
+    // Version 6: Add habits table
+    this.version(6).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order',
+      habits: 'id, habitName, recurrence, isActive, updatedAt',
+    });
+
+    // Version 7: Add targetPerWeek and completionDates to habits
+    this.version(7).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
+      domains: 'id, name, priority, updatedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order',
+      habits: 'id, habitName, recurrence, isActive, updatedAt',
+    }).upgrade(tx => {
+      return tx.table('habits').toCollection().modify(habit => {
+        if (habit.targetPerWeek === undefined) {
+          habit.targetPerWeek = null;
+        }
+        if (habit.completionDates === undefined) {
+          habit.completionDates = [];
+        }
+      });
+    });
+
+    // Version 8: Add deletedAt for tombstone-based soft deletes
+    this.version(8).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
+      domains: 'id, name, priority, updatedAt, deletedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order, deletedAt',
+      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      await tx.table('tasks').toCollection().modify(task => {
+        if (task.deletedAt === undefined) task.deletedAt = null;
+      });
+      await tx.table('domains').toCollection().modify(domain => {
+        if (domain.deletedAt === undefined) domain.deletedAt = null;
+      });
+      await tx.table('filterPresets').toCollection().modify(preset => {
+        if (preset.deletedAt === undefined) preset.deletedAt = null;
+      });
+      await tx.table('habits').toCollection().modify(habit => {
+        if (habit.deletedAt === undefined) habit.deletedAt = null;
+      });
     });
   }
 }
@@ -185,19 +282,21 @@ export const db = new LifeOSDatabase();
 // Helper functions for common operations
 
 export async function getAllTasks(): Promise<Task[]> {
-  return db.tasks.orderBy('taskScore').reverse().toArray();
+  const all = await db.tasks.orderBy('taskScore').reverse().toArray();
+  return all.filter(t => !t.deletedAt);
 }
 
 export async function getTaskById(id: string): Promise<Task | undefined> {
   return db.tasks.get(id);
 }
 
-export async function createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+export async function createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await db.tasks.add({
     ...task,
     id,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -212,24 +311,27 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<vo
 }
 
 export async function deleteTask(id: string): Promise<void> {
-  await db.tasks.delete(id);
+  const now = new Date().toISOString();
+  await db.tasks.update(id, { deletedAt: now, updatedAt: now });
 }
 
 export async function getAllDomains(): Promise<Domain[]> {
-  return db.domains.orderBy('priority').toArray();
+  const all = await db.domains.orderBy('priority').toArray();
+  return all.filter(d => !d.deletedAt);
 }
 
 export async function getDomainById(id: string): Promise<Domain | undefined> {
   return db.domains.get(id);
 }
 
-export async function createDomain(domain: Omit<Domain, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+export async function createDomain(domain: Omit<Domain, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await db.domains.add({
     ...domain,
     icon: domain.icon ?? null,
     id,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -244,7 +346,8 @@ export async function updateDomain(id: string, updates: Partial<Domain>): Promis
 }
 
 export async function deleteDomain(id: string): Promise<void> {
-  await db.domains.delete(id);
+  const now = new Date().toISOString();
+  await db.domains.update(id, { deletedAt: now, updatedAt: now });
 }
 
 // Get sync metadata
@@ -348,69 +451,144 @@ export function checkNeedsReset(task: Task): boolean {
   }
 }
 
-// Export all data for sync
-export async function exportAllData(): Promise<{ tasks: Task[]; domains: Domain[]; exportedAt: string }> {
-  const [tasks, domains] = await Promise.all([
+// Export all data for sync (includes tombstones for deletion propagation)
+export async function exportAllData(): Promise<SyncPayload> {
+  const [tasks, domains, habits, filterPresets] = await Promise.all([
     db.tasks.toArray(),
     db.domains.toArray(),
+    db.habits.toArray(),
+    db.filterPresets.toArray(),
   ]);
+
+  // Collect syncable localStorage preferences
+  const preferences: Record<string, string> = {};
+  for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value !== null) {
+      preferences[key] = value;
+    }
+  }
+
   return {
+    version: 2,
     tasks,
     domains,
+    habits,
+    filterPresets,
+    preferences,
     exportedAt: new Date().toISOString(),
   };
 }
 
-// Import data from sync (merges with existing)
-export async function importData(data: { tasks: Task[]; domains: Domain[]; exportedAt: string }): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains], async () => {
-    // Import domains first (tasks reference them)
-    for (const domain of data.domains) {
-      const existing = await db.domains.get(domain.id);
-      if (!existing || new Date(domain.updatedAt) > new Date(existing.updatedAt)) {
-        await db.domains.put(domain);
-      }
+// Replace all local data with remote data (full replace, not merge)
+export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; exportedAt: string }): Promise<void> {
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.filterPresets], async () => {
+    // Clear all tables
+    await db.tasks.clear();
+    await db.domains.clear();
+    await db.habits.clear();
+    await db.filterPresets.clear();
+
+    // Bulk insert all remote data (with deletedAt fallback for backward compat)
+    await db.domains.bulkAdd(data.domains.map(d => ({ ...d, deletedAt: d.deletedAt ?? null })));
+    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null })));
+
+    if (data.habits) {
+      await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
     }
 
-    // Import tasks
-    for (const task of data.tasks) {
-      const existing = await db.tasks.get(task.id);
-      if (!existing || new Date(task.updatedAt) > new Date(existing.updatedAt)) {
-        await db.tasks.put(task);
+    if ('filterPresets' in data && data.filterPresets) {
+      await db.filterPresets.bulkAdd(
+        (data as SyncPayload).filterPresets.map(p => ({ ...p, deletedAt: p.deletedAt ?? null }))
+      );
+    }
+  });
+
+  // Replace localStorage preferences from payload
+  if ('preferences' in data && data.preferences) {
+    for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
+      if (key in data.preferences) {
+        localStorage.setItem(key, data.preferences[key]);
+      } else {
+        localStorage.removeItem(key);
+      }
+    }
+    // Dispatch storage event so Sidebar/ViewControls listeners update
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
+// Check if there are unsaved local changes since last sync
+export async function hasUnsavedChanges(): Promise<boolean> {
+  const syncMeta = await getSyncMetadata();
+  if (!syncMeta?.lastSyncedAt) return true; // Never synced = has changes
+
+  const lastSynced = new Date(syncMeta.lastSyncedAt).getTime();
+
+  const [tasks, domains, habits, filterPresets] = await Promise.all([
+    db.tasks.toArray(),
+    db.domains.toArray(),
+    db.habits.toArray(),
+    db.filterPresets.toArray(),
+  ]);
+
+  const allRecords = [...tasks, ...domains, ...habits, ...filterPresets];
+  return allRecords.some(r => new Date(r.updatedAt).getTime() > lastSynced);
+}
+
+// Hard-delete tombstones older than retention period
+export async function compactTombstones(retentionDays: number = 30): Promise<number> {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  let purged = 0;
+
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.filterPresets], async () => {
+    const tables = [db.tasks, db.domains, db.habits, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
+    for (const table of tables) {
+      const tombstones = await table.filter(r => !!r.deletedAt && r.deletedAt < cutoff).toArray();
+      for (const record of tombstones) {
+        await table.delete(record.id);
+        purged++;
       }
     }
   });
+
+  return purged;
 }
 
 // Clear all data (for logout/reset)
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata], async () => {
+  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.filterPresets], async () => {
     await db.tasks.clear();
     await db.domains.clear();
     await db.syncMetadata.clear();
+    await db.habits.clear();
+    await db.filterPresets.clear();
   });
 }
 
 // Filter Preset CRUD operations
 
 export async function getAllFilterPresets(): Promise<FilterPreset[]> {
-  return db.filterPresets.orderBy('order').toArray();
+  const all = await db.filterPresets.orderBy('order').toArray();
+  return all.filter(p => !p.deletedAt);
 }
 
 export async function getVisibleFilterPresets(): Promise<FilterPreset[]> {
-  return db.filterPresets.where('order').above(-1).filter(p => p.visible).sortBy('order');
+  const all = await db.filterPresets.orderBy('order').toArray();
+  return all.filter(p => p.visible && !p.deletedAt);
 }
 
 export async function getFilterPresetById(id: string): Promise<FilterPreset | undefined> {
   return db.filterPresets.get(id);
 }
 
-export async function createFilterPreset(preset: Omit<FilterPreset, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+export async function createFilterPreset(preset: Omit<FilterPreset, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   await db.filterPresets.add({
     ...preset,
     id,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -425,7 +603,8 @@ export async function updateFilterPreset(id: string, updates: Partial<FilterPres
 }
 
 export async function deleteFilterPreset(id: string): Promise<void> {
-  await db.filterPresets.delete(id);
+  const now = new Date().toISOString();
+  await db.filterPresets.update(id, { deletedAt: now, updatedAt: now });
 }
 
 export async function reorderFilterPresets(orderedIds: string[]): Promise<void> {
@@ -434,4 +613,106 @@ export async function reorderFilterPresets(orderedIds: string[]): Promise<void> 
       await db.filterPresets.update(orderedIds[i], { order: i, updatedAt: new Date().toISOString() });
     }
   });
+}
+
+// Habit functions
+
+// Get start of current week (Monday) as YYYY-MM-DD string
+export function getStartOfWeek(date: Date = new Date()): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  // Adjust to Monday (day 0 = Sunday, so we go back 6 days; day 1 = Monday, go back 0 days, etc.)
+  const diff = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - diff);
+  return d.toISOString().slice(0, 10);
+}
+
+// Count completions within the current week for a habit
+export function getCompletionsThisWeek(habit: Habit): number {
+  const weekStart = getStartOfWeek();
+  return (habit.completionDates || []).filter(dateStr => dateStr >= weekStart).length;
+}
+
+// Check if a habit is due today (similar logic to checkNeedsReset but returns true when due)
+export function isHabitDueToday(habit: Habit): boolean {
+  if (!habit.isActive) {
+    return false;
+  }
+
+  // If targetPerWeek is set, check if weekly goal is met
+  if (habit.targetPerWeek && habit.targetPerWeek > 0) {
+    const completionsThisWeek = getCompletionsThisWeek(habit);
+    return completionsThisWeek < habit.targetPerWeek;
+  }
+
+  // If never completed, it's due
+  if (!habit.lastCompleted) {
+    return true;
+  }
+
+  const lastCompleted = new Date(habit.lastCompleted);
+  const now = new Date();
+
+  switch (habit.recurrence) {
+    case 'Daily':
+      // Due if last completed was not today
+      return lastCompleted.toDateString() !== now.toDateString();
+    case 'Weekly':
+      return now.getTime() - lastCompleted.getTime() >= 7 * 24 * 60 * 60 * 1000;
+    case 'Biweekly':
+      return now.getTime() - lastCompleted.getTime() >= 14 * 24 * 60 * 60 * 1000;
+    case 'Monthly':
+      return now.getMonth() !== lastCompleted.getMonth() || now.getFullYear() !== lastCompleted.getFullYear();
+    case 'Bimonthly': {
+      const diffMonths = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonths >= 2;
+    }
+    case 'Quarterly': {
+      const lastQ = Math.floor(lastCompleted.getMonth() / 3);
+      const nowQ = Math.floor(now.getMonth() / 3);
+      return nowQ !== lastQ || now.getFullYear() !== lastCompleted.getFullYear();
+    }
+    case 'Half-Yearly': {
+      const diffMonthsHY = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonthsHY >= 6;
+    }
+    case 'Yearly':
+      return now.getFullYear() !== lastCompleted.getFullYear();
+    default:
+      return false;
+  }
+}
+
+export async function getAllHabits(): Promise<Habit[]> {
+  const all = await db.habits.orderBy('habitName').toArray();
+  return all.filter(h => !h.deletedAt);
+}
+
+export async function getHabitById(id: string): Promise<Habit | undefined> {
+  return db.habits.get(id);
+}
+
+export async function createHabit(habit: Omit<Habit, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.habits.add({
+    ...habit,
+    id,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function updateHabit(id: string, updates: Partial<Habit>): Promise<void> {
+  await db.habits.update(id, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteHabit(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.habits.update(id, { deletedAt: now, updatedAt: now });
 }

@@ -2,8 +2,33 @@
 
 All notable changes to LifeOS will be documented in this file.
 
-## [0.3.0] - In Progress
+## [0.3.0] - 2026-02-17
 
+### Habits
+- Add habits system with recurrence tracking (Daily, Weekly, Monthly, etc.)
+- Add habits page with create/edit/delete, completion tracking, and weekly progress
+- Integrate habits into Today view — due habits appear above tasks, completed habits in "Completed Today"
+- Add undo for habit and task completions on Today page
+- Add habits link to sidebar
+
+### Multi-Select Filters
+- Upgrade all filter controls from single-select dropdowns to multi-select checkboxes
+- Filters now support selecting multiple values simultaneously (e.g. multiple priorities)
+- Migrate persisted filter state from string values to arrays with backward compatibility
+
+### Google Drive Sync — Tombstones & Full Data Export
+- Add tombstone-based soft deletes (`deletedAt` field) to tasks, domains, habits, and filter presets
+- Deleting on one device now propagates to other devices via sync
+- Replace two-way "Sync" with explicit "Pull" and "Push" buttons (header + settings)
+- Remove auto-sync on mount and after sign-in — user controls when data moves
+- Export now includes filter presets and localStorage preferences (`version: 2` payload)
+- Pull performs full replace of local data from remote (with unsaved-changes warning)
+- Push compacts tombstones older than 30 days before uploading
+- Add `hasUnsavedChanges()` check before pull to warn about local modifications
+- Add `userinfo.email` and `userinfo.profile` OAuth scopes for user profile display
+- Fix `clearAllData()` to also clear filter presets table
+
+### Other
 - Add drag-and-drop calendar scheduling in planning dashboard
 - Split planning into separate Triage and Planning views with week calendar
 - Add due date column with proximity highlighting (red=overdue, orange=today, yellow=soon)
@@ -15,6 +40,7 @@ All notable changes to LifeOS will be documented in this file.
 - Switch to curated productivity quotes (external APIs unreliable)
 - Add configurable filter presets in Settings (stored in IndexedDB)
 - Filter presets can be shown/hidden, edited, and custom presets can be added
+- Add manual recurrence check trigger in Settings with status display
 
 ## [0.2.0] - 2025-01-28
 

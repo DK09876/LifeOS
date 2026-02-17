@@ -14,6 +14,7 @@ export interface Task {
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Computed fields (not stored, calculated at runtime)
@@ -26,6 +27,7 @@ export interface Domain {
   name: string;
   icon: string | null;
   priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Computed fields
@@ -43,3 +45,20 @@ export type TaskStatus = Task['status'];
 export type TaskPriority = Task['taskPriority'];
 export type DomainPriority = Domain['priority'];
 export type RecurrenceType = Task['recurrence'];
+
+export interface Habit {
+  id: string;
+  habitName: string;
+  recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;  // ISO timestamp of last completion
+  targetPerWeek: number | null;  // If set, habit is due until completed this many times per week
+  completionDates: string[];     // Array of ISO date strings (YYYY-MM-DD) for tracking weekly progress
+  notes: string;
+  icon: string | null;           // Optional emoji for quick identification
+  isActive: boolean;             // Pause without deleting
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type HabitRecurrence = Habit['recurrence'];

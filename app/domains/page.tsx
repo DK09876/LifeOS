@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import DomainForm, { DomainFormData } from '@/components/DomainForm';
-import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters } from '@/components/ViewControls';
+import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
 import { useTasks, useDomains, createDomain, updateDomainData, deleteDomain } from '@/lib/hooks';
 import { Domain } from '@/types';
 
@@ -43,7 +43,7 @@ export default function DomainsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleColumns, setVisibleColumns] = usePersistedSet('domains-visible-columns', DEFAULT_VISIBLE);
   const [sortLevels, setSortLevels] = usePersistedSortLevels('domains-sort-levels', [{ field: 'priority', direction: 'asc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('domains-filters', { priority: 'all' });
+  const [filterValues, setFilterValues] = usePersistedFilters('domains-filters', { priority: [] });
   const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
 
   // Persist view mode
@@ -88,9 +88,8 @@ export default function DomainsPage() {
       result = result.filter(d => d.name.toLowerCase().includes(query));
     }
 
-    if (filterValues.priority !== 'all') {
-      result = result.filter(d => d.priority === filterValues.priority);
-    }
+    // Apply multi-select filter
+    result = result.filter(d => matchesFilter(filterValues.priority || [], d.priority));
 
     return multiLevelSort(result, sortLevels, comparators);
   }, [domains, tasks, searchQuery, filterValues, sortLevels, comparators]);

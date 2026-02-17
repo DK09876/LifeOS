@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility } from '@/lib/hooks';
+import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
+import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
+import { getStoredAuth } from '@/lib/google-auth';
 
 const COLOR_OPTIONS = [
   { value: 'blue', label: 'Blue', bg: 'bg-blue-600', hover: 'hover:bg-blue-700' },
@@ -50,8 +52,32 @@ export default function SettingsPage() {
   const [newPresetDomain, setNewPresetDomain] = useState('all');
   const [newPresetRecurrence, setNewPresetRecurrence] = useState('all');
 
+  // Automations state
+  const [recurrenceLastRun, setRecurrenceLastRun] = useState<string | null>(null);
+  const [recurrenceRunning, setRecurrenceRunning] = useState(false);
+  const [recurrenceResult, setRecurrenceResult] = useState<string | null>(null);
+  const [syncLastRun, setSyncLastRun] = useState<string | null>(null);
+  const [pushRunning, setPushRunning] = useState(false);
+  const [pushResult, setPushResult] = useState<string | null>(null);
+  const [pullRunning, setPullRunning] = useState(false);
+  const [pullResult, setPullResult] = useState<string | null>(null);
+  const [isSignedIn, setIsSignedIn] = useState(false);
+
   useEffect(() => {
     setHideGetStarted(localStorage.getItem('hideGetStarted') === 'true');
+
+    // Load automation statuses
+    async function loadStatuses() {
+      const recurrenceStatus = await getRecurrenceCheckStatus();
+      setRecurrenceLastRun(recurrenceStatus.lastRun);
+
+      const syncStatus = await getSyncStatus();
+      setSyncLastRun(syncStatus.lastSyncedAt);
+
+      const user = getStoredAuth();
+      setIsSignedIn(!!user);
+    }
+    loadStatuses();
   }, []);
 
   const handleToggle = () => {
@@ -59,6 +85,81 @@ export default function SettingsPage() {
     setHideGetStarted(next);
     localStorage.setItem('hideGetStarted', String(next));
     window.dispatchEvent(new Event('storage'));
+  };
+
+  const handleRunRecurrenceCheck = async () => {
+    setRecurrenceRunning(true);
+    setRecurrenceResult(null);
+    try {
+      const result = await runRecurrenceCheck();
+      setRecurrenceLastRun(new Date().toISOString().slice(0, 10));
+      if (result.tasksReset > 0) {
+        setRecurrenceResult(`Reset ${result.tasksReset} recurring task${result.tasksReset > 1 ? 's' : ''}`);
+      } else {
+        setRecurrenceResult('No tasks needed reset');
+      }
+    } catch (err) {
+      setRecurrenceResult('Failed to run check');
+    } finally {
+      setRecurrenceRunning(false);
+      setTimeout(() => setRecurrenceResult(null), 3000);
+    }
+  };
+
+  const handlePushToDrive = async () => {
+    setPushRunning(true);
+    setPushResult(null);
+    try {
+      const result = await pushToGoogleDrive();
+      if (result.lastSyncedAt) {
+        setSyncLastRun(result.lastSyncedAt);
+      }
+      setPushResult(result.message);
+    } catch (err) {
+      setPushResult('Push failed');
+    } finally {
+      setPushRunning(false);
+      setTimeout(() => setPushResult(null), 3000);
+    }
+  };
+
+  const handlePullFromDrive = async () => {
+    // Check for unsaved changes before pulling
+    try {
+      const unsaved = await hasUnsavedChanges();
+      if (unsaved) {
+        const confirmed = window.confirm(
+          'Pull will replace all local data. You have changes that haven\'t been pushed. Continue?'
+        );
+        if (!confirmed) return;
+      }
+    } catch {
+      // If check fails, proceed anyway
+    }
+
+    setPullRunning(true);
+    setPullResult(null);
+    try {
+      const result = await pullFromGoogleDrive();
+      if (result.lastSyncedAt) {
+        setSyncLastRun(result.lastSyncedAt);
+      }
+      setPullResult(result.message);
+    } catch (err) {
+      setPullResult('Pull failed');
+    } finally {
+      setPullRunning(false);
+      setTimeout(() => setPullResult(null), 3000);
+    }
+  };
+
+  const formatLastRun = (dateStr: string | null) => {
+    if (!dateStr) return 'Never';
+    // Handle both date-only (YYYY-MM-DD) and full ISO timestamps
+    if (dateStr.length === 10) {
+      return new Date(dateStr + 'T00:00:00').toLocaleDateString();
+    }
+    return new Date(dateStr).toLocaleString();
   };
 
   const handleTogglePresetVisibility = async (presetId: string) => {
@@ -164,6 +265,112 @@ export default function SettingsPage() {
             className="w-5 h-5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
           />
         </label>
+      </div>
+
+      {/* Automations */}
+      <div className="bg-[var(--card-bg)] rounded-lg p-5 mb-6">
+        <div className="mb-4">
+          <h2 className="text-lg font-medium text-white">Automations</h2>
+          <p className="text-sm text-[var(--muted)]">Background tasks that run automatically on app load</p>
+        </div>
+
+        <div className="space-y-4">
+          {/* Recurring Tasks Reset */}
+          <div className="flex items-center justify-between p-4 bg-[var(--background)] rounded-lg">
+            <div className="flex-1">
+              <p className="text-white font-medium">Reset Recurring Tasks</p>
+              <p className="text-sm text-[var(--muted)]">
+                Resets completed recurring tasks (daily, weekly, etc.) back to your backlog when their interval has passed.
+              </p>
+              <p className="text-xs text-[var(--muted)] mt-1">
+                Last run: {formatLastRun(recurrenceLastRun)}
+              </p>
+              {recurrenceResult && (
+                <p className="text-xs text-green-400 mt-1">{recurrenceResult}</p>
+              )}
+            </div>
+            <button
+              onClick={handleRunRecurrenceCheck}
+              disabled={recurrenceRunning}
+              className="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {recurrenceRunning ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  Running...
+                </>
+              ) : (
+                'Run Now'
+              )}
+            </button>
+          </div>
+
+          {/* Push to Google Drive */}
+          <div className="flex items-center justify-between p-4 bg-[var(--background)] rounded-lg">
+            <div className="flex-1">
+              <p className="text-white font-medium">Push to Google Drive</p>
+              <p className="text-sm text-[var(--muted)]">
+                Upload local data to Google Drive, replacing the remote backup.
+              </p>
+              <p className="text-xs text-[var(--muted)] mt-1">
+                Last synced: {formatLastRun(syncLastRun)}
+              </p>
+              {pushResult && (
+                <p className={`text-xs mt-1 ${pushResult.includes('failed') || pushResult.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>
+                  {pushResult}
+                </p>
+              )}
+              {!isSignedIn && (
+                <p className="text-xs text-yellow-400 mt-1">Sign in with Google to enable push</p>
+              )}
+            </div>
+            <button
+              onClick={handlePushToDrive}
+              disabled={pushRunning || pullRunning || !isSignedIn}
+              className="ml-4 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {pushRunning ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  Pushing...
+                </>
+              ) : (
+                'Push Now'
+              )}
+            </button>
+          </div>
+          {/* Pull from Google Drive */}
+          <div className="flex items-center justify-between p-4 bg-[var(--background)] rounded-lg">
+            <div className="flex-1">
+              <p className="text-white font-medium">Pull from Google Drive</p>
+              <p className="text-sm text-[var(--muted)]">
+                Overwrite local data with the latest backup from Google Drive. This replaces all local data.
+              </p>
+              {pullResult && (
+                <p className={`text-xs mt-1 ${pullResult.includes('failed') || pullResult.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>
+                  {pullResult}
+                </p>
+              )}
+              {!isSignedIn && (
+                <p className="text-xs text-yellow-400 mt-1">Sign in with Google to enable pull</p>
+              )}
+            </div>
+            <button
+              onClick={handlePullFromDrive}
+              disabled={pullRunning || pushRunning || !isSignedIn}
+              className="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {pullRunning ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  Pulling...
+                </>
+              ) : (
+                'Pull Now'
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Planning Mode Filter Presets */}

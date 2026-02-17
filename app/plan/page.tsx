@@ -4,7 +4,7 @@ import { useState, useMemo, DragEvent } from 'react';
 import { format, startOfWeek, startOfMonth, addDays, addWeeks, addMonths, isToday, startOfDay, endOfMonth, getDay, isBefore, differenceInCalendarDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
-import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters } from '@/components/ViewControls';
+import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { useTasks, useDomains, useVisibleFilterPresets, markTaskDone, createTask, updateTaskData } from '@/lib/hooks';
 import { Task } from '@/types';
 import { FilterPreset } from '@/lib/db';
@@ -81,7 +81,7 @@ export default function PlanPage() {
 
   // Planning view state
   const [sortLevels, setSortLevels] = usePersistedSortLevels('plan-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: 'all', domain: 'all', recurrence: 'all', actionPoints: 'all' });
+  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], domain: [], recurrence: [], actionPoints: [] });
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
   // Build filters with dynamic domain options
@@ -192,25 +192,33 @@ export default function PlanPage() {
   const unscheduledTasks = useMemo(() => {
     let result = activeTasks.filter(t => !t.plannedDate);
 
-    // Apply filters
-    if (filterValues.priority !== 'all') {
-      result = result.filter(t => t.taskPriority === filterValues.priority);
+    // Apply multi-select filters
+    result = result.filter(t => matchesFilter(filterValues.priority || [], t.taskPriority));
+    result = result.filter(t => matchesFilter(filterValues.domain || [], t.domainId || ''));
+
+    // Recurrence filter - special handling for 'recurring' option
+    const recurrenceFilter = filterValues.recurrence || [];
+    if (isFilterActive(recurrenceFilter)) {
+      result = result.filter(t => {
+        if (recurrenceFilter.includes('recurring')) {
+          // 'recurring' means any recurrence that's not 'None'
+          if (t.recurrence !== 'None') return true;
+        }
+        return recurrenceFilter.includes(t.recurrence);
+      });
     }
-    if (filterValues.domain !== 'all') {
-      result = result.filter(t => t.domainId === filterValues.domain);
-    }
-    if (filterValues.recurrence === 'None') {
-      result = result.filter(t => t.recurrence === 'None');
-    } else if (filterValues.recurrence === 'recurring') {
-      result = result.filter(t => t.recurrence !== 'None');
-    }
-    if (filterValues.actionPoints && filterValues.actionPoints !== 'all') {
+
+    // Action points filter - special handling for ranges
+    const apFilter = filterValues.actionPoints || [];
+    if (isFilterActive(apFilter)) {
       result = result.filter(t => {
         const ap = parseInt(t.actionPoints || '0') || 0;
-        if (filterValues.actionPoints === 'low') return ap >= 1 && ap <= 2;
-        if (filterValues.actionPoints === 'med') return ap >= 3 && ap <= 4;
-        if (filterValues.actionPoints === 'high') return ap >= 5;
-        return true;
+        for (const f of apFilter) {
+          if (f === 'low' && ap >= 1 && ap <= 2) return true;
+          if (f === 'med' && ap >= 3 && ap <= 4) return true;
+          if (f === 'high' && ap >= 5) return true;
+        }
+        return false;
       });
     }
 
@@ -305,27 +313,40 @@ export default function PlanPage() {
     setDraggedTaskId(null);
   };
 
+  // Helper to convert preset string value to array
+  const presetToArray = (value: string | undefined): string[] => {
+    if (!value || value === 'all') return [];
+    return [value];
+  };
+
+  // Helper to check if arrays match
+  const arraysMatch = (a: string[] | undefined, b: string[]): boolean => {
+    const aArr = a || [];
+    if (aArr.length !== b.length) return false;
+    return aArr.every(v => b.includes(v)) && b.every(v => aArr.includes(v));
+  };
+
   // Check if a preset matches current filter values
   const isPresetActive = (preset: FilterPreset) => {
-    const presetPriority = preset.filters.priority || 'all';
-    const presetAP = preset.filters.actionPoints || 'all';
-    const presetDomain = preset.filters.domain || 'all';
-    const presetRecurrence = preset.filters.recurrence || 'all';
+    const presetPriority = presetToArray(preset.filters.priority);
+    const presetAP = presetToArray(preset.filters.actionPoints);
+    const presetDomain = presetToArray(preset.filters.domain);
+    const presetRecurrence = presetToArray(preset.filters.recurrence);
     return (
-      filterValues.priority === presetPriority &&
-      filterValues.actionPoints === presetAP &&
-      filterValues.domain === presetDomain &&
-      filterValues.recurrence === presetRecurrence
+      arraysMatch(filterValues.priority, presetPriority) &&
+      arraysMatch(filterValues.actionPoints, presetAP) &&
+      arraysMatch(filterValues.domain, presetDomain) &&
+      arraysMatch(filterValues.recurrence, presetRecurrence)
     );
   };
 
   // Apply a preset's filters
   const applyPreset = (preset: FilterPreset) => {
     setFilterValues({
-      priority: preset.filters.priority || 'all',
-      actionPoints: preset.filters.actionPoints || 'all',
-      domain: preset.filters.domain || 'all',
-      recurrence: preset.filters.recurrence || 'all',
+      priority: presetToArray(preset.filters.priority),
+      actionPoints: presetToArray(preset.filters.actionPoints),
+      domain: presetToArray(preset.filters.domain),
+      recurrence: presetToArray(preset.filters.recurrence),
     });
     setActivePresetId(preset.id);
   };
