@@ -239,8 +239,11 @@ export async function markTaskDone(taskId: string): Promise<void> {
 
 export async function undoTaskDone(taskId: string): Promise<void> {
   const task = await db.tasks.get(taskId);
+  if (!task) return;
+  const baseStatus = task.plannedDate ? 'Planned' : 'Backlog';
+  const restoredStatus = autoStatus({ ...task, status: baseStatus, doneDate: null });
   await db.tasks.update(taskId, {
-    status: task?.plannedDate ? 'Planned' : 'Backlog',
+    status: restoredStatus,
     doneDate: null,
     updatedAt: new Date().toISOString(),
   });

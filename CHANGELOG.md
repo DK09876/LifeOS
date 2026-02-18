@@ -33,6 +33,16 @@ All notable changes to LifeOS will be documented in this file.
 - Add `oauth2callback.html` static callback page for cross-origin token delivery
 - Automatic fallback to full-page redirect when popups are blocked (mobile support)
 
+### Bug Fixes
+- Fix timezone bug in due date coloring — dates parsed as UTC midnight showed wrong day in US timezones
+- Fix timezone bug in date display across Tasks, Today, and Plan pages (use `parseLocalDate`)
+- Fix "Completed Today" section using `updatedAt` instead of `doneDate` — edited tasks no longer falsely appear
+- Fix `undoTaskDone` losing previous status — incomplete tasks now correctly return to "Needs Details"
+- Fix month view priority colors — broken string replace caused Optional priority tasks to have no background color
+- Fix day view inline priority border — missing `5 - Optional` case, now uses shared `getTaskPriorityBorder` utility
+- Fix token expiry not reflected in UI — expired sessions now clear user state and show yellow "Session expired" message
+- Fix task score calculation using UTC date parse for due date proximity
+
 ### Code Quality
 - Extract shared color utilities to `lib/colors.ts` (removes duplication across 5 pages)
 - Fix domains card delete button not appearing on hover (missing `group` class)

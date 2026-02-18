@@ -9,6 +9,7 @@ import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDe
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getStatusColor, getTaskPriorityColor, getDueDateColor } from '@/lib/colors';
+import { parseLocalDate } from '@/lib/dates';
 
 const TASK_FILTERS: FilterDef[] = [
   {
@@ -276,12 +277,12 @@ export default function TasksPage() {
                   )}
                   {show('dueDate') && (
                     <td className={`px-4 py-3 text-sm ${getDueDateColor(task.dueDate)}`}>
-                      {task.dueDate ? format(new Date(task.dueDate), 'MMM d') : '—'}
+                      {task.dueDate ? format(parseLocalDate(task.dueDate), 'MMM d') : '—'}
                     </td>
                   )}
                   {show('plannedDate') && (
                     <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                      {task.plannedDate ? format(new Date(task.plannedDate), 'MMM d') : '—'}
+                      {task.plannedDate ? format(parseLocalDate(task.plannedDate), 'MMM d') : '—'}
                     </td>
                   )}
                   {show('doneDate') && (

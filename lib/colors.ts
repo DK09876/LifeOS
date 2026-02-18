@@ -1,4 +1,5 @@
 import { startOfDay } from 'date-fns';
+import { parseLocalDate } from './dates';
 
 // Task priority → badge color (bg + text)
 export function getTaskPriorityColor(priority: string): string {
@@ -62,7 +63,7 @@ export function getStatusColor(status: string): string {
 // Due date → proximity text color
 export function getDueDateColor(dueDate: string | null): string {
   if (!dueDate) return 'text-[var(--muted)]';
-  const due = startOfDay(new Date(dueDate));
+  const due = parseLocalDate(dueDate);
   const today = startOfDay(new Date());
   const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 

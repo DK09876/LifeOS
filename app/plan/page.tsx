@@ -8,7 +8,8 @@ import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLe
 import { useTasks, useDomains, useVisibleFilterPresets, markTaskDone, createTask, updateTaskData } from '@/lib/hooks';
 import { Task } from '@/types';
 import { FilterPreset } from '@/lib/db';
-import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor } from '@/lib/colors';
+import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder } from '@/lib/colors';
+import { parseLocalDate } from '@/lib/dates';
 
 type MainView = 'triage' | 'planning';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -399,11 +400,8 @@ export default function PlanPage() {
       draggable
       onDragStart={(e) => handleDragStart(e, task.id)}
       onDragEnd={handleDragEnd}
-      className={`p-4 bg-[var(--card-bg)] rounded-lg hover:bg-[var(--card-hover)] cursor-pointer transition-colors border-l-4 ${
-        task.taskPriority === '1 - Urgent' ? 'border-red-500' :
-        task.taskPriority === '2 - High' ? 'border-orange-500' :
-        task.taskPriority === '3 - Normal' ? 'border-blue-500' :
-        'border-gray-500'
+      className={`p-4 rounded-lg hover:bg-[var(--card-hover)] cursor-pointer transition-colors border-l-4 ${
+        getTaskPriorityBorder(task.taskPriority)
       } ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
       onClick={() => handleEditTask(task)}
     >
@@ -430,7 +428,7 @@ export default function PlanPage() {
             )}
             {task.dueDate && (
               <span className={getDueDateColor(task.dueDate)}>
-                Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
+                Due {format(parseLocalDate(task.dueDate), 'MMM d')}
               </span>
             )}
             {task.actionPoints && (
@@ -849,8 +847,8 @@ export default function PlanPage() {
                               onDragEnd={handleDragEnd}
                               onClick={() => handleEditTask(task)}
                               className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
-                                getPriorityDotColor(task.taskPriority).replace('bg-', 'bg-').replace('-500', '-500/20')
-                              } text-white hover:opacity-80 ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
+                                getTaskPriorityColor(task.taskPriority)
+                              } hover:opacity-80 ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
                             >
                               {task.taskName}
                             </div>

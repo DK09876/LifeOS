@@ -11,6 +11,7 @@ import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, markT
 import { Task, Habit } from '@/types';
 import { getTodayString } from '@/lib/dates';
 import { getTaskPriorityBorder } from '@/lib/colors';
+import { parseLocalDate } from '@/lib/dates';
 
 export default function TodayPage() {
   const tasks = useTasks();
@@ -48,9 +49,8 @@ export default function TodayPage() {
   // Completed today
   const completedToday = useMemo(() => {
     return tasks.filter(t => {
-      if (t.status !== 'Done') return false;
-      if (t.updatedAt && isToday(new Date(t.updatedAt))) return true;
-      return false;
+      if (t.status !== 'Done' || !t.doneDate) return false;
+      return isToday(new Date(t.doneDate));
     });
   }, [tasks]);
 
@@ -216,7 +216,7 @@ export default function TodayPage() {
                     {task.dueDate && (
                       <span className="flex items-center gap-1">
                         <span>📅</span>
-                        <span>Due {new Date(task.dueDate).toLocaleDateString()}</span>
+                        <span>Due {parseLocalDate(task.dueDate).toLocaleDateString()}</span>
                       </span>
                     )}
                   </div>

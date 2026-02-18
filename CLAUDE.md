@@ -170,6 +170,15 @@ When making changes to LifeOS, keep these artifacts up to date:
 3. **app/get-started/page.tsx** (Get Started) — Update if new entity types or onboarding steps are added.
 4. **This file (CLAUDE.md)** — Update data models, key files, or patterns if architecture changes.
 
+### Date Handling
+```typescript
+// NEVER use new Date("YYYY-MM-DD") — parses as UTC midnight, wrong in US timezones
+// ALWAYS use parseLocalDate for date-only strings (YYYY-MM-DD)
+import { parseLocalDate, getTodayString, toDateString } from '@/lib/dates';
+parseLocalDate('2026-02-04') // → local midnight Feb 4 (correct)
+new Date('2026-02-04')       // → UTC midnight Feb 4 = Feb 3 in US (wrong!)
+```
+
 ## Notes
 
 - The app works fully offline without Google sign-in

@@ -396,7 +396,7 @@ export function calculateTaskScore(task: Partial<Task>, domainPriority?: string)
   // Due date contribution (closer = higher score)
   if (task.dueDate) {
     const now = new Date();
-    const due = new Date(task.dueDate);
+    const due = new Date(task.dueDate + 'T00:00:00');
     const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
     if (daysUntilDue < 0) {

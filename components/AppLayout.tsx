@@ -55,11 +55,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setStatusMessage(null);
     try {
       const result = await pushToGoogleDrive();
-      setStatusMessage(result.message);
+      if (!result.success && result.message.includes('Not signed in')) {
+        setUser(null);
+        setStatusMessage('Session expired — please sign in again');
+      } else {
+        setStatusMessage(result.message);
+      }
       if (result.lastSyncedAt) {
         setLastSynced(result.lastSyncedAt);
       }
-      setTimeout(() => setStatusMessage(null), 3000);
+      setTimeout(() => setStatusMessage(null), 4000);
     } catch {
       setStatusMessage('Push failed');
     } finally {
@@ -72,11 +77,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
     setStatusMessage(null);
     try {
       const result = await pullFromGoogleDrive();
-      setStatusMessage(result.message);
+      if (!result.success && result.message.includes('Not signed in')) {
+        setUser(null);
+        setStatusMessage('Session expired — please sign in again');
+      } else {
+        setStatusMessage(result.message);
+      }
       if (result.lastSyncedAt) {
         setLastSynced(result.lastSyncedAt);
       }
-      setTimeout(() => setStatusMessage(null), 3000);
+      setTimeout(() => setStatusMessage(null), 4000);
     } catch {
       setStatusMessage('Pull failed');
     } finally {
@@ -184,7 +194,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
             </button>
           )}
           {statusMessage && (
-            <span className={`text-sm ${statusMessage.includes('failed') || statusMessage.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>
+            <span className={`text-sm ${
+              statusMessage.includes('failed') || statusMessage.includes('Failed')
+                ? 'text-red-400'
+                : statusMessage.includes('expired')
+                ? 'text-yellow-400'
+                : 'text-green-400'
+            }`}>
               {statusMessage}
             </span>
           )}
