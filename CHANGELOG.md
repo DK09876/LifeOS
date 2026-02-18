@@ -28,6 +28,11 @@ All notable changes to LifeOS will be documented in this file.
 - Add `userinfo.email` and `userinfo.profile` OAuth scopes for user profile display
 - Fix `clearAllData()` to also clear filter presets table
 
+### Google OAuth
+- Replace GIS popup auth with callback popup + localStorage events (fixes HTTPS sign-in)
+- Add `oauth2callback.html` static callback page for cross-origin token delivery
+- Automatic fallback to full-page redirect when popups are blocked (mobile support)
+
 ### Code Quality
 - Extract shared color utilities to `lib/colors.ts` (removes duplication across 5 pages)
 - Fix domains card delete button not appearing on hover (missing `group` class)

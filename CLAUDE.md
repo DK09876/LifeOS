@@ -36,7 +36,7 @@ User's Device                          User's Google Drive
 - **Framework**: Next.js 16 with App Router
 - **UI**: React 19 + Tailwind CSS 4
 - **Local Database**: Dexie.js (IndexedDB wrapper), schema version 8
-- **Auth**: Google Identity Services (OAuth 2.0)
+- **Auth**: Google OAuth 2.0 (popup with callback page + localStorage events)
 - **Sync**: Google Drive API (REST) — Push/Pull only, no auto-sync
 - **Date Handling**: date-fns
 
