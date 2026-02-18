@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head><title>LifeOS - Signing in...</title></head>
+<body style="background:#0a0a0a;color:#fff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;font-family:system-ui,sans-serif">
+<p id="status">Completing sign-in...</p>
+<script>
+(function() {
+  var hash = window.location.hash;
+  if (hash && hash.indexOf('access_token=') !== -1) {
+    try {
+      localStorage.setItem('lifeos_auth_callback', hash.substring(1));
+    } catch(e) {}
+    window.close();
+    setTimeout(function() {
+      document.getElementById('status').textContent = 'Signed in! Redirecting...';
+      window.location.href = '/';
+    }, 500);
+  } else if (hash && hash.indexOf('error=') !== -1) {
+    var params = new URLSearchParams(hash.substring(1));
+    document.getElementById('status').textContent = 'Sign-in failed: ' + (params.get('error_description') || params.get('error') || 'Unknown error');
+  } else {
+    document.getElementById('status').textContent = 'No authentication data received.';
+  }
+})();
+</script>
+</body>
+</html>

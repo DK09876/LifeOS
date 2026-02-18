@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifeos-v1';
+const CACHE_NAME = 'lifeos-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',

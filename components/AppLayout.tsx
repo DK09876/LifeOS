@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
 import ConfirmDialog from './ConfirmDialog';
-import { initGoogleAuth, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
+import { handleAuthRedirect, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
 import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
@@ -28,9 +28,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     async function init() {
       try {
-        await initGoogleAuth();
-        const storedUser = getStoredAuth();
-        setUser(storedUser);
+        // Check for OAuth callback data (from popup or redirect fallback)
+        const redirectUser = await handleAuthRedirect();
+        if (redirectUser) {
+          setUser(redirectUser);
+        } else {
+          const storedUser = getStoredAuth();
+          setUser(storedUser);
+        }
         const status = await getSyncStatus();
         setLastSynced(status.lastSyncedAt);
         // Fetch daily quote
@@ -99,6 +104,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     } catch (error) {
       console.error('Sign in failed:', error);
       setStatusMessage('Sign in failed');
+      setTimeout(() => setStatusMessage(null), 3000);
     }
   };
 
