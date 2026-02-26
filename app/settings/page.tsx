@@ -19,7 +19,6 @@ const COLOR_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: 'all', label: 'All Priorities' },
   { value: '1 - Urgent', label: 'Urgent' },
   { value: '2 - High', label: 'High' },
   { value: '3 - Normal', label: 'Normal' },
@@ -28,14 +27,12 @@ const PRIORITY_OPTIONS = [
 ];
 
 const ACTION_POINTS_OPTIONS = [
-  { value: 'all', label: 'All' },
   { value: 'low', label: 'Low (1-2)' },
   { value: 'med', label: 'Medium (3-4)' },
   { value: 'high', label: 'High (5)' },
 ];
 
 const RECURRENCE_OPTIONS = [
-  { value: 'all', label: 'All' },
   { value: 'None', label: 'One-time only' },
   { value: 'recurring', label: 'Recurring only' },
 ];
@@ -48,10 +45,10 @@ export default function SettingsPage() {
   const [editingPreset, setEditingPreset] = useState<FilterPreset | null>(null);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetColor, setNewPresetColor] = useState('blue');
-  const [newPresetPriority, setNewPresetPriority] = useState('all');
-  const [newPresetActionPoints, setNewPresetActionPoints] = useState('all');
-  const [newPresetDomain, setNewPresetDomain] = useState('all');
-  const [newPresetRecurrence, setNewPresetRecurrence] = useState('all');
+  const [newPresetPriority, setNewPresetPriority] = useState<string[]>([]);
+  const [newPresetActionPoints, setNewPresetActionPoints] = useState<string[]>([]);
+  const [newPresetDomain, setNewPresetDomain] = useState<string[]>([]);
+  const [newPresetRecurrence, setNewPresetRecurrence] = useState<string[]>([]);
 
   // Automations state
   const [recurrenceLastRun, setRecurrenceLastRun] = useState<string | null>(null);
@@ -168,6 +165,16 @@ export default function SettingsPage() {
     await toggleFilterPresetVisibility(presetId);
   };
 
+  const toArray = (v: string | string[] | undefined): string[] => {
+    if (Array.isArray(v)) return v;
+    if (!v || v === 'all') return [];
+    return [v];
+  };
+
+  const toggleArrayValue = (arr: string[], value: string): string[] => {
+    return arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value];
+  };
+
   const handleAddPreset = async () => {
     if (!newPresetName.trim()) return;
 
@@ -185,10 +192,10 @@ export default function SettingsPage() {
 
     setNewPresetName('');
     setNewPresetColor('blue');
-    setNewPresetPriority('all');
-    setNewPresetActionPoints('all');
-    setNewPresetDomain('all');
-    setNewPresetRecurrence('all');
+    setNewPresetPriority([]);
+    setNewPresetActionPoints([]);
+    setNewPresetDomain([]);
+    setNewPresetRecurrence([]);
     setIsAddingPreset(false);
   };
 
@@ -196,10 +203,10 @@ export default function SettingsPage() {
     setEditingPreset(preset);
     setNewPresetName(preset.name);
     setNewPresetColor(preset.color);
-    setNewPresetPriority(preset.filters.priority || 'all');
-    setNewPresetActionPoints(preset.filters.actionPoints || 'all');
-    setNewPresetDomain(preset.filters.domain || 'all');
-    setNewPresetRecurrence(preset.filters.recurrence || 'all');
+    setNewPresetPriority(toArray(preset.filters.priority));
+    setNewPresetActionPoints(toArray(preset.filters.actionPoints));
+    setNewPresetDomain(toArray(preset.filters.domain));
+    setNewPresetRecurrence(toArray(preset.filters.recurrence));
   };
 
   const handleUpdatePreset = async () => {
@@ -219,14 +226,23 @@ export default function SettingsPage() {
     setEditingPreset(null);
     setNewPresetName('');
     setNewPresetColor('blue');
-    setNewPresetPriority('all');
-    setNewPresetActionPoints('all');
-    setNewPresetDomain('all');
-    setNewPresetRecurrence('all');
+    setNewPresetPriority([]);
+    setNewPresetActionPoints([]);
+    setNewPresetDomain([]);
+    setNewPresetRecurrence([]);
   };
 
-  const handleDeletePreset = async (presetId: string) => {
-    await deleteFilterPreset(presetId);
+  const [presetToDelete, setPresetToDelete] = useState<string | null>(null);
+
+  const handleDeletePreset = (presetId: string) => {
+    setPresetToDelete(presetId);
+  };
+
+  const handleConfirmDeletePreset = async () => {
+    if (presetToDelete) {
+      await deleteFilterPreset(presetToDelete);
+      setPresetToDelete(null);
+    }
   };
 
   const cancelEdit = () => {
@@ -234,10 +250,10 @@ export default function SettingsPage() {
     setIsAddingPreset(false);
     setNewPresetName('');
     setNewPresetColor('blue');
-    setNewPresetPriority('all');
-    setNewPresetActionPoints('all');
-    setNewPresetDomain('all');
-    setNewPresetRecurrence('all');
+    setNewPresetPriority([]);
+    setNewPresetActionPoints([]);
+    setNewPresetDomain([]);
+    setNewPresetRecurrence([]);
   };
 
   const getColorClasses = (color: string) => {
@@ -414,18 +430,21 @@ export default function SettingsPage() {
                 <span className="text-xs text-[var(--muted)]">
                   {(() => {
                     const parts: string[] = [];
-                    if (preset.filters.priority && preset.filters.priority !== 'all') {
-                      parts.push(`Priority: ${preset.filters.priority.split(' - ')[1] || preset.filters.priority}`);
+                    const pArr = toArray(preset.filters.priority);
+                    if (pArr.length > 0) {
+                      parts.push(`Priority: ${pArr.map(v => v.split(' - ')[1] || v).join(', ')}`);
                     }
-                    if (preset.filters.actionPoints && preset.filters.actionPoints !== 'all') {
-                      parts.push(`AP: ${preset.filters.actionPoints}`);
+                    const apArr = toArray(preset.filters.actionPoints);
+                    if (apArr.length > 0) {
+                      parts.push(`AP: ${apArr.join(', ')}`);
                     }
-                    if (preset.filters.domain && preset.filters.domain !== 'all') {
-                      const domain = domains.find(d => d.id === preset.filters.domain);
-                      parts.push(`Domain: ${domain?.name || preset.filters.domain}`);
+                    const dArr = toArray(preset.filters.domain);
+                    if (dArr.length > 0) {
+                      parts.push(`Domain: ${dArr.map(id => domains.find(d => d.id === id)?.name || id).join(', ')}`);
                     }
-                    if (preset.filters.recurrence && preset.filters.recurrence !== 'all') {
-                      parts.push(`Recurrence: ${preset.filters.recurrence === 'None' ? 'One-time' : 'Recurring'}`);
+                    const rArr = toArray(preset.filters.recurrence);
+                    if (rArr.length > 0) {
+                      parts.push(`Recurrence: ${rArr.map(v => v === 'None' ? 'One-time' : 'Recurring').join(', ')}`);
                     }
                     return parts.length > 0 ? parts.join(' | ') : 'No filters';
                   })()}
@@ -492,56 +511,71 @@ export default function SettingsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm text-[var(--muted)] mb-1">Priority</label>
-                  <select
-                    value={newPresetPriority}
-                    onChange={(e) => setNewPresetPriority(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <label className="block text-sm text-[var(--muted)] mb-1">Priority {newPresetPriority.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1">
                     {PRIORITY_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetPriority.includes(opt.value)}
+                          onChange={() => setNewPresetPriority(toggleArrayValue(newPresetPriority, opt.value))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{opt.label}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--muted)] mb-1">Action Points</label>
-                  <select
-                    value={newPresetActionPoints}
-                    onChange={(e) => setNewPresetActionPoints(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <label className="block text-sm text-[var(--muted)] mb-1">Action Points {newPresetActionPoints.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1">
                     {ACTION_POINTS_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetActionPoints.includes(opt.value)}
+                          onChange={() => setNewPresetActionPoints(toggleArrayValue(newPresetActionPoints, opt.value))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{opt.label}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--muted)] mb-1">Domain</label>
-                  <select
-                    value={newPresetDomain}
-                    onChange={(e) => setNewPresetDomain(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">All Domains</option>
+                  <label className="block text-sm text-[var(--muted)] mb-1">Domain {newPresetDomain.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
                     {domains.map(d => (
-                      <option key={d.id} value={d.id}>{d.icon || '📁'} {d.name}</option>
+                      <label key={d.id} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetDomain.includes(d.id)}
+                          onChange={() => setNewPresetDomain(toggleArrayValue(newPresetDomain, d.id))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{d.icon || '📁'} {d.name}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-[var(--muted)] mb-1">Recurrence</label>
-                  <select
-                    value={newPresetRecurrence}
-                    onChange={(e) => setNewPresetRecurrence(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <label className="block text-sm text-[var(--muted)] mb-1">Recurrence {newPresetRecurrence.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1">
                     {RECURRENCE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetRecurrence.includes(opt.value)}
+                          onChange={() => setNewPresetRecurrence(toggleArrayValue(newPresetRecurrence, opt.value))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{opt.label}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
 
@@ -573,6 +607,16 @@ export default function SettingsPage() {
         message="Pull will replace all local data. You have changes that haven't been pushed. Continue?"
         confirmLabel="Pull"
         variant="warning"
+      />
+
+      <ConfirmDialog
+        isOpen={presetToDelete !== null}
+        onClose={() => setPresetToDelete(null)}
+        onConfirm={handleConfirmDeletePreset}
+        title="Delete Preset"
+        message="Are you sure you want to delete this filter preset?"
+        confirmLabel="Delete"
+        variant="danger"
       />
     </div>
   );

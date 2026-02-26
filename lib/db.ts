@@ -1,4 +1,5 @@
 import Dexie, { Table } from 'dexie';
+import { toDateString } from './dates';
 
 // Database types - independent of external services
 export interface Task {
@@ -42,10 +43,10 @@ export interface FilterPreset {
   name: string;
   color: string;
   filters: {
-    priority?: string;
-    actionPoints?: string;
-    domain?: string;
-    recurrence?: string;
+    priority?: string | string[];
+    actionPoints?: string | string[];
+    domain?: string | string[];
+    recurrence?: string | string[];
   };
   visible: boolean;
   isDefault: boolean;
@@ -271,6 +272,24 @@ class LifeOSDatabase extends Dexie {
       });
       await tx.table('habits').toCollection().modify(habit => {
         if (habit.deletedAt === undefined) habit.deletedAt = null;
+      });
+    });
+
+    // Version 9: Convert filter preset string values to arrays for multi-select
+    this.version(9).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
+      domains: 'id, name, priority, updatedAt, deletedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order, deletedAt',
+      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      await tx.table('filterPresets').toCollection().modify(preset => {
+        for (const key of ['priority', 'actionPoints', 'domain', 'recurrence'] as const) {
+          const val = preset.filters[key];
+          if (typeof val === 'string') {
+            preset.filters[key] = val === 'all' ? [] : [val];
+          }
+        }
       });
     });
   }
@@ -624,7 +643,7 @@ export function getStartOfWeek(date: Date = new Date()): string {
   // Adjust to Monday (day 0 = Sunday, so we go back 6 days; day 1 = Monday, go back 0 days, etc.)
   const diff = day === 0 ? 6 : day - 1;
   d.setDate(d.getDate() - diff);
-  return d.toISOString().slice(0, 10);
+  return toDateString(d);
 }
 
 // Count completions within the current week for a habit

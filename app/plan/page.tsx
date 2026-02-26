@@ -313,8 +313,9 @@ export default function PlanPage() {
     setDraggedTaskId(null);
   };
 
-  // Helper to convert preset string value to array
-  const presetToArray = (value: string | undefined): string[] => {
+  // Helper to convert preset filter value (string or array) to array
+  const presetToArray = (value: string | string[] | undefined): string[] => {
+    if (Array.isArray(value)) return value;
     if (!value || value === 'all') return [];
     return [value];
   };
@@ -340,14 +341,18 @@ export default function PlanPage() {
     );
   };
 
-  // Apply a preset's filters
+  // Apply a preset's filters (toggle off if already active)
   const applyPreset = (preset: FilterPreset) => {
-    setFilterValues({
-      priority: presetToArray(preset.filters.priority),
-      actionPoints: presetToArray(preset.filters.actionPoints),
-      domain: presetToArray(preset.filters.domain),
-      recurrence: presetToArray(preset.filters.recurrence),
-    });
+    if (isPresetActive(preset)) {
+      setFilterValues({ priority: [], actionPoints: [], domain: [], recurrence: [] });
+    } else {
+      setFilterValues({
+        priority: presetToArray(preset.filters.priority),
+        actionPoints: presetToArray(preset.filters.actionPoints),
+        domain: presetToArray(preset.filters.domain),
+        recurrence: presetToArray(preset.filters.recurrence),
+      });
+    }
   };
 
   // Navigate to a specific day in the day view
@@ -384,7 +389,7 @@ export default function PlanPage() {
             {task.domain?.icon && <span className="text-xs">{task.domain.icon}</span>}
             {task.dueDate && (
               <span className={`text-xs ${getDueDateColor(task.dueDate)}`}>
-                Due {format(new Date(task.dueDate), 'MMM d')}
+                Due {format(parseLocalDate(task.dueDate), 'MMM d')}
               </span>
             )}
           </div>
@@ -610,9 +615,9 @@ export default function PlanPage() {
 
       {/* Planning View */}
       {mainView === 'planning' && (
-        <div className="flex gap-4">
+        <div className="flex flex-col lg:flex-row gap-4">
           {/* Left: Unscheduled Tasks */}
-          <div className="w-72 flex-shrink-0">
+          <div className="w-full lg:w-72 lg:flex-shrink-0">
             <div className="bg-[var(--card-bg)] rounded-lg sticky top-20">
               <div className="p-3 border-b border-[var(--border-color)]">
                 <div className="flex items-center justify-between mb-2">
@@ -669,6 +674,7 @@ export default function PlanPage() {
                 <button
                   onClick={() => setDateOffset(prev => prev - 1)}
                   className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+                  aria-label="Previous"
                 >
                   ←
                 </button>
@@ -681,6 +687,7 @@ export default function PlanPage() {
                 <button
                   onClick={() => setDateOffset(prev => prev + 1)}
                   className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+                  aria-label="Next"
                 >
                   →
                 </button>
@@ -854,9 +861,12 @@ export default function PlanPage() {
                             </div>
                           ))}
                           {dayTasks.length > 3 && (
-                            <div className="text-xs text-[var(--muted)] text-center">
+                            <button
+                              onClick={() => navigateToDay(date)}
+                              className="text-xs text-[var(--muted)] hover:text-white text-center w-full transition-colors"
+                            >
                               +{dayTasks.length - 3} more
-                            </div>
+                            </button>
                           )}
                         </div>
                       </div>

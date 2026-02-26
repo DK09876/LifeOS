@@ -2,6 +2,53 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.4.1] - 2026-02-26
+
+### Planning
+- Filter presets now support multi-select — each filter field (priority, action points, domain, recurrence) can store multiple values
+- Settings preset form uses checkbox groups instead of single-select dropdowns
+- DB migration (v9) converts existing single-string preset filters to arrays
+
+## [0.4.0] - 2026-02-18
+
+### Toast Notifications
+- Add toast notification system with auto-dismiss (success, error, info)
+- Replace inline status messages with toast notifications for Push/Pull/Sign-in feedback
+- All CRUD operations (create, update, delete) now show error toasts on failure
+
+### Form & Modal Improvements
+- Add loading states to task, habit, and domain forms — prevents double-click duplicates
+- Add focus trap to modals — Tab key cycles through focusable elements within the dialog
+- Add `role="dialog"`, `aria-modal`, and `aria-labelledby` to Modal component
+
+### Accessibility
+- Add ARIA labels to all icon-only buttons (check circles, delete, undo, navigation arrows, sidebar collapse, hamburger menu)
+- Fix hover-only visibility on action buttons — now also visible on keyboard focus via `group-focus-within`
+- Add `aria-label` to push/pull buttons for screen readers
+
+### Mobile Responsive
+- Add mobile sidebar as overlay drawer with hamburger menu button
+- Sidebar hidden on small screens, shown as fixed sidebar on desktop
+- Today stats grid stacks on mobile (`grid-cols-1` → `sm:grid-cols-3`)
+- Plan page unscheduled panel stacks above calendar on mobile (`flex-col` → `lg:flex-row`)
+- Header adapts for small screens — quote hidden on mobile, email hidden until lg breakpoint
+- Reduce page padding on mobile
+
+### Bug Fixes
+- Fix `getStartOfWeek` returning UTC date string — now uses `toDateString()` for correct local date
+- Fix `undoHabitDone` parsing completion date as UTC midnight — now uses noon to avoid timezone shift
+- Fix `useDomain` counting soft-deleted tasks in domain task count
+- Fix concurrent Push/Pull operations — module-level guard prevents overlapping sync
+- Fix "How it Works" page describing non-existent "Needs Reset" triage — now accurately describes automatic reset
+- Fix Plan page date display using UTC midnight for due dates in unscheduled task cards
+
+### UX Improvements
+- Filter presets in planning view now toggle off when clicked while active
+- Month view "+more" indicator is now clickable — navigates to day view
+- Settings preset deletion now requires confirmation dialog
+- Today page "+ Add Task" pre-fills today's planned date
+- Empty state for domains card view when no domains exist or match filters
+
 ## [0.3.0] - 2026-02-17
 
 ### Habits
