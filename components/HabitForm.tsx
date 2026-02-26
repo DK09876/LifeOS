@@ -5,7 +5,7 @@ import { Habit } from '@/types';
 
 interface HabitFormProps {
   habit?: Habit | null;
-  onSubmit: (data: HabitFormData) => void;
+  onSubmit: (data: HabitFormData) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -62,11 +62,19 @@ function getInitialFormData(habit?: Habit | null): HabitFormData {
 
 export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps) {
   const [formData, setFormData] = useState<HabitFormData>(() => getInitialFormData(habit));
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.habitName.trim()) return;
-    onSubmit(formData);
+    if (!formData.habitName.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } catch (err) {
+      console.error('Form submission failed:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (
@@ -274,9 +282,10 @@ export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps)
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+          disabled={submitting}
+          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
         >
-          {habit ? 'Update Habit' : 'Create Habit'}
+          {submitting ? 'Saving...' : (habit ? 'Update Habit' : 'Create Habit')}
         </button>
       </div>
     </form>

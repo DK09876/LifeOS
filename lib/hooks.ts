@@ -121,7 +121,8 @@ export function useDomain(id: string) {
     const domain = await db.domains.get(id);
     if (!domain) return null;
 
-    const taskCount = await db.tasks.where('domainId').equals(id).count();
+    const allDomainTasks = await db.tasks.where('domainId').equals(id).toArray();
+    const taskCount = allDomainTasks.filter(t => !t.deletedAt).length;
     return { ...domain, taskCount };
   }, [id]);
 }
@@ -454,7 +455,7 @@ export async function undoHabitDone(habitId: string): Promise<void> {
 
   // Find the most recent completion that's not today for lastCompleted
   const sortedDates = completionDates.sort().reverse();
-  const lastCompleted = sortedDates.length > 0 ? new Date(sortedDates[0]).toISOString() : null;
+  const lastCompleted = sortedDates.length > 0 ? new Date(sortedDates[0] + 'T12:00:00').toISOString() : null;
 
   await db.habits.update(habitId, {
     lastCompleted,

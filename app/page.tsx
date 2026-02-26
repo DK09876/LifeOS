@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import HabitForm, { HabitFormData } from '@/components/HabitForm';
 import HabitCard from '@/components/HabitCard';
+import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit } from '@/lib/hooks';
 import { Task, Habit } from '@/types';
 import { getTodayString } from '@/lib/dates';
@@ -18,6 +19,7 @@ export default function TodayPage() {
   const domains = useDomains();
   const habitsDueToday = useHabitsDueToday();
   const habitsCompletedToday = useHabitsCompletedToday();
+  const { showToast } = useToast();
 
   // Task CRUD modals
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -56,7 +58,9 @@ export default function TodayPage() {
 
   // Task handlers
   async function handleMarkDone(taskId: string) {
-    await markTaskDone(taskId);
+    try {
+      await markTaskDone(taskId);
+    } catch { showToast('Failed to complete task', 'error'); }
   }
 
   function handleOpenCreateTask() {
@@ -70,33 +74,43 @@ export default function TodayPage() {
   }
 
   async function handleTaskSubmit(data: TaskFormData) {
-    if (editingTask) {
-      await updateTaskData(editingTask.id, data);
-    } else {
-      await createTask(data);
-    }
-    setIsTaskModalOpen(false);
-    setEditingTask(null);
+    try {
+      if (editingTask) {
+        await updateTaskData(editingTask.id, data);
+      } else {
+        await createTask({ ...data, plannedDate: data.plannedDate || getTodayString() });
+      }
+      setIsTaskModalOpen(false);
+      setEditingTask(null);
+    } catch { showToast('Failed to save task', 'error'); }
   }
 
   async function handleConfirmDeleteTask() {
-    if (taskToDelete) {
-      await deleteTask(taskToDelete);
-      setTaskToDelete(null);
-    }
+    try {
+      if (taskToDelete) {
+        await deleteTask(taskToDelete);
+        setTaskToDelete(null);
+      }
+    } catch { showToast('Failed to delete task', 'error'); }
   }
 
   // Habit handlers
   async function handleMarkHabitDone(habitId: string) {
-    await markHabitDone(habitId);
+    try {
+      await markHabitDone(habitId);
+    } catch { showToast('Failed to complete habit', 'error'); }
   }
 
   async function handleUndoHabitDone(habitId: string) {
-    await undoHabitDone(habitId);
+    try {
+      await undoHabitDone(habitId);
+    } catch { showToast('Failed to undo habit', 'error'); }
   }
 
   async function handleUndoTaskDone(taskId: string) {
-    await undoTaskDone(taskId);
+    try {
+      await undoTaskDone(taskId);
+    } catch { showToast('Failed to undo task', 'error'); }
   }
 
   function handleEditHabit(habit: Habit) {
@@ -105,20 +119,24 @@ export default function TodayPage() {
   }
 
   async function handleHabitSubmit(data: HabitFormData) {
-    if (editingHabit) {
-      await updateHabitData(editingHabit.id, data);
-    } else {
-      await createHabit(data);
-    }
-    setIsHabitModalOpen(false);
-    setEditingHabit(null);
+    try {
+      if (editingHabit) {
+        await updateHabitData(editingHabit.id, data);
+      } else {
+        await createHabit(data);
+      }
+      setIsHabitModalOpen(false);
+      setEditingHabit(null);
+    } catch { showToast('Failed to save habit', 'error'); }
   }
 
   async function handleConfirmDeleteHabit() {
-    if (habitToDelete) {
-      await deleteHabit(habitToDelete);
-      setHabitToDelete(null);
-    }
+    try {
+      if (habitToDelete) {
+        await deleteHabit(habitToDelete);
+        setHabitToDelete(null);
+      }
+    } catch { showToast('Failed to delete habit', 'error'); }
   }
 
   return (
@@ -132,7 +150,7 @@ export default function TodayPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-[var(--card-bg)] rounded-lg p-4">
           <p className="text-2xl font-semibold text-white">{habitsDueToday.length + todayTasks.length}</p>
           <p className="text-[var(--muted)] text-sm">To do ({habitsDueToday.length} habits + {todayTasks.length} tasks)</p>
@@ -201,8 +219,9 @@ export default function TodayPage() {
                 <button
                   onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
                   className="w-5 h-5 mt-0.5 rounded-full border-2 border-[var(--muted)] hover:border-green-500 hover:bg-green-500/20 flex items-center justify-center flex-shrink-0 transition-colors"
+                  aria-label={`Mark "${task.taskName}" as done`}
                 >
-                  <span className="opacity-0 group-hover:opacity-100 text-green-500 text-xs">✓</span>
+                  <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-xs">✓</span>
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-medium">{task.taskName}</p>
@@ -223,7 +242,8 @@ export default function TodayPage() {
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setTaskToDelete(task.id); }}
-                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 p-1 transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-red-400 hover:text-red-300 p-1 transition-opacity"
+                  aria-label={`Delete "${task.taskName}"`}
                 >
                   ×
                 </button>
@@ -251,7 +271,8 @@ export default function TodayPage() {
                 <p className="text-[var(--muted)] line-through flex-1">{habit.habitName}</p>
                 <button
                   onClick={() => handleUndoHabitDone(habit.id)}
-                  className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
+                  aria-label={`Undo completion of "${habit.habitName}"`}
                 >
                   Undo
                 </button>
@@ -269,7 +290,8 @@ export default function TodayPage() {
                 <p className="text-[var(--muted)] line-through flex-1">{task.taskName}</p>
                 <button
                   onClick={() => handleUndoTaskDone(task.id)}
-                  className="opacity-0 group-hover:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
+                  aria-label={`Undo completion of "${task.taskName}"`}
                 >
                   Undo
                 </button>

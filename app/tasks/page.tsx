@@ -6,6 +6,7 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
+import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getStatusColor, getTaskPriorityColor, getDueDateColor } from '@/lib/colors';
@@ -74,6 +75,7 @@ const DEFAULT_VISIBLE = new Set(TASK_COLUMNS.filter(c => c.defaultVisible).map(c
 export default function TasksPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const { showToast } = useToast();
 
   // State
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,20 +151,24 @@ export default function TasksPage() {
   }
 
   async function handleTaskSubmit(data: TaskFormData) {
-    if (editingTask) {
-      await updateTaskData(editingTask.id, data);
-    } else {
-      await createTask(data);
-    }
-    setIsTaskModalOpen(false);
-    setEditingTask(null);
+    try {
+      if (editingTask) {
+        await updateTaskData(editingTask.id, data);
+      } else {
+        await createTask(data);
+      }
+      setIsTaskModalOpen(false);
+      setEditingTask(null);
+    } catch { showToast('Failed to save task', 'error'); }
   }
 
   async function handleConfirmDeleteTask() {
-    if (taskToDelete) {
-      await deleteTask(taskToDelete);
-      setTaskToDelete(null);
-    }
+    try {
+      if (taskToDelete) {
+        await deleteTask(taskToDelete);
+        setTaskToDelete(null);
+      }
+    } catch { showToast('Failed to delete task', 'error'); }
   }
 
   const show = (key: string) => visibleColumns.has(key);

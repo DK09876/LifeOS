@@ -135,7 +135,7 @@ export default function HelpPage() {
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
           <h2 className="text-lg font-medium text-white mb-4">Recurring Tasks</h2>
           <p className="text-[var(--muted)] text-sm mb-4">
-            Set a recurrence pattern for tasks that repeat. When completed, they'll appear in the "Needs Reset" triage after the interval passes.
+            Set a recurrence pattern for tasks that repeat. When completed, recurring tasks are automatically reset to your backlog when their interval passes (checked on each app load, or manually via Settings).
           </p>
           <div className="flex flex-wrap gap-2 text-sm">
             <span className="px-2 py-1 rounded bg-[var(--background)] text-[var(--muted)]">Daily</span>

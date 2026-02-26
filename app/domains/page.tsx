@@ -5,6 +5,7 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import DomainForm, { DomainFormData } from '@/components/DomainForm';
 import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
+import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, createDomain, updateDomainData, deleteDomain } from '@/lib/hooks';
 import { Domain } from '@/types';
 import { getDomainPriorityColor } from '@/lib/colors';
@@ -57,6 +58,8 @@ export default function DomainsPage() {
     localStorage.setItem('domains-view-mode', mode);
   }, []);
 
+  const { showToast } = useToast();
+
   // Modal state
   const [isDomainModalOpen, setIsDomainModalOpen] = useState(false);
   const [editingDomain, setEditingDomain] = useState<Domain | null>(null);
@@ -107,20 +110,24 @@ export default function DomainsPage() {
   }
 
   async function handleDomainSubmit(data: DomainFormData) {
-    if (editingDomain) {
-      await updateDomainData(editingDomain.id, data);
-    } else {
-      await createDomain(data);
-    }
-    setIsDomainModalOpen(false);
-    setEditingDomain(null);
+    try {
+      if (editingDomain) {
+        await updateDomainData(editingDomain.id, data);
+      } else {
+        await createDomain(data);
+      }
+      setIsDomainModalOpen(false);
+      setEditingDomain(null);
+    } catch { showToast('Failed to save domain', 'error'); }
   }
 
   async function handleConfirmDeleteDomain() {
-    if (domainToDelete) {
-      await deleteDomain(domainToDelete);
-      setDomainToDelete(null);
-    }
+    try {
+      if (domainToDelete) {
+        await deleteDomain(domainToDelete);
+        setDomainToDelete(null);
+      }
+    } catch { showToast('Failed to delete domain', 'error'); }
   }
 
   const show = (key: string) => visibleColumns.has(key);
@@ -173,46 +180,67 @@ export default function DomainsPage() {
       </div>
 
       {/* Grid View */}
-      {viewMode === 'cards' && <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredDomains.map(domain => (
-          <div
-            key={domain.id}
-            className="group bg-[var(--card-bg)] rounded-lg p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
-            onClick={() => handleEditDomain(domain)}
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{domain.icon || '📁'}</span>
-                <div>
-                  <h3 className="text-white font-medium">{domain.name}</h3>
-                  <span className={`inline-block px-2 py-0.5 rounded text-xs mt-1 ${getDomainPriorityColor(domain.priority)}`}>
-                    {domain.priority.split(' - ')[1]}
-                  </span>
+      {viewMode === 'cards' && (
+        filteredDomains.length === 0 ? (
+          <div className="bg-[var(--card-bg)] rounded-lg p-12 text-center">
+            <div className="text-4xl mb-4">🗂️</div>
+            <h3 className="text-lg font-medium text-white mb-2">No domains found</h3>
+            <p className="text-[var(--muted)] mb-6">
+              {domains.length === 0 ? 'Create your first domain to organize tasks.' : 'No domains match your current filters.'}
+            </p>
+            {domains.length === 0 && (
+              <button
+                onClick={handleOpenCreateDomain}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+              >
+                + Create Domain
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredDomains.map(domain => (
+              <div
+                key={domain.id}
+                className="group bg-[var(--card-bg)] rounded-lg p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
+                onClick={() => handleEditDomain(domain)}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{domain.icon || '📁'}</span>
+                    <div>
+                      <h3 className="text-white font-medium">{domain.name}</h3>
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs mt-1 ${getDomainPriorityColor(domain.priority)}`}>
+                        {domain.priority.split(' - ')[1]}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDomainToDelete(domain.id); }}
+                    className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                    aria-label={`Delete "${domain.name}"`}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="flex items-center gap-4 text-sm">
+                  <div>
+                    <span className="text-white font-medium">{domain.stats.active}</span>
+                    <span className="text-[var(--muted)]"> active</span>
+                  </div>
+                  <div>
+                    <span className="text-green-400 font-medium">{domain.stats.done}</span>
+                    <span className="text-[var(--muted)]"> done</span>
+                  </div>
+                  <div>
+                    <span className="text-[var(--muted)]">{domain.stats.total} total</span>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setDomainToDelete(domain.id); }}
-                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100"
-              >
-                ×
-              </button>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div>
-                <span className="text-white font-medium">{domain.stats.active}</span>
-                <span className="text-[var(--muted)]"> active</span>
-              </div>
-              <div>
-                <span className="text-green-400 font-medium">{domain.stats.done}</span>
-                <span className="text-[var(--muted)]"> done</span>
-              </div>
-              <div>
-                <span className="text-[var(--muted)]">{domain.stats.total} total</span>
-              </div>
-            </div>
+            ))}
           </div>
-        ))}
-      </div>}
+        )
+      )}
 
       {/* Table View */}
       {viewMode === 'list' && <div className="bg-[var(--card-bg)] rounded-lg overflow-hidden">

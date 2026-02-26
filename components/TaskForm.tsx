@@ -6,7 +6,7 @@ import { Task, Domain } from '@/types';
 interface TaskFormProps {
   task?: Task | null;
   domains: Domain[];
-  onSubmit: (data: TaskFormData) => void;
+  onSubmit: (data: TaskFormData) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -41,6 +41,7 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
     notes: '',
     domainId: null,
   });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (task) {
@@ -58,10 +59,17 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
     }
   }, [task]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.taskName.trim()) return;
-    onSubmit(formData);
+    if (!formData.taskName.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } catch (err) {
+      console.error('Form submission failed:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (
@@ -270,9 +278,10 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+          disabled={submitting}
+          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
         >
-          {task ? 'Update Task' : 'Create Task'}
+          {submitting ? 'Saving...' : (task ? 'Update Task' : 'Create Task')}
         </button>
       </div>
     </form>

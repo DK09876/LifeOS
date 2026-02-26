@@ -57,6 +57,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
             onClick={onToggleCollapse}
             className="text-[var(--muted)] hover:text-white text-sm flex-shrink-0"
             title="Collapse sidebar"
+            aria-label="Collapse sidebar"
           >
             ◀
           </button>

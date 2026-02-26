@@ -5,6 +5,7 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import HabitForm, { HabitFormData } from '@/components/HabitForm';
 import HabitCard from '@/components/HabitCard';
+import { useToast } from '@/components/Toast';
 import { useHabits, createHabit, updateHabitData, deleteHabit, markHabitDone, toggleHabitActive } from '@/lib/hooks';
 import { isHabitDueToday } from '@/lib/db';
 import { Habit } from '@/types';
@@ -36,6 +37,8 @@ export default function HabitsPage() {
     return { dueNow, onTrack, paused };
   }, [habits]);
 
+  const { showToast } = useToast();
+
   // Handlers
   function handleOpenCreate() {
     setEditingHabit(null);
@@ -48,28 +51,36 @@ export default function HabitsPage() {
   }
 
   async function handleSubmit(data: HabitFormData) {
-    if (editingHabit) {
-      await updateHabitData(editingHabit.id, data);
-    } else {
-      await createHabit(data);
-    }
-    setIsModalOpen(false);
-    setEditingHabit(null);
+    try {
+      if (editingHabit) {
+        await updateHabitData(editingHabit.id, data);
+      } else {
+        await createHabit(data);
+      }
+      setIsModalOpen(false);
+      setEditingHabit(null);
+    } catch { showToast('Failed to save habit', 'error'); }
   }
 
   async function handleConfirmDelete() {
-    if (habitToDelete) {
-      await deleteHabit(habitToDelete);
-      setHabitToDelete(null);
-    }
+    try {
+      if (habitToDelete) {
+        await deleteHabit(habitToDelete);
+        setHabitToDelete(null);
+      }
+    } catch { showToast('Failed to delete habit', 'error'); }
   }
 
   async function handleMarkDone(habitId: string) {
-    await markHabitDone(habitId);
+    try {
+      await markHabitDone(habitId);
+    } catch { showToast('Failed to complete habit', 'error'); }
   }
 
   async function handleToggleActive(habitId: string) {
-    await toggleHabitActive(habitId);
+    try {
+      await toggleHabitActive(habitId);
+    } catch { showToast('Failed to update habit', 'error'); }
   }
 
   return (

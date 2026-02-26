@@ -5,6 +5,7 @@ import { format, startOfWeek, addDays, isToday, addWeeks } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
+import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getPriorityDotColor } from '@/lib/colors';
@@ -53,9 +54,13 @@ export default function WeekPage() {
     });
   }, [tasks, weekDays]);
 
+  const { showToast } = useToast();
+
   // Task handlers
   async function handleMarkDone(taskId: string) {
-    await markTaskDone(taskId);
+    try {
+      await markTaskDone(taskId);
+    } catch { showToast('Failed to complete task', 'error'); }
   }
 
   function handleOpenCreateTask(date?: Date) {
@@ -71,25 +76,29 @@ export default function WeekPage() {
   }
 
   async function handleTaskSubmit(data: TaskFormData) {
-    const taskData = selectedDate && !data.plannedDate
-      ? { ...data, plannedDate: format(selectedDate, 'yyyy-MM-dd') }
-      : data;
+    try {
+      const taskData = selectedDate && !data.plannedDate
+        ? { ...data, plannedDate: format(selectedDate, 'yyyy-MM-dd') }
+        : data;
 
-    if (editingTask) {
-      await updateTaskData(editingTask.id, taskData);
-    } else {
-      await createTask(taskData);
-    }
-    setIsTaskModalOpen(false);
-    setEditingTask(null);
-    setSelectedDate(null);
+      if (editingTask) {
+        await updateTaskData(editingTask.id, taskData);
+      } else {
+        await createTask(taskData);
+      }
+      setIsTaskModalOpen(false);
+      setEditingTask(null);
+      setSelectedDate(null);
+    } catch { showToast('Failed to save task', 'error'); }
   }
 
   async function handleConfirmDeleteTask() {
-    if (taskToDelete) {
-      await deleteTask(taskToDelete);
-      setTaskToDelete(null);
-    }
+    try {
+      if (taskToDelete) {
+        await deleteTask(taskToDelete);
+        setTaskToDelete(null);
+      }
+    } catch { showToast('Failed to delete task', 'error'); }
   }
 
   const totalTasks = weekTasks.reduce((sum, day) => sum + day.tasks.length, 0);
@@ -108,6 +117,7 @@ export default function WeekPage() {
           <button
             onClick={() => setWeekOffset(prev => prev - 1)}
             className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+            aria-label="Previous week"
           >
             ←
           </button>
@@ -120,6 +130,7 @@ export default function WeekPage() {
           <button
             onClick={() => setWeekOffset(prev => prev + 1)}
             className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+            aria-label="Next week"
           >
             →
           </button>
@@ -159,8 +170,9 @@ export default function WeekPage() {
                     <button
                       onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
                       className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+                      aria-label={`Mark "${task.taskName}" as done`}
                     >
-                      <span className="opacity-0 group-hover:opacity-100 text-green-500 text-[10px]">✓</span>
+                      <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
                     </button>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm line-clamp-2">{task.taskName}</p>
@@ -178,7 +190,8 @@ export default function WeekPage() {
               {/* Add task button */}
               <button
                 onClick={() => handleOpenCreateTask(date)}
-                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 hover:opacity-100 transition-opacity"
+                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                aria-label={`Add task for ${format(date, 'EEEE, MMM d')}`}
               >
                 + Add
               </button>

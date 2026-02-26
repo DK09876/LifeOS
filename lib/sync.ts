@@ -7,6 +7,8 @@ import { exportAllData, replaceAllData, hasUnsavedChanges, compactTombstones, ge
 const DRIVE_FILE_NAME = 'lifeos-data.json';
 const DRIVE_FOLDER_NAME = 'LifeOS';
 
+let syncInProgress = false;
+
 export interface SyncResult {
   success: boolean;
   message: string;
@@ -146,6 +148,10 @@ async function uploadData(
 
 // Push local data to Google Drive (overwrites remote)
 export async function pushToGoogleDrive(): Promise<SyncResult> {
+  if (syncInProgress) {
+    return { success: false, message: 'Sync already in progress' };
+  }
+  syncInProgress = true;
   try {
     const user = await refreshTokenIfNeeded();
     if (!user) {
@@ -183,11 +189,17 @@ export async function pushToGoogleDrive(): Promise<SyncResult> {
       success: false,
       message: error instanceof Error ? error.message : 'Push failed',
     };
+  } finally {
+    syncInProgress = false;
   }
 }
 
 // Pull from Google Drive (full replace local)
 export async function pullFromGoogleDrive(): Promise<SyncResult> {
+  if (syncInProgress) {
+    return { success: false, message: 'Sync already in progress' };
+  }
+  syncInProgress = true;
   try {
     const user = await refreshTokenIfNeeded();
     if (!user) {
@@ -237,6 +249,8 @@ export async function pullFromGoogleDrive(): Promise<SyncResult> {
       success: false,
       message: error instanceof Error ? error.message : 'Pull failed',
     };
+  } finally {
+    syncInProgress = false;
   }
 }
 

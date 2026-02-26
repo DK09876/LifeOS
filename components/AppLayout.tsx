@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import Sidebar from './Sidebar';
 import ConfirmDialog from './ConfirmDialog';
+import { ToastProvider, useToast } from './Toast';
 import { handleAuthRedirect, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
 import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
@@ -13,16 +14,17 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-export default function AppLayout({ children }: AppLayoutProps) {
+function AppLayoutInner({ children }: AppLayoutProps) {
   useRecurrenceCheck();
+  const { showToast } = useToast();
   const [user, setUser] = useState<GoogleUser | null>(null);
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showPullConfirm, setShowPullConfirm] = useState(false);
 
   useEffect(() => {
@@ -52,21 +54,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   const handlePush = async () => {
     setPushing(true);
-    setStatusMessage(null);
     try {
       const result = await pushToGoogleDrive();
       if (!result.success && result.message.includes('Not signed in')) {
         setUser(null);
-        setStatusMessage('Session expired — please sign in again');
+        showToast('Session expired — please sign in again', 'error');
       } else {
-        setStatusMessage(result.message);
+        showToast(result.message, result.success ? 'success' : 'error');
       }
       if (result.lastSyncedAt) {
         setLastSynced(result.lastSyncedAt);
       }
-      setTimeout(() => setStatusMessage(null), 4000);
     } catch {
-      setStatusMessage('Push failed');
+      showToast('Push failed', 'error');
     } finally {
       setPushing(false);
     }
@@ -74,25 +74,23 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   const executePull = useCallback(async () => {
     setPulling(true);
-    setStatusMessage(null);
     try {
       const result = await pullFromGoogleDrive();
       if (!result.success && result.message.includes('Not signed in')) {
         setUser(null);
-        setStatusMessage('Session expired — please sign in again');
+        showToast('Session expired — please sign in again', 'error');
       } else {
-        setStatusMessage(result.message);
+        showToast(result.message, result.success ? 'success' : 'error');
       }
       if (result.lastSyncedAt) {
         setLastSynced(result.lastSyncedAt);
       }
-      setTimeout(() => setStatusMessage(null), 4000);
     } catch {
-      setStatusMessage('Pull failed');
+      showToast('Pull failed', 'error');
     } finally {
       setPulling(false);
     }
-  }, []);
+  }, [showToast]);
 
   const handlePull = async () => {
     try {
@@ -111,10 +109,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
     try {
       const googleUser = await signInWithGoogle();
       setUser(googleUser);
+      showToast('Signed in successfully', 'success');
     } catch (error) {
       console.error('Sign in failed:', error);
-      setStatusMessage('Sign in failed');
-      setTimeout(() => setStatusMessage(null), 3000);
+      showToast('Sign in failed', 'error');
     }
   };
 
@@ -139,16 +137,38 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
+      </div>
+
+      {/* Mobile sidebar overlay */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileSidebarOpen(false)} />
+          <div className="relative z-50">
+            <Sidebar collapsed={false} onToggleCollapse={() => setMobileSidebarOpen(false)} />
+          </div>
+        </div>
+      )}
 
       {/* Main content area */}
-      <div className={`${sidebarCollapsed ? 'ml-14' : 'ml-56'} transition-all duration-200`}>
+      <div className={`${sidebarCollapsed ? 'md:ml-14' : 'md:ml-56'} transition-all duration-200`}>
         {/* Top bar */}
-        <header className="h-14 border-b border-[var(--border-color)] flex items-center px-6 gap-4 sticky top-0 bg-[var(--background)] z-10">
+        <header className="h-14 border-b border-[var(--border-color)] flex items-center px-4 md:px-6 gap-2 md:gap-4 sticky top-0 bg-[var(--background)] z-10">
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="md:hidden p-2 text-[var(--muted)] hover:text-white"
+            aria-label="Open navigation menu"
+          >
+            ☰
+          </button>
+
           {/* Quote */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 hidden sm:block">
             <p className="text-sm text-[var(--muted)] italic truncate">
-              "{quote.text}" — {quote.author}
+              &ldquo;{quote.text}&rdquo; — {quote.author}
             </p>
           </div>
           {user ? (
@@ -157,10 +177,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 {user.picture && (
                   <Image src={user.picture} alt={user.name} width={24} height={24} className="rounded-full" />
                 )}
-                <span className="hidden sm:inline">{user.email}</span>
+                <span className="hidden lg:inline">{user.email}</span>
               </div>
               {lastSynced && (
-                <span className="text-xs text-[var(--muted)] hidden md:inline">
+                <span className="text-xs text-[var(--muted)] hidden lg:inline">
                   Synced: {new Date(lastSynced).toLocaleTimeString()}
                 </span>
               )}
@@ -168,6 +188,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 onClick={handlePull}
                 disabled={isBusy}
                 className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-sm"
+                aria-label="Pull data from Google Drive"
               >
                 {pulling ? 'Pulling...' : 'Pull'}
               </button>
@@ -175,12 +196,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 onClick={handlePush}
                 disabled={isBusy}
                 className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-sm"
+                aria-label="Push data to Google Drive"
               >
                 {pushing ? 'Pushing...' : 'Push'}
               </button>
               <button
                 onClick={handleSignOut}
-                className="px-3 py-1.5 text-[var(--muted)] hover:text-white text-sm"
+                className="px-3 py-1.5 text-[var(--muted)] hover:text-white text-sm hidden sm:inline"
               >
                 Sign Out
               </button>
@@ -193,21 +215,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
               Sign in with Google
             </button>
           )}
-          {statusMessage && (
-            <span className={`text-sm ${
-              statusMessage.includes('failed') || statusMessage.includes('Failed')
-                ? 'text-red-400'
-                : statusMessage.includes('expired')
-                ? 'text-yellow-400'
-                : 'text-green-400'
-            }`}>
-              {statusMessage}
-            </span>
-          )}
         </header>
 
         {/* Page content */}
-        <main className="p-6">
+        <main className="p-4 md:p-6">
           {children}
         </main>
       </div>
@@ -222,5 +233,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
         variant="warning"
       />
     </div>
+  );
+}
+
+export default function AppLayout({ children }: AppLayoutProps) {
+  return (
+    <ToastProvider>
+      <AppLayoutInner>{children}</AppLayoutInner>
+    </ToastProvider>
   );
 }
