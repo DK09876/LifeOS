@@ -2,8 +2,9 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, Task, Domain, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
+import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
 import { getTodayString } from './dates';
+import { BlockedByEntry } from '@/types';
 
 // Core recurrence check logic - resets recurring tasks that are due
 async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
@@ -210,6 +211,76 @@ export async function toggleFilterPresetVisibility(presetId: string): Promise<vo
   }
 }
 
+// --- Blocked-by logic ---
+
+// Check if adding targetBlockerId as a blocker of taskId would create a circular dependency
+export function hasCircularDependency(taskId: string, targetBlockerId: string, allTasks: Task[]): boolean {
+  const taskMap = new Map(allTasks.map(t => [t.id, t]));
+  const visited = new Set<string>();
+  const queue = [targetBlockerId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === taskId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const task = taskMap.get(current);
+    if (!task) continue;
+    for (const entry of task.blockedBy || []) {
+      if (entry.type === 'task') {
+        queue.push(entry.taskId);
+      }
+    }
+  }
+  return false;
+}
+
+// Check a task's blockedBy entries and auto-unblock if all task-type blockers are resolved
+async function checkAndAutoUnblock(taskId: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (!task || task.deletedAt || task.status !== 'Blocked') return;
+
+  const blockedBy = task.blockedBy || [];
+  if (blockedBy.length === 0) return;
+
+  const remaining: BlockedByEntry[] = [];
+  for (const entry of blockedBy) {
+    if (entry.type === 'note') {
+      remaining.push(entry);
+    } else {
+      const blocker = await db.tasks.get(entry.taskId);
+      // Keep blocker if the referenced task still exists and is not Done/Archived/deleted
+      if (blocker && !blocker.deletedAt && blocker.status !== 'Done' && blocker.status !== 'Archived') {
+        remaining.push(entry);
+      }
+    }
+  }
+
+  if (remaining.length < blockedBy.length) {
+    const updates: Partial<Task> = { blockedBy: remaining, updatedAt: new Date().toISOString() };
+    if (remaining.length === 0) {
+      // All blockers resolved — auto-unblock
+      const newStatus = autoStatus({ ...task, status: task.plannedDate ? 'Planned' : 'Backlog', blockedBy: [] });
+      updates.status = newStatus;
+    }
+    await db.tasks.update(taskId, updates);
+  }
+}
+
+// Find all tasks blocked by the given taskId and check if they can be unblocked
+async function checkDependentsOf(taskId: string): Promise<void> {
+  const allTasks = await db.tasks.toArray();
+  const dependents = allTasks.filter(t =>
+    !t.deletedAt &&
+    t.status === 'Blocked' &&
+    (t.blockedBy || []).some(e => e.type === 'task' && e.taskId === taskId)
+  );
+  for (const dep of dependents) {
+    await checkAndAutoUnblock(dep.id);
+  }
+}
+
 // Check if a task has all required fields filled for auto-promotion
 function isTaskComplete(task: Partial<Task>): boolean {
   return !!(
@@ -246,6 +317,7 @@ export async function markTaskDone(taskId: string): Promise<void> {
     doneDate: now,
     updatedAt: now,
   });
+  await checkDependentsOf(taskId);
 }
 
 export async function undoTaskDone(taskId: string): Promise<void> {
@@ -281,6 +353,8 @@ export async function createTask(taskData: {
   actionPoints?: string | null;
   notes?: string;
   domainId?: string | null;
+  projectId?: string | null;
+  blockedBy?: BlockedByEntry[];
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -309,6 +383,8 @@ export async function createTask(taskData: {
     actionPoints: taskData.actionPoints || null,
     notes: taskData.notes || '',
     domainId: taskData.domainId || null,
+    projectId: taskData.projectId ?? null,
+    blockedBy: taskData.blockedBy ?? [],
     deletedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -350,19 +426,27 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
   const merged = { ...task, ...updates, taskScore, importanceScore, urgencyScore };
   const newStatus = autoStatus(merged);
 
+  const finalStatus = updates.status !== undefined ? autoStatus({ ...merged, status: updates.status }) : newStatus;
+
   await db.tasks.update(taskId, {
     ...updates,
-    status: updates.status !== undefined ? autoStatus({ ...merged, status: updates.status }) : newStatus,
+    status: finalStatus,
     importanceScore,
     urgencyScore,
     taskScore,
     updatedAt: new Date().toISOString(),
   });
+
+  // If status changed to Done or Archived, check dependents
+  if ((finalStatus === 'Done' || finalStatus === 'Archived') && task.status !== finalStatus) {
+    await checkDependentsOf(taskId);
+  }
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.tasks.update(taskId, { deletedAt: now, updatedAt: now });
+  await checkDependentsOf(taskId);
 }
 
 // Domain actions
@@ -687,4 +771,85 @@ export async function undoEventDone(eventId: string): Promise<void> {
 export async function deleteEvent(eventId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.events.update(eventId, { deletedAt: now, updatedAt: now });
+}
+
+// --- Project hooks and actions ---
+
+const DEFAULT_AP = 2;
+
+// Hook to get all projects with computed fields
+export function useProjects() {
+  const projects = useLiveQuery(async () => {
+    const allProjects = (await db.projects.toArray()).filter(p => !p.deletedAt);
+    const allTasks = (await db.tasks.toArray()).filter(t => !t.deletedAt);
+    const domains = (await db.domains.toArray()).filter(d => !d.deletedAt);
+    const domainMap = new Map(domains.map(d => [d.id, d]));
+
+    return allProjects.map(project => {
+      const projectTasks = allTasks.filter(t => t.projectId === project.id);
+      const completedTasks = projectTasks.filter(t => t.status === 'Done' || t.status === 'Archived');
+      const totalAP = projectTasks.reduce((sum, t) => sum + (parseInt(t.actionPoints || '0') || DEFAULT_AP), 0);
+      const completedAP = completedTasks.reduce((sum, t) => sum + (parseInt(t.actionPoints || '0') || DEFAULT_AP), 0);
+
+      return {
+        ...project,
+        domain: project.domainId ? domainMap.get(project.domainId) || null : null,
+        tasks: projectTasks,
+        taskCount: projectTasks.length,
+        completedTaskCount: completedTasks.length,
+        totalAP,
+        completedAP,
+        completionPercent: totalAP > 0 ? Math.round((completedAP / totalAP) * 100) : 0,
+      };
+    }).sort((a, b) => {
+      // Active first, then Completed, then Archived
+      const statusOrder = { Active: 0, Completed: 1, Archived: 2 };
+      const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+      if (statusDiff !== 0) return statusDiff;
+      return a.name.localeCompare(b.name);
+    });
+  }, []);
+
+  return projects || [];
+}
+
+// Create a new project
+export async function createProject(projectData: {
+  name: string;
+  description?: string;
+  icon?: string | null;
+  status?: Project['status'];
+  domainId?: string | null;
+}): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+
+  const project: Project = {
+    id,
+    name: projectData.name,
+    description: projectData.description || '',
+    icon: projectData.icon ?? null,
+    status: projectData.status || 'Active',
+    domainId: projectData.domainId ?? null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await db.projects.add(project);
+  return id;
+}
+
+// Update an existing project
+export async function updateProjectData(projectId: string, updates: Partial<Project>): Promise<void> {
+  await db.projects.update(projectId, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Delete a project (soft delete)
+export async function deleteProject(projectId: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.projects.update(projectId, { deletedAt: now, updatedAt: now });
 }

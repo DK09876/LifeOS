@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Task, Domain } from '@/types';
+import { Task, Domain, BlockedByEntry, Project } from '@/types';
+import { hasCircularDependency } from '@/lib/hooks';
 
 interface TaskFormProps {
   task?: Task | null;
   domains: Domain[];
+  allTasks?: Task[];
+  projects?: Project[];
   onSubmit: (data: TaskFormData) => void | Promise<void>;
   onCancel: () => void;
 }
@@ -21,6 +24,8 @@ export interface TaskFormData {
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
+  projectId: string | null;
+  blockedBy: BlockedByEntry[];
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
@@ -31,7 +36,7 @@ const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Bi
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
 const labelClass = "block text-sm font-medium text-[var(--muted)] mb-1";
 
-export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskFormProps) {
+export default function TaskForm({ task, domains, allTasks = [], projects = [], onSubmit, onCancel }: TaskFormProps) {
   const [formData, setFormData] = useState<TaskFormData>({
     taskName: '',
     status: 'Needs Details',
@@ -43,8 +48,11 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
     actionPoints: null,
     notes: '',
     domainId: null,
+    projectId: null,
+    blockedBy: [],
   });
   const [submitting, setSubmitting] = useState(false);
+  const [noteBlockerText, setNoteBlockerText] = useState('');
 
   useEffect(() => {
     if (task) {
@@ -59,6 +67,8 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
         actionPoints: task.actionPoints,
         notes: task.notes,
         domainId: task.domainId,
+        projectId: task.projectId,
+        blockedBy: task.blockedBy || [],
       });
     }
   }, [task]);
@@ -85,6 +95,50 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
       [name]: value === '' ? null : value,
     }));
   };
+
+  // Blocked-by helpers
+  const addTaskBlocker = (taskId: string) => {
+    if (!taskId) return;
+    // Check if already added
+    if (formData.blockedBy.some(e => e.type === 'task' && e.taskId === taskId)) return;
+    const newBlockedBy = [...formData.blockedBy, { type: 'task' as const, taskId }];
+    const newStatus = newBlockedBy.length > 0 && formData.status !== 'Done' && formData.status !== 'Archived' ? 'Blocked' : formData.status;
+    setFormData(prev => ({ ...prev, blockedBy: newBlockedBy, status: newStatus }));
+  };
+
+  const addNoteBlocker = () => {
+    const note = noteBlockerText.trim();
+    if (!note) return;
+    const newBlockedBy = [...formData.blockedBy, { type: 'note' as const, note }];
+    const newStatus = newBlockedBy.length > 0 && formData.status !== 'Done' && formData.status !== 'Archived' ? 'Blocked' : formData.status;
+    setFormData(prev => ({ ...prev, blockedBy: newBlockedBy, status: newStatus }));
+    setNoteBlockerText('');
+  };
+
+  const removeBlocker = (index: number) => {
+    const newBlockedBy = formData.blockedBy.filter((_, i) => i !== index);
+    setFormData(prev => {
+      // If all blockers removed and was Blocked, auto-determine status
+      if (newBlockedBy.length === 0 && prev.status === 'Blocked') {
+        return { ...prev, blockedBy: newBlockedBy, status: 'Backlog' };
+      }
+      return { ...prev, blockedBy: newBlockedBy };
+    });
+  };
+
+  // Filter tasks eligible as blockers: non-Done, non-Archived, non-deleted, not self, no circular deps
+  const eligibleBlockerTasks = allTasks.filter(t => {
+    if (t.status === 'Done' || t.status === 'Archived') return false;
+    if (task && t.id === task.id) return false;
+    // Already added as blocker
+    if (formData.blockedBy.some(e => e.type === 'task' && e.taskId === t.id)) return false;
+    // Check circular dependency
+    if (task && hasCircularDependency(task.id, t.id, allTasks)) return false;
+    return true;
+  });
+
+  const activeProjects = projects.filter(p => p.status === 'Active');
+  const showBlockedBySection = formData.status === 'Blocked' || formData.blockedBy.length > 0;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -163,25 +217,46 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
         </div>
       </div>
 
-      {/* Domain */}
-      <div>
-        <label htmlFor="domainId" className={labelClass}>
-          Domain
-        </label>
-        <select
-          id="domainId"
-          name="domainId"
-          value={formData.domainId || ''}
-          onChange={handleChange}
-          className={inputClass}
-        >
-          <option value="">No domain</option>
-          {domains.map((domain) => (
-            <option key={domain.id} value={domain.id}>
-              {domain.icon ? `${domain.icon} ` : ''}{domain.name}
-            </option>
-          ))}
-        </select>
+      {/* Domain and Project */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label htmlFor="domainId" className={labelClass}>
+            Domain
+          </label>
+          <select
+            id="domainId"
+            name="domainId"
+            value={formData.domainId || ''}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            <option value="">No domain</option>
+            {domains.map((domain) => (
+              <option key={domain.id} value={domain.id}>
+                {domain.icon ? `${domain.icon} ` : ''}{domain.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="projectId" className={labelClass}>
+            Project
+          </label>
+          <select
+            id="projectId"
+            name="projectId"
+            value={formData.projectId || ''}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            <option value="">No project</option>
+            {activeProjects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.icon ? `${project.icon} ` : ''}{project.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Dates */}
@@ -272,6 +347,69 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
           })}
         </div>
       </div>
+
+      {/* Blocked By */}
+      {showBlockedBySection && (
+        <div>
+          <label className={labelClass}>Blocked By</label>
+          {formData.blockedBy.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {formData.blockedBy.map((entry, index) => (
+                <div key={index} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-sm">
+                  {entry.type === 'task' ? (
+                    <span className="text-yellow-300 truncate flex-1">
+                      {allTasks.find(t => t.id === entry.taskId)?.taskName || 'Unknown task'}
+                    </span>
+                  ) : (
+                    <span className="text-orange-300 truncate flex-1">
+                      {entry.note}
+                    </span>
+                  )}
+                  <span className="text-xs text-[var(--muted)] flex-shrink-0">{entry.type}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeBlocker(index)}
+                    className="text-red-400 hover:text-red-300 flex-shrink-0"
+                    aria-label="Remove blocker"
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <select
+              onChange={(e) => { addTaskBlocker(e.target.value); e.target.value = ''; }}
+              className={`${inputClass} flex-1`}
+              defaultValue=""
+            >
+              <option value="" disabled>Add task blocker...</option>
+              {eligibleBlockerTasks.map(t => (
+                <option key={t.id} value={t.id}>{t.taskName}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <input
+              type="text"
+              value={noteBlockerText}
+              onChange={(e) => setNoteBlockerText(e.target.value)}
+              placeholder="Add note blocker..."
+              className={`${inputClass} flex-1`}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addNoteBlocker(); } }}
+            />
+            <button
+              type="button"
+              onClick={addNoteBlocker}
+              disabled={!noteBlockerText.trim()}
+              className="px-3 py-2 bg-[var(--card-hover)] text-[var(--muted)] hover:text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Notes */}
       <div>

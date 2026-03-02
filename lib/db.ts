@@ -1,5 +1,6 @@
 import Dexie, { Table } from 'dexie';
 import { toDateString } from './dates';
+import { BlockedByEntry } from '@/types';
 
 // Database types - independent of external services
 export interface Task {
@@ -18,6 +19,20 @@ export interface Task {
   doneDate: string | null;
   actionPoints: string | null;
   notes: string;
+  domainId: string | null;
+  projectId: string | null;
+  blockedBy: BlockedByEntry[];
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  icon: string | null;
+  status: 'Active' | 'Completed' | 'Archived';
   domainId: string | null;
   deletedAt: string | null;
   createdAt: string;
@@ -99,6 +114,7 @@ export interface SyncPayload {
   domains: Domain[];
   habits: Habit[];
   events: Event[];
+  projects?: Project[];
   filterPresets: FilterPreset[];
   preferences: Record<string, string>;
   exportedAt: string;
@@ -125,6 +141,7 @@ class LifeOSDatabase extends Dexie {
   filterPresets!: Table<FilterPreset, string>;
   habits!: Table<Habit, string>;
   events!: Table<Event, string>;
+  projects!: Table<Project, string>;
 
   constructor() {
     super('LifeOSDatabase');
@@ -336,6 +353,22 @@ class LifeOSDatabase extends Dexie {
         task.taskScore = scores.combinedScore;
       });
     });
+
+    // Version 11: Add projects table, blockedBy + projectId to tasks
+    this.version(11).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, projectId, updatedAt, deletedAt',
+      domains: 'id, name, priority, updatedAt, deletedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order, deletedAt',
+      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
+      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
+      projects: 'id, name, status, domainId, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      await tx.table('tasks').toCollection().modify(task => {
+        if (task.blockedBy === undefined) task.blockedBy = [];
+        if (task.projectId === undefined) task.projectId = null;
+      });
+    });
   }
 }
 
@@ -517,11 +550,12 @@ export function checkNeedsReset(task: Task): boolean {
 
 // Export all data for sync (includes tombstones for deletion propagation)
 export async function exportAllData(): Promise<SyncPayload> {
-  const [tasks, domains, habits, events, filterPresets] = await Promise.all([
+  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
     db.tasks.toArray(),
     db.domains.toArray(),
     db.habits.toArray(),
     db.events.toArray(),
+    db.projects.toArray(),
     db.filterPresets.toArray(),
   ]);
 
@@ -540,6 +574,7 @@ export async function exportAllData(): Promise<SyncPayload> {
     domains,
     habits,
     events,
+    projects,
     filterPresets,
     preferences,
     exportedAt: new Date().toISOString(),
@@ -547,18 +582,19 @@ export async function exportAllData(): Promise<SyncPayload> {
 }
 
 // Replace all local data with remote data (full replace, not merge)
-export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; events?: Event[]; exportedAt: string }): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.filterPresets], async () => {
+export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; events?: Event[]; projects?: Project[]; exportedAt: string }): Promise<void> {
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
     // Clear all tables
     await db.tasks.clear();
     await db.domains.clear();
     await db.habits.clear();
     await db.events.clear();
+    await db.projects.clear();
     await db.filterPresets.clear();
 
     // Bulk insert all remote data (with deletedAt fallback for backward compat)
     await db.domains.bulkAdd(data.domains.map(d => ({ ...d, deletedAt: d.deletedAt ?? null })));
-    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null })));
+    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null, blockedBy: t.blockedBy ?? [], projectId: t.projectId ?? null })));
 
     if (data.habits) {
       await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
@@ -567,6 +603,11 @@ export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domain
     const events = 'events' in data ? data.events : undefined;
     if (events) {
       await db.events.bulkAdd(events.map(ev => ({ ...ev, deletedAt: ev.deletedAt ?? null })));
+    }
+
+    const projects = 'projects' in data ? data.projects : undefined;
+    if (projects) {
+      await db.projects.bulkAdd(projects.map(p => ({ ...p, deletedAt: p.deletedAt ?? null })));
     }
 
     if ('filterPresets' in data && data.filterPresets) {
@@ -597,15 +638,16 @@ export async function hasUnsavedChanges(): Promise<boolean> {
 
   const lastSynced = new Date(syncMeta.lastSyncedAt).getTime();
 
-  const [tasks, domains, habits, events, filterPresets] = await Promise.all([
+  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
     db.tasks.toArray(),
     db.domains.toArray(),
     db.habits.toArray(),
     db.events.toArray(),
+    db.projects.toArray(),
     db.filterPresets.toArray(),
   ]);
 
-  const allRecords = [...tasks, ...domains, ...habits, ...events, ...filterPresets];
+  const allRecords = [...tasks, ...domains, ...habits, ...events, ...projects, ...filterPresets];
   return allRecords.some(r => new Date(r.updatedAt).getTime() > lastSynced);
 }
 
@@ -614,8 +656,8 @@ export async function compactTombstones(retentionDays: number = 30): Promise<num
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   let purged = 0;
 
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.filterPresets], async () => {
-    const tables = [db.tasks, db.domains, db.habits, db.events, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
+    const tables = [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
     for (const table of tables) {
       const tombstones = await table.filter(r => !!r.deletedAt && r.deletedAt < cutoff).toArray();
       for (const record of tombstones) {
@@ -630,12 +672,13 @@ export async function compactTombstones(retentionDays: number = 30): Promise<num
 
 // Clear all data (for logout/reset)
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.events, db.filterPresets], async () => {
+  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.events, db.projects, db.filterPresets], async () => {
     await db.tasks.clear();
     await db.domains.clear();
     await db.syncMetadata.clear();
     await db.habits.clear();
     await db.events.clear();
+    await db.projects.clear();
     await db.filterPresets.clear();
   });
 }
@@ -831,6 +874,42 @@ export async function updateEvent(id: string, updates: Partial<Event>): Promise<
 export async function deleteEvent(id: string): Promise<void> {
   const now = new Date().toISOString();
   await db.events.update(id, { deletedAt: now, updatedAt: now });
+}
+
+// Project CRUD operations
+
+export async function getAllProjects(): Promise<Project[]> {
+  const all = await db.projects.toArray();
+  return all.filter(p => !p.deletedAt);
+}
+
+export async function getProjectById(id: string): Promise<Project | undefined> {
+  return db.projects.get(id);
+}
+
+export async function createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.projects.add({
+    ...project,
+    id,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function updateProject(id: string, updates: Partial<Project>): Promise<void> {
+  await db.projects.update(id, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.projects.update(id, { deletedAt: now, updatedAt: now });
 }
 
 // Check if a recurring event needs reset (same logic as checkNeedsReset but for Event type)

@@ -8,7 +8,7 @@ import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
-import { useTasks, useDomains, useVisibleFilterPresets, useEvents, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
+import { useTasks, useDomains, useVisibleFilterPresets, useEvents, useProjects, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
 import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder, getDueSoonLabel } from '@/lib/colors';
@@ -101,6 +101,7 @@ export default function PlanPage() {
   const domains = useDomains();
   const filterPresets = useVisibleFilterPresets();
   const events = useEvents();
+  const projects = useProjects();
 
   const [mainView, setMainView] = useState<MainView>('planning');
   const [triageTab, setTriageTab] = useState<TriageTab>('needsDetails');
@@ -138,7 +139,7 @@ export default function PlanPage() {
 
   // Planning view state
   const [sortLevels, setSortLevels] = usePersistedSortLevels('plan-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], urgency: [], domain: [], recurrence: [], actionPoints: [], dueDate: [] });
+  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], urgency: [], domain: [], recurrence: [], actionPoints: [], dueDate: [], project: [] });
   // Build filters with dynamic domain options
   const planFilters = useMemo<FilterDef[]>(() => [
     ...PLAN_FILTERS,
@@ -149,7 +150,15 @@ export default function PlanPage() {
         ...domains.map(d => ({ value: d.id, label: `${d.icon || '📁'} ${d.name}` })),
       ],
     },
-  ], [domains]);
+    {
+      key: 'project', label: 'Project',
+      options: [
+        { value: 'all', label: 'All Projects' },
+        { value: 'none', label: 'No Project' },
+        ...projects.filter(p => p.status === 'Active').map(p => ({ value: p.id, label: `${p.icon || '📦'} ${p.name}` })),
+      ],
+    },
+  ], [domains, projects]);
 
   // Comparators for sorting
   const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
@@ -297,6 +306,18 @@ export default function PlanPage() {
           if (f === 'this-month' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 30), 'yyyy-MM-dd')) return true;
           if (f === 'has-due-date' && t.dueDate) return true;
           if (f === 'no-due-date' && !t.dueDate) return true;
+        }
+        return false;
+      });
+    }
+
+    // Project filter
+    const projectFilter = filterValues.project || [];
+    if (isFilterActive(projectFilter)) {
+      result = result.filter(t => {
+        for (const f of projectFilter) {
+          if (f === 'none' && !t.projectId) return true;
+          if (f === t.projectId) return true;
         }
         return false;
       });
@@ -853,41 +874,55 @@ export default function PlanPage() {
                 {triageTasks[triageTab].map(task => (
                   <div
                     key={task.id}
-                    className={`p-4 flex items-center justify-between hover:bg-[var(--card-hover)] cursor-pointer transition-colors ${
+                    className={`p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors ${
                       triageTab === 'missed' ? 'border-l-4 border-orange-500' : ''
                     } ${triageTab === 'overdue' ? 'border-l-4 border-red-500' : ''} ${
                       triageTab === 'archived' ? 'border-l-4 border-gray-500 opacity-75' : ''
                     }`}
                     onClick={() => handleEditTask(task)}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="text-white">{task.taskName}</span>
-                      {task.domain && (
-                        <span className="text-xs text-[var(--muted)]">
-                          {task.domain.icon} {task.domain.name}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-white">{task.taskName}</span>
+                        {task.domain && (
+                          <span className="text-xs text-[var(--muted)]">
+                            {task.domain.icon} {task.domain.name}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {triageTab === 'missed' && task.plannedDate && (
+                          <span className="text-xs text-orange-400">
+                            Planned {format(new Date(task.plannedDate + 'T00:00:00'), 'MMM d')}
+                          </span>
+                        )}
+                        {triageTab === 'overdue' && task.dueDate && (
+                          <span className="text-xs text-red-400">
+                            Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
+                          </span>
+                        )}
+                        {triageTab !== 'overdue' && task.dueDate && (
+                          <span className={`text-xs ${getDueDateColor(task.dueDate)}`}>
+                            Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
+                          </span>
+                        )}
+                        <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
+                          {task.taskPriority.split(' - ')[1]}
                         </span>
-                      )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {triageTab === 'missed' && task.plannedDate && (
-                        <span className="text-xs text-orange-400">
-                          Planned {format(new Date(task.plannedDate + 'T00:00:00'), 'MMM d')}
-                        </span>
-                      )}
-                      {triageTab === 'overdue' && task.dueDate && (
-                        <span className="text-xs text-red-400">
-                          Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
-                        </span>
-                      )}
-                      {triageTab !== 'overdue' && task.dueDate && (
-                        <span className={`text-xs ${getDueDateColor(task.dueDate)}`}>
-                          Due {format(new Date(task.dueDate + 'T00:00:00'), 'MMM d')}
-                        </span>
-                      )}
-                      <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-                        {task.taskPriority.split(' - ')[1]}
-                      </span>
-                    </div>
+                    {triageTab === 'blocked' && task.blockedBy && task.blockedBy.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <span className="text-xs text-[var(--muted)]">Blocked by:</span>
+                        {task.blockedBy.map((entry, i) => (
+                          <span key={i} className={`text-xs px-1.5 py-0.5 rounded ${entry.type === 'task' ? 'bg-yellow-500/15 text-yellow-300' : 'bg-orange-500/15 text-orange-300'}`}>
+                            {entry.type === 'task'
+                              ? tasks.find(t => t.id === entry.taskId)?.taskName || 'Unknown'
+                              : entry.note}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1478,6 +1513,8 @@ export default function PlanPage() {
         <TaskForm
           task={editingTask}
           domains={domains}
+          allTasks={tasks}
+          projects={projects}
           onSubmit={handleTaskSubmit}
           onCancel={() => { setIsTaskModalOpen(false); setEditingTask(null); setSelectedDate(null); }}
         />

@@ -9,7 +9,7 @@ import HabitForm, { HabitFormData } from '@/components/HabitForm';
 import EventForm, { EventFormData } from '@/components/EventForm';
 import HabitCard from '@/components/HabitCard';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
+import { useTasks, useDomains, useProjects, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
 import { getTodayString } from '@/lib/dates';
 import { getTaskPriorityBorder } from '@/lib/colors';
@@ -18,6 +18,7 @@ import { parseLocalDate } from '@/lib/dates';
 export default function TodayPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const projects = useProjects();
   const habitsDueToday = useHabitsDueToday();
   const habitsCompletedToday = useHabitsCompletedToday();
   const eventsToday = useEventsToday();
@@ -420,6 +421,8 @@ export default function TodayPage() {
         <TaskForm
           task={editingTask}
           domains={domains}
+          allTasks={tasks}
+          projects={projects}
           onSubmit={handleTaskSubmit}
           onCancel={() => { setIsTaskModalOpen(false); setEditingTask(null); }}
         />
