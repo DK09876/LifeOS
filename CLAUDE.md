@@ -4,7 +4,7 @@ This file provides context for Claude Code when working on this repository.
 
 ## Project Overview
 
-LifeOS is a **local-first Progressive Web App (PWA)** for personal productivity and task management. It stores data locally on each device using IndexedDB and syncs across devices via the user's personal Google Drive.
+LifeOS is a **local-first Progressive Web App (PWA)** for personal productivity — tasks, habits, and planning. It stores data locally using IndexedDB and backs up to the user's personal Google Drive via explicit Push/Pull.
 
 **Key Principle**: No central server database - each user owns their data completely.
 
@@ -14,57 +14,73 @@ LifeOS is a **local-first Progressive Web App (PWA)** for personal productivity 
 User's Device                          User's Google Drive
 ┌─────────────────┐                   ┌─────────────────┐
 │  React UI       │                   │ LifeOS/         │
-│       ↓↑        │                   │   lifeos-data.json
-│  IndexedDB      │ ←───── sync ────→ │                 │
+│       ↓↑        │  Push ──────────→ │   lifeos-data.json
+│  IndexedDB      │  ←────────── Pull │   (version: 2)  │
 │  (Dexie.js)     │                   │                 │
 └─────────────────┘                   └─────────────────┘
 ```
 
 ### Data Flow
 1. User makes changes → saved to IndexedDB immediately
-2. On sync (auto on startup, or manual button) → merge with Google Drive
-3. Conflict resolution: last-write-wins based on `updatedAt` timestamps
+2. **Push**: uploads local data to Google Drive (replaces remote)
+3. **Pull**: downloads remote data and replaces local (with unsaved-changes warning)
+4. No auto-sync — user controls when data moves
+
+### Deletion Model
+- Records get `deletedAt` timestamp (soft delete / tombstone) instead of being removed
+- Tombstones propagate deletions across devices: push on Device A → pull on Device B
+- Tombstones older than 30 days are compacted (hard-deleted) before each push
 
 ## Tech Stack
 
 - **Framework**: Next.js 16 with App Router
 - **UI**: React 19 + Tailwind CSS 4
-- **Local Database**: Dexie.js (IndexedDB wrapper)
-- **Auth**: Google Identity Services (OAuth 2.0)
-- **Sync**: Google Drive API (REST)
+- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 10
+- **Auth**: Google OAuth 2.0 (popup with callback page + localStorage events)
+- **Sync**: Google Drive API (REST) — Push/Pull only, no auto-sync
 - **Date Handling**: date-fns
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `lib/db.ts` | Dexie database schema, CRUD operations, score calculation |
-| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, action functions |
+| `lib/db.ts` | Dexie database schema, CRUD operations, score calculation, sync payload types |
+| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, action functions |
+| `lib/sync.ts` | Google Drive Push/Pull: `pushToGoogleDrive()`, `pullFromGoogleDrive()` |
+| `lib/colors.ts` | Shared color utility functions (priority, status, due date colors) |
+| `lib/suggest.ts` | Auto-suggest algorithm: scoring, suggestNextTask, suggestWeekSchedule (pure functions) |
 | `lib/google-auth.ts` | Google OAuth: sign in, sign out, token management |
-| `lib/sync.ts` | Google Drive sync: upload, download, merge |
-| `app/page.tsx` | Main UI with task/domain lists, filters, sync controls |
-| `public/sw.js` | Service worker for offline caching |
-| `public/manifest.json` | PWA manifest for installability |
+| `components/AppLayout.tsx` | Main layout: sidebar, header with Push/Pull buttons, quote |
+| `app/page.tsx` | Today view: due tasks + habits, completed today |
+| `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix + Auto-Suggest |
+| `app/habits/page.tsx` | Habits management: due now, on track, paused |
 
 ## Data Models
+
+All models include `deletedAt: string | null` for tombstone-based soft deletes.
 
 ### Task
 ```typescript
 {
-  id: string;                    // UUID
+  id: string;
   taskName: string;
-  status: 'Needs Details' | 'Backlog' | 'Blocked' | 'Done' | 'Archived';
+  status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
   taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
-  taskScore: number;             // Calculated from priority + domain + due date
-  dueDate: string | null;        // ISO date
+  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
+  importanceScore: number;   // priority + domain, range 20-80
+  urgencyScore: number;      // urgency field + due date proximity, range 10-100
+  taskScore: number;         // combined: (importance × urgency) / 100
+  dueDate: string | null;
   plannedDate: string | null;
-  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Quarterly' | 'Yearly';
-  lastCompleted: string | null;  // For recurring task reset detection
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  doneDate: string | null;
   actionPoints: string | null;
   notes: string;
-  domainId: string | null;       // FK to Domain
+  domainId: string | null;
+  deletedAt: string | null;
   createdAt: string;
-  updatedAt: string;             // Used for sync conflict resolution
+  updatedAt: string;
 }
 ```
 
@@ -73,7 +89,46 @@ User's Device                          User's Google Drive
 {
   id: string;
   name: string;
+  icon: string | null;
   priority: '1 - Critical' | '2 - Important' | '3 - Maintenance';
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### Habit
+```typescript
+{
+  id: string;
+  habitName: string;
+  recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  targetPerWeek: number | null;
+  completionDates: string[];    // Pruned to last 90 days on each completion
+  notes: string;
+  icon: string | null;
+  isActive: boolean;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### Event
+```typescript
+{
+  id: string;
+  eventName: string;
+  date: string;              // YYYY-MM-DD
+  time: string | null;       // HH:mm
+  duration: number | null;   // minutes
+  actionPoints: string | null;
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  notes: string;
+  domainId: string | null;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,12 +149,6 @@ npm run lint     # Run ESLint
 |----------|----------|-------------|
 | `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | No | Google OAuth Client ID (only needed for sync) |
 
-## PWA Features
-
-- **Installable**: Works on iOS, Android, Windows, macOS
-- **Offline**: Service worker caches app shell, IndexedDB stores data
-- **Sync**: Manual sync button + auto-sync on app startup
-
 ## Important Patterns
 
 ### Using the Database
@@ -107,27 +156,72 @@ npm run lint     # Run ESLint
 // In components - use hooks (reactive)
 const tasks = useTasks();
 const domains = useDomains();
+const habits = useHabits();
+const events = useEvents();
 
 // For actions
-import { markTaskDone, undoTaskDone, resetTask, createTask } from '@/lib/hooks';
+import { markTaskDone, undoTaskDone, createTask, deleteTask } from '@/lib/hooks';
+import { markHabitDone, undoHabitDone, createHabit } from '@/lib/hooks';
+import { createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 ```
 
-### Direct DB Access (in lib files)
+### Color Utilities
 ```typescript
-import { db, getAllTasks, createTask, updateTask } from '@/lib/db';
+// Always use shared functions from lib/colors.ts — never define inline
+import { getTaskPriorityColor, getDomainPriorityColor, getStatusColor, getDueDateColor, getPriorityDotColor, getTaskPriorityBorder } from '@/lib/colors';
 ```
 
 ### Sync Flow
 ```typescript
-import { syncWithGoogleDrive } from '@/lib/sync';
-const result = await syncWithGoogleDrive();
-// result: { success: boolean, message: string, lastSyncedAt?: string }
+import { pushToGoogleDrive, pullFromGoogleDrive } from '@/lib/sync';
+// Push: compacts tombstones, exports all data (v2 payload), uploads to Drive
+// Pull: downloads from Drive, replaces all local data
+```
+
+### Soft Deletes
+All delete operations set `deletedAt` instead of removing records:
+```typescript
+// In db.ts: await db.tasks.update(id, { deletedAt: now, updatedAt: now });
+// All query functions filter: .filter(t => !t.deletedAt)
+// All create functions add: deletedAt: null
+```
+
+## Maintenance Instructions
+
+When making changes to LifeOS, keep these artifacts up to date:
+
+1. **CHANGELOG.md** — Add entries under the current version for any user-facing changes (features, fixes, UI changes). Group by category (e.g., Habits, Sync, Planning, Other).
+2. **app/help/page.tsx** (How it Works) — Update if any concepts, workflows, or sync behavior changes.
+3. **app/get-started/page.tsx** (Get Started) — Update if new entity types or onboarding steps are added.
+4. **This file (CLAUDE.md)** — Update data models, key files, or patterns if architecture changes.
+
+### Date Handling
+
+**CRITICAL**: All date-only strings (YYYY-MM-DD) in this app represent **local** dates. Using UTC-based methods to produce them causes bugs in non-UTC timezones (e.g., US timezones where local date can differ from UTC date).
+
+```typescript
+// NEVER use new Date("YYYY-MM-DD") — parses as UTC midnight, wrong in US timezones
+// ALWAYS use parseLocalDate for date-only strings (YYYY-MM-DD)
+import { parseLocalDate, getTodayString, toDateString } from '@/lib/dates';
+parseLocalDate('2026-02-04') // → local midnight Feb 4 (correct)
+new Date('2026-02-04')       // → UTC midnight Feb 4 = Feb 3 in US (wrong!)
+
+// NEVER use .toISOString().slice(0, 10) to get today's date — returns UTC date, not local
+// ALWAYS use getTodayString() or toDateString(someDate) from lib/dates.ts
+getTodayString()             // → local today as 'YYYY-MM-DD' (correct)
+toDateString(someDate)       // → local date string from a Date object (correct)
+new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
+
+// .toISOString() is fine for full timestamps (createdAt, updatedAt) since those
+// store the exact moment in time. The bug only affects date-only strings used for
+// comparison with stored local dates (plannedDate, dueDate, completionDates, etc.)
 ```
 
 ## Notes
 
 - The app works fully offline without Google sign-in
-- Google Drive sync is optional - for cross-device use only
-- All data merging uses timestamps (`updatedAt`) for conflict resolution
-- Task scores are recalculated when priority or domain changes
+- Google Drive sync is optional — Push/Pull only, no auto-sync
+- Deletions use tombstones (`deletedAt`) that propagate across devices via sync
+- Task scores (importance, urgency, combined) are recalculated when priority, urgency, due date, or domain changes
 - Recurring tasks have `needsReset` computed at runtime (not stored)
+- `completionDates` on habits are pruned to 90 days to prevent unbounded growth

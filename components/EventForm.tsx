@@ -1,71 +1,63 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Task, Domain } from '@/types';
+import { Event, Domain } from '@/types';
+import { getTodayString } from '@/lib/dates';
 
-interface TaskFormProps {
-  task?: Task | null;
+interface EventFormProps {
+  event?: Event | null;
   domains: Domain[];
-  onSubmit: (data: TaskFormData) => void | Promise<void>;
+  onSubmit: (data: EventFormData) => void | Promise<void>;
   onCancel: () => void;
 }
 
-export interface TaskFormData {
-  taskName: string;
-  status: Task['status'];
-  taskPriority: Task['taskPriority'];
-  urgency: Task['urgency'];
-  dueDate: string | null;
-  plannedDate: string | null;
-  recurrence: Task['recurrence'];
+export interface EventFormData {
+  eventName: string;
+  date: string;
+  time: string | null;
+  duration: number | null;
   actionPoints: string | null;
+  recurrence: Event['recurrence'];
   notes: string;
   domainId: string | null;
 }
 
-const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
-const PRIORITY_OPTIONS: Task['taskPriority'][] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
-const URGENCY_OPTIONS: Task['urgency'][] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
-const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
+const RECURRENCE_OPTIONS: Event['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
 
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
 const labelClass = "block text-sm font-medium text-[var(--muted)] mb-1";
 
-export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskFormProps) {
-  const [formData, setFormData] = useState<TaskFormData>({
-    taskName: '',
-    status: 'Needs Details',
-    taskPriority: '3 - Normal',
-    urgency: '3 - Normal',
-    dueDate: null,
-    plannedDate: null,
-    recurrence: 'None',
+export default function EventForm({ event, domains, onSubmit, onCancel }: EventFormProps) {
+  const [formData, setFormData] = useState<EventFormData>({
+    eventName: '',
+    date: getTodayString(),
+    time: null,
+    duration: null,
     actionPoints: null,
+    recurrence: 'None',
     notes: '',
     domainId: null,
   });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (task) {
+    if (event) {
       setFormData({
-        taskName: task.taskName,
-        status: task.status,
-        taskPriority: task.taskPriority,
-        urgency: task.urgency,
-        dueDate: task.dueDate,
-        plannedDate: task.plannedDate,
-        recurrence: task.recurrence,
-        actionPoints: task.actionPoints,
-        notes: task.notes,
-        domainId: task.domainId,
+        eventName: event.eventName,
+        date: event.date,
+        time: event.time,
+        duration: event.duration,
+        actionPoints: event.actionPoints,
+        recurrence: event.recurrence,
+        notes: event.notes,
+        domainId: event.domainId,
       });
     }
-  }, [task]);
+  }, [event]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.taskName.trim() || submitting) return;
+    if (!formData.eventName.trim() || !formData.date || submitting) return;
     setSubmitting(true);
     try {
       await onSubmit(formData);
@@ -88,78 +80,69 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Task Name */}
+      {/* Event Name */}
       <div>
-        <label htmlFor="taskName" className={labelClass}>
-          Task Name *
+        <label htmlFor="eventName" className={labelClass}>
+          Event Name *
         </label>
         <input
           type="text"
-          id="taskName"
-          name="taskName"
-          value={formData.taskName}
+          id="eventName"
+          name="eventName"
+          value={formData.eventName}
           onChange={handleChange}
           required
           className={inputClass}
-          placeholder="Enter task name"
+          placeholder="Enter event name"
         />
       </div>
 
-      {/* Status, Priority, and Urgency */}
+      {/* Date, Time, Duration */}
       <div className="grid grid-cols-3 gap-4">
         <div>
-          <label htmlFor="status" className={labelClass}>
-            Status
+          <label htmlFor="date" className={labelClass}>
+            Date *
           </label>
-          <select
-            id="status"
-            name="status"
-            value={formData.status}
+          <input
+            type="date"
+            id="date"
+            name="date"
+            value={formData.date}
             onChange={handleChange}
+            required
             className={inputClass}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div>
-          <label htmlFor="taskPriority" className={labelClass}>
-            Priority
+          <label htmlFor="time" className={labelClass}>
+            Time
           </label>
-          <select
-            id="taskPriority"
-            name="taskPriority"
-            value={formData.taskPriority}
+          <input
+            type="time"
+            id="time"
+            name="time"
+            value={formData.time || ''}
             onChange={handleChange}
             className={inputClass}
-          >
-            {PRIORITY_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+          />
         </div>
         <div>
-          <label htmlFor="urgency" className={labelClass}>
-            Urgency
+          <label htmlFor="duration" className={labelClass}>
+            Duration (min)
           </label>
-          <select
-            id="urgency"
-            name="urgency"
-            value={formData.urgency}
-            onChange={handleChange}
+          <input
+            type="number"
+            id="duration"
+            name="duration"
+            min="0"
+            value={formData.duration ?? ''}
+            onChange={(e) => setFormData(prev => ({
+              ...prev,
+              duration: e.target.value === '' ? null : parseInt(e.target.value) || null,
+            }))}
             className={inputClass}
-          >
-            {URGENCY_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+            placeholder="Minutes"
+          />
         </div>
       </div>
 
@@ -182,36 +165,6 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
             </option>
           ))}
         </select>
-      </div>
-
-      {/* Dates */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="dueDate" className={labelClass}>
-            Due Date
-          </label>
-          <input
-            type="date"
-            id="dueDate"
-            name="dueDate"
-            value={formData.dueDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="plannedDate" className={labelClass}>
-            Planned Date
-          </label>
-          <input
-            type="date"
-            id="plannedDate"
-            name="plannedDate"
-            value={formData.plannedDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
       </div>
 
       {/* Recurrence */}
@@ -301,9 +254,9 @@ export default function TaskForm({ task, domains, onSubmit, onCancel }: TaskForm
         <button
           type="submit"
           disabled={submitting}
-          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
+          className="px-4 py-2 text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
         >
-          {submitting ? 'Saving...' : (task ? 'Update Task' : 'Create Task')}
+          {submitting ? 'Saving...' : (event ? 'Update Event' : 'Create Event')}
         </button>
       </div>
     </form>

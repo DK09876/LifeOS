@@ -5,7 +5,7 @@ import { Domain } from '@/types';
 
 interface DomainFormProps {
   domain?: Domain | null;
-  onSubmit: (data: DomainFormData) => void;
+  onSubmit: (data: DomainFormData) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -33,6 +33,7 @@ export default function DomainForm({ domain, onSubmit, onCancel }: DomainFormPro
     icon: null,
     priority: '3 - Maintenance',
   });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (domain) {
@@ -44,10 +45,17 @@ export default function DomainForm({ domain, onSubmit, onCancel }: DomainFormPro
     }
   }, [domain]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
-    onSubmit(formData);
+    if (!formData.name.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(formData);
+    } catch (err) {
+      console.error('Form submission failed:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (
@@ -175,9 +183,10 @@ export default function DomainForm({ domain, onSubmit, onCancel }: DomainFormPro
         </button>
         <button
           type="submit"
-          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+          disabled={submitting}
+          className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
         >
-          {domain ? 'Update Domain' : 'Create Domain'}
+          {submitting ? 'Saving...' : (domain ? 'Update Domain' : 'Create Domain')}
         </button>
       </div>
     </form>

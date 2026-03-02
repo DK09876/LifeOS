@@ -2,10 +2,12 @@
 // Syncs local IndexedDB data with a JSON file in user's Google Drive
 
 import { getStoredAuth, refreshTokenIfNeeded } from './google-auth';
-import { exportAllData, importData, getSyncMetadata, updateSyncMetadata, Task, Domain } from './db';
+import { exportAllData, replaceAllData, hasUnsavedChanges, compactTombstones, getSyncMetadata, updateSyncMetadata, SyncPayload, Task, Domain, Habit } from './db';
 
 const DRIVE_FILE_NAME = 'lifeos-data.json';
 const DRIVE_FOLDER_NAME = 'LifeOS';
+
+let syncInProgress = false;
 
 export interface SyncResult {
   success: boolean;
@@ -81,7 +83,7 @@ async function findDataFile(accessToken: string, folderId: string): Promise<stri
 }
 
 // Download data from Google Drive
-async function downloadData(accessToken: string, fileId: string): Promise<{ tasks: Task[]; domains: Domain[]; exportedAt: string } | null> {
+async function downloadData(accessToken: string, fileId: string): Promise<SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; exportedAt: string } | null> {
   const response = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
     {
@@ -106,7 +108,7 @@ async function uploadData(
   accessToken: string,
   folderId: string,
   fileId: string | null,
-  data: { tasks: Task[]; domains: Domain[]; exportedAt: string }
+  data: SyncPayload
 ): Promise<string> {
   const metadata = {
     name: DRIVE_FILE_NAME,
@@ -144,74 +146,12 @@ async function uploadData(
   return result.id;
 }
 
-// Main sync function
-export async function syncWithGoogleDrive(): Promise<SyncResult> {
-  try {
-    // Check if user is authenticated
-    const user = await refreshTokenIfNeeded();
-    if (!user) {
-      return {
-        success: false,
-        message: 'Not signed in to Google. Please sign in to sync.',
-      };
-    }
-
-    const accessToken = user.accessToken;
-
-    // Get or create the LifeOS folder
-    const folderId = await getOrCreateFolder(accessToken);
-
-    // Find existing data file
-    let fileId = await findDataFile(accessToken, folderId);
-
-    // Get local data
-    const localData = await exportAllData();
-
-    // Get remote data if file exists
-    let remoteData: { tasks: Task[]; domains: Domain[]; exportedAt: string } | null = null;
-    if (fileId) {
-      remoteData = await downloadData(accessToken, fileId);
-    }
-
-    // Merge strategy: Last write wins based on updatedAt
-    if (remoteData) {
-      // Import remote data (merges based on timestamps)
-      await importData(remoteData);
-
-      // Re-export to get merged data
-      const mergedData = await exportAllData();
-
-      // Upload merged data
-      fileId = await uploadData(accessToken, folderId, fileId, mergedData);
-    } else {
-      // No remote data, upload local data
-      fileId = await uploadData(accessToken, folderId, null, localData);
-    }
-
-    // Update sync metadata
-    const now = new Date().toISOString();
-    await updateSyncMetadata({
-      lastSyncedAt: now,
-      googleDriveFileId: fileId,
-      userEmail: user.email,
-    });
-
-    return {
-      success: true,
-      message: 'Sync completed successfully',
-      lastSyncedAt: now,
-    };
-  } catch (error) {
-    console.error('Sync error:', error);
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Sync failed',
-    };
-  }
-}
-
-// Force push local data to Google Drive (overwrites remote)
+// Push local data to Google Drive (overwrites remote)
 export async function pushToGoogleDrive(): Promise<SyncResult> {
+  if (syncInProgress) {
+    return { success: false, message: 'Sync already in progress' };
+  }
+  syncInProgress = true;
   try {
     const user = await refreshTokenIfNeeded();
     if (!user) {
@@ -224,8 +164,11 @@ export async function pushToGoogleDrive(): Promise<SyncResult> {
     const accessToken = user.accessToken;
     const folderId = await getOrCreateFolder(accessToken);
     const fileId = await findDataFile(accessToken, folderId);
-    const localData = await exportAllData();
 
+    // Compact old tombstones before pushing
+    await compactTombstones();
+
+    const localData = await exportAllData();
     const newFileId = await uploadData(accessToken, folderId, fileId, localData);
 
     const now = new Date().toISOString();
@@ -246,11 +189,17 @@ export async function pushToGoogleDrive(): Promise<SyncResult> {
       success: false,
       message: error instanceof Error ? error.message : 'Push failed',
     };
+  } finally {
+    syncInProgress = false;
   }
 }
 
-// Force pull from Google Drive (overwrites local)
+// Pull from Google Drive (full replace local)
 export async function pullFromGoogleDrive(): Promise<SyncResult> {
+  if (syncInProgress) {
+    return { success: false, message: 'Sync already in progress' };
+  }
+  syncInProgress = true;
   try {
     const user = await refreshTokenIfNeeded();
     if (!user) {
@@ -279,8 +228,8 @@ export async function pullFromGoogleDrive(): Promise<SyncResult> {
       };
     }
 
-    // Import remote data (will overwrite local based on timestamps)
-    await importData(remoteData);
+    // Full replace local data with remote
+    await replaceAllData(remoteData);
 
     const now = new Date().toISOString();
     await updateSyncMetadata({
@@ -300,8 +249,13 @@ export async function pullFromGoogleDrive(): Promise<SyncResult> {
       success: false,
       message: error instanceof Error ? error.message : 'Pull failed',
     };
+  } finally {
+    syncInProgress = false;
   }
 }
+
+// Re-export hasUnsavedChanges for use in components
+export { hasUnsavedChanges } from './db';
 
 // Check sync status
 export async function getSyncStatus(): Promise<{

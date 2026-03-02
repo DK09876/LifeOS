@@ -1,16 +1,20 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { format, startOfWeek, addDays, isToday, isSameDay, addWeeks, subWeeks } from 'date-fns';
+import { format, startOfWeek, addDays, isToday, addWeeks } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
-import { useTasks, useDomains, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
+import { useToast } from '@/components/Toast';
+import { useTasks, useDomains, useEvents, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
+import { getPriorityDotColor } from '@/lib/colors';
+import { Event } from '@/types';
 
 export default function WeekPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const events = useEvents();
   const [weekOffset, setWeekOffset] = useState(0);
 
   // Task CRUD modals
@@ -33,24 +37,32 @@ export default function WeekPage() {
 
   // Filter tasks by week
   const weekTasks = useMemo(() => {
-    return weekDays.map(day => ({
-      date: day,
-      tasks: tasks.filter(t => {
-        if (t.status === 'Done' || t.status === 'Archived') return false;
-        if (t.plannedDate && isSameDay(new Date(t.plannedDate), day)) return true;
-        if (t.dueDate && isSameDay(new Date(t.dueDate), day)) return true;
-        return false;
-      }).sort((a, b) => {
-        const priorityA = parseInt(a.taskPriority[0]) || 3;
-        const priorityB = parseInt(b.taskPriority[0]) || 3;
-        return priorityA - priorityB;
-      })
-    }));
+    return weekDays.map(day => {
+      const dayStr = format(day, 'yyyy-MM-dd');
+      return {
+        date: day,
+        tasks: tasks.filter(t => {
+          if (t.status === 'Done' || t.status === 'Archived') return false;
+          // Compare date strings directly to avoid timezone issues
+          if (t.plannedDate === dayStr) return true;
+          if (t.dueDate === dayStr) return true;
+          return false;
+        }).sort((a, b) => {
+          const priorityA = parseInt(a.taskPriority[0]) || 3;
+          const priorityB = parseInt(b.taskPriority[0]) || 3;
+          return priorityA - priorityB;
+        })
+      };
+    });
   }, [tasks, weekDays]);
+
+  const { showToast } = useToast();
 
   // Task handlers
   async function handleMarkDone(taskId: string) {
-    await markTaskDone(taskId);
+    try {
+      await markTaskDone(taskId);
+    } catch { showToast('Failed to complete task', 'error'); }
   }
 
   function handleOpenCreateTask(date?: Date) {
@@ -66,37 +78,30 @@ export default function WeekPage() {
   }
 
   async function handleTaskSubmit(data: TaskFormData) {
-    const taskData = selectedDate && !data.plannedDate
-      ? { ...data, plannedDate: format(selectedDate, 'yyyy-MM-dd') }
-      : data;
+    try {
+      const taskData = selectedDate && !data.plannedDate
+        ? { ...data, plannedDate: format(selectedDate, 'yyyy-MM-dd') }
+        : data;
 
-    if (editingTask) {
-      await updateTaskData(editingTask.id, taskData);
-    } else {
-      await createTask(taskData);
-    }
-    setIsTaskModalOpen(false);
-    setEditingTask(null);
-    setSelectedDate(null);
+      if (editingTask) {
+        await updateTaskData(editingTask.id, taskData);
+      } else {
+        await createTask(taskData);
+      }
+      setIsTaskModalOpen(false);
+      setEditingTask(null);
+      setSelectedDate(null);
+    } catch { showToast('Failed to save task', 'error'); }
   }
 
   async function handleConfirmDeleteTask() {
-    if (taskToDelete) {
-      await deleteTask(taskToDelete);
-      setTaskToDelete(null);
-    }
+    try {
+      if (taskToDelete) {
+        await deleteTask(taskToDelete);
+        setTaskToDelete(null);
+      }
+    } catch { showToast('Failed to delete task', 'error'); }
   }
-
-  const getPriorityDot = (priority: string) => {
-    switch (priority) {
-      case '1 - Urgent': return 'bg-red-500';
-      case '2 - High': return 'bg-orange-500';
-      case '3 - Normal': return 'bg-blue-500';
-      case '4 - Low': return 'bg-gray-500';
-      case '5 - Optional': return 'bg-gray-600';
-      default: return 'bg-blue-500';
-    }
-  };
 
   const totalTasks = weekTasks.reduce((sum, day) => sum + day.tasks.length, 0);
 
@@ -114,6 +119,7 @@ export default function WeekPage() {
           <button
             onClick={() => setWeekOffset(prev => prev - 1)}
             className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+            aria-label="Previous week"
           >
             ←
           </button>
@@ -126,6 +132,7 @@ export default function WeekPage() {
           <button
             onClick={() => setWeekOffset(prev => prev + 1)}
             className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
+            aria-label="Next week"
           >
             →
           </button>
@@ -155,6 +162,23 @@ export default function WeekPage() {
 
             {/* Day Tasks */}
             <div className="bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 min-h-[250px]">
+              {/* Events for this day */}
+              {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => (
+                <div
+                  key={event.id}
+                  className="bg-indigo-500/10 rounded p-2 border-l-2 border-indigo-500 hover:bg-indigo-500/20 transition-colors"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-[10px] text-indigo-400 mt-0.5">🕐</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-indigo-300 text-sm line-clamp-2">{event.eventName}</p>
+                      {event.time && (
+                        <span className="text-xs text-indigo-400/70">{event.time}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
               {dayTasks.map(task => (
                 <div
                   key={task.id}
@@ -165,13 +189,14 @@ export default function WeekPage() {
                     <button
                       onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
                       className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+                      aria-label={`Mark "${task.taskName}" as done`}
                     >
-                      <span className="opacity-0 group-hover:opacity-100 text-green-500 text-[10px]">✓</span>
+                      <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
                     </button>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm line-clamp-2">{task.taskName}</p>
                       <div className="flex items-center gap-1 mt-1">
-                        <span className={`w-2 h-2 rounded-full ${getPriorityDot(task.taskPriority)}`}></span>
+                        <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
                         {task.domain?.icon && (
                           <span className="text-xs">{task.domain.icon}</span>
                         )}
@@ -184,7 +209,8 @@ export default function WeekPage() {
               {/* Add task button */}
               <button
                 onClick={() => handleOpenCreateTask(date)}
-                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 hover:opacity-100 transition-opacity"
+                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                aria-label={`Add task for ${format(date, 'EEEE, MMM d')}`}
               >
                 + Add
               </button>

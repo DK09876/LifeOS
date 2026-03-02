@@ -8,24 +8,36 @@ export interface Quote {
 // Fallback quotes in case API fails
 const fallbackQuotes: Quote[] = [
   {
-    text: "Some people thrive on huge, dramatic change. Some people prefer the slow and steady route. Do what's right for you.",
-    author: "Julie Morgenstern"
-  },
-  {
     text: "The secret of getting ahead is getting started.",
     author: "Mark Twain"
   },
   {
-    text: "Done is better than perfect.",
-    author: "Sheryl Sandberg"
+    text: "It always seems impossible until it's done.",
+    author: "Nelson Mandela"
   },
   {
     text: "The way to get started is to quit talking and begin doing.",
     author: "Walt Disney"
   },
   {
-    text: "It always seems impossible until it's done.",
-    author: "Nelson Mandela"
+    text: "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+    author: "Winston Churchill"
+  },
+  {
+    text: "What you do today can improve all your tomorrows.",
+    author: "Ralph Marston"
+  },
+  {
+    text: "Don't watch the clock; do what it does. Keep going.",
+    author: "Sam Levenson"
+  },
+  {
+    text: "The only way to do great work is to love what you do.",
+    author: "Steve Jobs"
+  },
+  {
+    text: "Small daily improvements are the key to staggering long-term results.",
+    author: "Robin Sharma"
   },
 ];
 
@@ -71,32 +83,27 @@ export async function fetchDailyQuote(): Promise<Quote> {
   }
 
   try {
-    // ZenQuotes API - free, no auth required
-    // Using CORS proxy since ZenQuotes doesn't support CORS
-    const response = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent('https://zenquotes.io/api/today'));
+    // Fetch from our own API route (avoids CORS issues)
+    const response = await fetch('/api/quote');
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch quote');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.text && data.author) {
+        const quote: Quote = {
+          text: data.text,
+          author: data.author
+        };
+        setCachedQuote(quote);
+        return quote;
+      }
     }
-
-    const data = await response.json();
-
-    if (data && data[0]) {
-      const quote: Quote = {
-        text: data[0].q,
-        author: data[0].a
-      };
-      setCachedQuote(quote);
-      return quote;
-    }
-
-    throw new Error('Invalid response format');
-  } catch (error) {
-    console.error('Error fetching quote:', error);
-    // Return a random fallback quote
-    const index = new Date().getDate() % fallbackQuotes.length;
-    return fallbackQuotes[index];
+  } catch {
+    // Silently fall through to fallback quotes
   }
+
+  // Return a fallback quote based on the day
+  const index = new Date().getDate() % fallbackQuotes.length;
+  return fallbackQuotes[index];
 }
 
 // Synchronous version using fallback (for initial render)
