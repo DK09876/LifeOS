@@ -6,12 +6,14 @@ import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
+import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { useTasks, useDomains, useVisibleFilterPresets, useEvents, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
 import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder, getDueSoonLabel } from '@/lib/colors';
-import { parseLocalDate } from '@/lib/dates';
+import { parseLocalDate, toDateString } from '@/lib/dates';
+import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeekSchedule, WeekDayInfo } from '@/lib/suggest';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -113,6 +115,26 @@ export default function PlanPage() {
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [selectedEventDate, setSelectedEventDate] = useState<Date | null>(null);
+
+  // Suggest state
+  const [suggestNextSkipIds, setSuggestNextSkipIds] = useState<Set<string>>(new Set());
+  const [suggestNextDismissed, setSuggestNextDismissed] = useState(false);
+  const [suggestedAssignments, setSuggestedAssignments] = useState<Map<string, string>>(new Map());
+  const [pinnedTaskIds, setPinnedTaskIds] = useState<Set<string>>(new Set());
+  const [suggestRemovedPlacements, setSuggestRemovedPlacements] = useState<Set<string>>(new Set()); // "taskId:dateStr"
+  const [suggestSettingsOpen, setSuggestSettingsOpen] = useState(false);
+  const [suggestControls, setSuggestControls] = useState<SuggestControls>(() => {
+    if (typeof window === 'undefined') return DEFAULT_SUGGEST_CONTROLS;
+    try {
+      const stored = localStorage.getItem('suggest-settings');
+      if (stored) return { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
+    } catch {}
+    return DEFAULT_SUGGEST_CONTROLS;
+  });
+  const updateSuggestControls = useCallback((c: SuggestControls) => {
+    setSuggestControls(c);
+    localStorage.setItem('suggest-settings', JSON.stringify(c));
+  }, []);
 
   // Planning view state
   const [sortLevels, setSortLevels] = usePersistedSortLevels('plan-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
@@ -327,6 +349,35 @@ export default function PlanPage() {
     unscheduled: unscheduledTasks.length,
   }), [triageTasks, unscheduledTasks]);
 
+  // Suggest Next Task: compute ranked list
+  const suggestNextRanked = useMemo(() => {
+    const todayStr = toDateString(new Date());
+    const scheduledToday = activeTasks.filter(t => t.plannedDate === todayStr);
+    const eventsToday = events.filter(e => e.date === todayStr);
+    return suggestNextTask(activeTasks, scheduledToday, eventsToday, suggestControls, suggestNextSkipIds);
+  }, [activeTasks, events, suggestControls, suggestNextSkipIds]);
+
+  // Suggest Week: compute week days info for current week
+  const suggestWeekDays = useMemo((): WeekDayInfo[] => {
+    const today = startOfDay(new Date());
+    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = addDays(weekStart, i);
+      const dateStr = toDateString(date);
+      return {
+        date,
+        dateStr,
+        existingTasks: activeTasks.filter(t => t.plannedDate === dateStr),
+        events: events.filter(e => e.date === dateStr),
+      };
+    });
+  }, [activeTasks, events]);
+
+  // Get task AP helper for display
+  const getDisplayAP = useCallback((task: Task) => {
+    return parseInt(task.actionPoints || '0') || suggestControls.defaultAP;
+  }, [suggestControls.defaultAP]);
+
   // Handlers
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
@@ -477,6 +528,68 @@ export default function PlanPage() {
     const diffDays = differenceInCalendarDays(date, today);
     setCalendarView('day');
     setDateOffset(diffDays);
+  };
+
+  // Suggest handlers
+  const handleGenerateWeekSchedule = () => {
+    const pinned = new Map(Array.from(pinnedTaskIds).reduce<[string, string][]>((acc, id) => {
+      const v = suggestedAssignments.get(id);
+      if (v) acc.push([id, v]);
+      return acc;
+    }, []));
+    const result = suggestWeekSchedule(activeTasks, suggestWeekDays, suggestControls, pinned, suggestRemovedPlacements);
+    setSuggestedAssignments(result);
+  };
+
+  const handleRerunWeekSchedule = () => {
+    const pinned = new Map<string, string>();
+    for (const id of pinnedTaskIds) {
+      const dateStr = suggestedAssignments.get(id);
+      if (dateStr) pinned.set(id, dateStr);
+    }
+    const result = suggestWeekSchedule(activeTasks, suggestWeekDays, suggestControls, pinned, suggestRemovedPlacements);
+    setSuggestedAssignments(result);
+  };
+
+  const handleApplySuggestions = async () => {
+    for (const taskId of pinnedTaskIds) {
+      const dateStr = suggestedAssignments.get(taskId);
+      if (dateStr) {
+        await updateTaskData(taskId, { plannedDate: dateStr });
+      }
+    }
+    setSuggestedAssignments(new Map());
+    setPinnedTaskIds(new Set());
+    setSuggestRemovedPlacements(new Set());
+  };
+
+  const handleDiscardSuggestions = () => {
+    setSuggestedAssignments(new Map());
+    setPinnedTaskIds(new Set());
+    setSuggestRemovedPlacements(new Set());
+  };
+
+  const handleTogglePin = (taskId: string) => {
+    const next = new Set(pinnedTaskIds);
+    if (next.has(taskId)) {
+      next.delete(taskId);
+    } else {
+      next.add(taskId);
+    }
+    setPinnedTaskIds(next);
+  };
+
+  const handleRemoveSuggestion = (taskId: string) => {
+    const dateStr = suggestedAssignments.get(taskId);
+    if (dateStr) {
+      setSuggestRemovedPlacements(prev => new Set([...prev, `${taskId}:${dateStr}`]));
+    }
+    const next = new Map(suggestedAssignments);
+    next.delete(taskId);
+    const nextPinned = new Set(pinnedTaskIds);
+    nextPinned.delete(taskId);
+    setSuggestedAssignments(next);
+    setPinnedTaskIds(nextPinned);
   };
 
   // Render a draggable task card (for unscheduled list)
@@ -817,6 +930,73 @@ export default function PlanPage() {
                   })}
                 </div>
               </div>
+
+              {/* Suggest Next Task */}
+              {!suggestNextDismissed && suggestNextRanked.length > 0 && (
+                <div className="p-2 border-b border-[var(--border-color)]">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-yellow-400 font-medium flex items-center gap-1">
+                      &#x1f4a1; Suggested
+                      <span className="relative group/info">
+                        <span className="text-[var(--muted)] hover:text-yellow-400 cursor-help text-[10px]">&#x24D8;</span>
+                        <span className="absolute left-0 bottom-full mb-1 w-52 p-2 bg-[#252525] border border-[var(--border-color)] rounded-lg text-xs text-[var(--muted)] leading-relaxed shadow-xl opacity-0 pointer-events-none group-hover/info:opacity-100 group-hover/info:pointer-events-auto transition-opacity z-50">
+                          Ranks unscheduled tasks by combining task score, deadline urgency, domain balance, and AP fit. Adjust weights via the &#x2699; button on the week view.
+                        </span>
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => setSuggestNextDismissed(true)}
+                      className="text-[10px] text-[var(--muted)] hover:text-white"
+                    >
+                      Hide
+                    </button>
+                  </div>
+                  <div
+                    className="p-2 rounded border-2 border-yellow-500/50 bg-yellow-500/5 hover:bg-yellow-500/10 cursor-pointer transition-colors"
+                    onClick={() => handleEditTask(suggestNextRanked[0])}
+                  >
+                    <p className="text-white text-sm truncate">{suggestNextRanked[0].taskName}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(suggestNextRanked[0].taskPriority)}`}></span>
+                      {suggestNextRanked[0].domain?.icon && <span className="text-xs">{suggestNextRanked[0].domain.icon}</span>}
+                      {suggestNextRanked[0].dueDate && (
+                        <span className={`text-xs ${getDueDateColor(suggestNextRanked[0].dueDate)}`}>
+                          Due {format(parseLocalDate(suggestNextRanked[0].dueDate), 'MMM d')}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[var(--muted)]">AP:{getDisplayAP(suggestNextRanked[0])}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1.5">
+                    <button
+                      onClick={() => setSuggestNextSkipIds(prev => new Set([...prev, suggestNextRanked[0].id]))}
+                      className="px-2 py-1 text-xs text-[var(--muted)] hover:text-white bg-[var(--background)] hover:bg-[var(--card-hover)] rounded transition-colors"
+                    >
+                      Skip
+                    </button>
+                    {suggestNextSkipIds.size > 0 && (
+                      <button
+                        onClick={() => setSuggestNextSkipIds(new Set())}
+                        className="px-2 py-1 text-xs text-[var(--muted)] hover:text-white hover:bg-[var(--card-hover)] rounded transition-colors"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {suggestNextDismissed && (
+                <div className="px-2 py-1.5 border-b border-[var(--border-color)]">
+                  <button
+                    onClick={() => { setSuggestNextDismissed(false); setSuggestNextSkipIds(new Set()); }}
+                    className="text-xs text-yellow-400/60 hover:text-yellow-400"
+                  >
+                    &#x1f4a1; Show suggestion
+                  </button>
+                </div>
+              )}
+
               <div
                 onDragOver={handleDragOver}
                 onDrop={handleDropOnUnscheduled}
@@ -881,6 +1061,70 @@ export default function PlanPage() {
                 ))}
               </div>
             </div>
+
+            {/* Suggest Week Controls (only visible in week view) */}
+            {calendarView === 'week' && (
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mr-2">
+                  <span className="text-xs text-[var(--muted)]">AP:</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={15}
+                    value={suggestControls.dailyAPBudget}
+                    onChange={(e) => updateSuggestControls({ ...suggestControls, dailyAPBudget: parseInt(e.target.value) })}
+                    className="w-20 accent-blue-500"
+                  />
+                  <span className="text-xs text-white font-medium w-3">{suggestControls.dailyAPBudget}</span>
+                </div>
+
+                {suggestedAssignments.size === 0 ? (
+                  <button
+                    onClick={handleGenerateWeekSchedule}
+                    className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                  >
+                    Suggest
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleRerunWeekSchedule}
+                      className="px-2 py-1 text-xs bg-[var(--background)] hover:bg-[var(--card-hover)] text-[var(--muted)] hover:text-white border border-[var(--border-color)] rounded transition-colors"
+                    >
+                      Re-run
+                    </button>
+                    <button
+                      onClick={handleApplySuggestions}
+                      disabled={pinnedTaskIds.size === 0}
+                      className={`px-2 py-1 text-xs rounded transition-colors ${
+                        pinnedTaskIds.size > 0
+                          ? 'bg-green-600 hover:bg-green-700 text-white'
+                          : 'bg-green-600/30 text-green-300/50 cursor-not-allowed'
+                      }`}
+                    >
+                      Apply
+                    </button>
+                    <button
+                      onClick={handleDiscardSuggestions}
+                      className="px-2 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded transition-colors"
+                    >
+                      Discard
+                    </button>
+                    <span className="text-xs text-[var(--muted)]">
+                      {suggestedAssignments.size} placed
+                      {pinnedTaskIds.size > 0 && <> &middot; {pinnedTaskIds.size} pinned</>}
+                    </span>
+                  </>
+                )}
+
+                <button
+                  onClick={() => setSuggestSettingsOpen(true)}
+                  className="px-2 py-1 text-xs text-[var(--muted)] hover:text-white bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border-color)] rounded transition-colors ml-auto"
+                >
+                  &#x2699;
+                </button>
+              </div>
+            )}
 
             {/* Day View - Detailed Task List */}
             {calendarView === 'day' && (
@@ -979,41 +1223,116 @@ export default function PlanPage() {
             {/* Week View */}
             {calendarView === 'week' && (
               <div className="grid grid-cols-7 gap-2">
-                {tasksByDay.map(({ date, tasks: dayTasks }) => (
-                  <div
-                    key={date.toISOString()}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDropOnDate(e, date)}
-                    className={`min-h-[300px] ${draggedTaskId ? 'ring-2 ring-blue-500/30 ring-inset' : ''}`}
-                  >
-                    <button
-                      onClick={() => navigateToDay(date)}
-                      className={`w-full p-2 rounded-t-lg text-center cursor-pointer transition-opacity hover:opacity-80 ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}
+                {tasksByDay.map(({ date, tasks: dayTasks }) => {
+                  const dayStr = format(date, 'yyyy-MM-dd');
+                  const dayEvents = events.filter(e => e.date === dayStr);
+
+                  // Get suggested tasks for this day
+                  const suggestedTaskIds: string[] = [];
+                  for (const [taskId, dateStr] of suggestedAssignments) {
+                    if (dateStr === dayStr) suggestedTaskIds.push(taskId);
+                  }
+                  const suggestedTasks = suggestedTaskIds
+                    .map(id => tasks.find(t => t.id === id))
+                    .filter(Boolean) as Task[];
+
+                  // Calculate AP for footer
+                  const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
+                  const eventAP = dayEvents.reduce((sum, e) => sum + (parseInt(e.actionPoints || '0') || suggestControls.defaultAP), 0);
+                  const suggestedAP = suggestedTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
+                  const totalAP = taskAP + eventAP + suggestedAP;
+                  const hasSuggestions = suggestedTasks.length > 0;
+
+                  return (
+                    <div
+                      key={date.toISOString()}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDropOnDate(e, date)}
+                      className={`min-h-[300px] ${draggedTaskId ? 'ring-2 ring-blue-500/30 ring-inset' : ''}`}
                     >
-                      <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
-                        {format(date, 'EEE')}
-                      </p>
-                      <p className="text-lg font-semibold text-white">
-                        {format(date, 'd')}
-                      </p>
-                    </button>
-                    <div className="bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
-                      {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => renderCalendarEvent(event))}
-                      {dayTasks.map(task => renderCalendarTask(task))}
-                      {draggedTaskId && dayTasks.length === 0 && (
-                        <div className="p-2 text-center text-[var(--muted)] text-xs border-2 border-dashed border-[var(--border-color)] rounded">
-                          Drop here
+                      <button
+                        onClick={() => navigateToDay(date)}
+                        className={`w-full p-2 rounded-t-lg text-center cursor-pointer transition-opacity hover:opacity-80 ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}
+                      >
+                        <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
+                          {format(date, 'EEE')}
+                        </p>
+                        <p className="text-lg font-semibold text-white">
+                          {format(date, 'd')}
+                        </p>
+                      </button>
+                      <div className="bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
+                        {dayEvents.map(event => renderCalendarEvent(event))}
+                        {dayTasks.map(task => renderCalendarTask(task))}
+
+                        {/* Suggested tasks (inline with dashed green border) */}
+                        {suggestedTasks.map(task => {
+                          const isPinned = pinnedTaskIds.has(task.id);
+                          return (
+                            <div
+                              key={task.id}
+                              className={`rounded p-1.5 transition-colors ${
+                                isPinned
+                                  ? 'border-2 border-green-500 bg-green-500/10'
+                                  : 'border-2 border-dashed border-green-500/50 bg-green-500/5'
+                              }`}
+                            >
+                              <div className="flex items-start gap-1">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
+                                    {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-0.5 flex-shrink-0">
+                                  <button
+                                    onClick={() => handleTogglePin(task.id)}
+                                    className={`p-0.5 rounded text-[10px] transition-colors ${
+                                      isPinned
+                                        ? 'text-green-400 hover:text-green-300'
+                                        : 'text-[var(--muted)] hover:text-green-400'
+                                    }`}
+                                    title={isPinned ? 'Unpin' : 'Pin to this day'}
+                                  >
+                                    &#x1f4cc;
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveSuggestion(task.id)}
+                                    className="p-0.5 rounded text-[10px] text-[var(--muted)] hover:text-red-400 transition-colors"
+                                    title="Remove suggestion"
+                                  >
+                                    &#x2715;
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {draggedTaskId && dayTasks.length === 0 && !hasSuggestions && (
+                          <div className="p-2 text-center text-[var(--muted)] text-xs border-2 border-dashed border-[var(--border-color)] rounded">
+                            Drop here
+                          </div>
+                        )}
+                        <button
+                          onClick={() => handleOpenCreateTask(date)}
+                          className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 hover:opacity-100 transition-opacity"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      {/* AP usage footer */}
+                      {(hasSuggestions || suggestedAssignments.size > 0) && (
+                        <div className={`text-center py-0.5 text-[10px] ${
+                          totalAP > suggestControls.dailyAPBudget ? 'text-red-400' : 'text-[var(--muted)]'
+                        }`}>
+                          AP: {totalAP}/{suggestControls.dailyAPBudget}
                         </div>
                       )}
-                      <button
-                        onClick={() => handleOpenCreateTask(date)}
-                        className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 hover:opacity-100 transition-opacity"
-                      >
-                        + Add
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1135,6 +1454,19 @@ export default function PlanPage() {
           <EisenhowerMatrix tasks={filteredActiveTasks} onTaskClick={handleEditTask} />
         </div>
       )}
+
+      {/* Suggest Settings Modal */}
+      <Modal
+        isOpen={suggestSettingsOpen}
+        onClose={() => setSuggestSettingsOpen(false)}
+        title="Suggest Settings"
+      >
+        <SuggestControlsComponent
+          controls={suggestControls}
+          onChange={updateSuggestControls}
+          domains={domains}
+        />
+      </Modal>
 
       {/* Task Modal */}
       <Modal

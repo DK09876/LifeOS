@@ -48,10 +48,11 @@ User's Device                          User's Google Drive
 | `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, action functions |
 | `lib/sync.ts` | Google Drive Push/Pull: `pushToGoogleDrive()`, `pullFromGoogleDrive()` |
 | `lib/colors.ts` | Shared color utility functions (priority, status, due date colors) |
+| `lib/suggest.ts` | Auto-suggest algorithm: scoring, suggestNextTask, suggestWeekSchedule (pure functions) |
 | `lib/google-auth.ts` | Google OAuth: sign in, sign out, token management |
 | `components/AppLayout.tsx` | Main layout: sidebar, header with Push/Pull buttons, quote |
 | `app/page.tsx` | Today view: due tasks + habits, completed today |
-| `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix |
+| `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix + Auto-Suggest |
 | `app/habits/page.tsx` | Habits management: due now, on track, paused |
 
 ## Data Models

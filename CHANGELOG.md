@@ -2,6 +2,19 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.5.1] - 2026-03-02
+
+### Auto-Suggest for Planning
+- Add Suggest Next Task to the unscheduled sidebar — highlights the single best task based on a multi-factor scoring algorithm (base score, deadline pressure, domain balance, effort match)
+- Add Suggest Week Schedule overlay on the week calendar view — distributes unscheduled tasks across the 7-day grid using greedy bin packing, deadline tasks placed first, then flexible tasks by score
+- Suggested tasks appear inline on the week view with dashed green borders
+- Pin/unpin suggested tasks to lock them to a day across re-runs
+- Apply All batch-schedules suggestions, Discard clears without DB changes
+- Configurable scoring weights, daily AP budget, default AP, and domain focus via Settings modal
+- Settings persisted to localStorage
+- AP usage shown per day with over-budget highlighting
+- Events AP counted against daily budget
+
 ## [0.5.0] - 2026-03-02
 
 ### Eisenhower Matrix & Urgency Scoring
