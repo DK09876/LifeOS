@@ -1,17 +1,19 @@
 'use client';
 
-import { useState, useMemo, DragEvent } from 'react';
+import { useState, useMemo, useCallback, DragEvent } from 'react';
 import { format, startOfWeek, startOfMonth, addDays, addWeeks, addMonths, isToday, startOfDay, endOfMonth, getDay, isBefore, differenceInCalendarDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
+import EventForm, { EventFormData } from '@/components/EventForm';
+import EisenhowerMatrix from '@/components/EisenhowerMatrix';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
-import { useTasks, useDomains, useVisibleFilterPresets, markTaskDone, createTask, updateTaskData } from '@/lib/hooks';
-import { Task } from '@/types';
+import { useTasks, useDomains, useVisibleFilterPresets, useEvents, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
+import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
-import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder } from '@/lib/colors';
+import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder, getDueSoonLabel } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
 
-type MainView = 'triage' | 'planning';
+type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
 type CalendarView = 'day' | 'week' | 'month';
 
@@ -25,6 +27,17 @@ const PLAN_FILTERS: FilterDef[] = [
       { value: '3 - Normal', label: 'Normal' },
       { value: '4 - Low', label: 'Low' },
       { value: '5 - Optional', label: 'Optional' },
+    ],
+  },
+  {
+    key: 'urgency', label: 'Urgency',
+    options: [
+      { value: 'all', label: 'All Urgency' },
+      { value: '1 - Critical', label: 'Critical' },
+      { value: '2 - High', label: 'High' },
+      { value: '3 - Normal', label: 'Normal' },
+      { value: '4 - Low', label: 'Low' },
+      { value: '5 - Someday', label: 'Someday' },
     ],
   },
   {
@@ -44,11 +57,25 @@ const PLAN_FILTERS: FilterDef[] = [
       { value: 'recurring', label: 'Recurring' },
     ],
   },
+  {
+    key: 'dueDate', label: 'Due Date',
+    options: [
+      { value: 'all', label: 'All' },
+      { value: 'overdue', label: 'Overdue' },
+      { value: 'today', label: 'Due Today' },
+      { value: 'this-week', label: 'This Week' },
+      { value: 'next-two-weeks', label: 'Next Two Weeks' },
+      { value: 'this-month', label: 'This Month' },
+      { value: 'has-due-date', label: 'Has Due Date' },
+      { value: 'no-due-date', label: 'No Due Date' },
+    ],
+  },
 ];
 
 const PLAN_COLUMNS = [
   { key: 'taskName', label: 'Task' },
   { key: 'taskPriority', label: 'Priority' },
+  { key: 'urgency', label: 'Urgency' },
   { key: 'dueDate', label: 'Due' },
   { key: 'domain', label: 'Domain' },
   { key: 'actionPoints', label: 'AP' },
@@ -71,6 +98,7 @@ export default function PlanPage() {
   const tasks = useTasks();
   const domains = useDomains();
   const filterPresets = useVisibleFilterPresets();
+  const events = useEvents();
 
   const [mainView, setMainView] = useState<MainView>('planning');
   const [triageTab, setTriageTab] = useState<TriageTab>('needsDetails');
@@ -81,9 +109,14 @@ export default function PlanPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
+  // Event modal state
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [selectedEventDate, setSelectedEventDate] = useState<Date | null>(null);
+
   // Planning view state
   const [sortLevels, setSortLevels] = usePersistedSortLevels('plan-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], domain: [], recurrence: [], actionPoints: [] });
+  const [filterValues, setFilterValues] = usePersistedFilters('plan-filters', { priority: [], urgency: [], domain: [], recurrence: [], actionPoints: [], dueDate: [] });
   // Build filters with dynamic domain options
   const planFilters = useMemo<FilterDef[]>(() => [
     ...PLAN_FILTERS,
@@ -100,6 +133,7 @@ export default function PlanPage() {
   const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
     taskName: (a, b) => a.taskName.localeCompare(b.taskName),
     taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
+    urgency: (a, b) => a.urgency.localeCompare(b.urgency),
     dueDate: (a, b) => (a.dueDate || 'z').localeCompare(b.dueDate || 'z'),
     domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
     actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
@@ -159,9 +193,10 @@ export default function PlanPage() {
     };
   }, [calendarView, dateOffset]);
 
-  // Triage tasks
+  // Triage tasks (and missed events)
   const triageTasks = useMemo(() => {
     const today = startOfDay(new Date());
+    const todayStr = format(today, 'yyyy-MM-dd');
     const activeTasks = tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived');
     return {
       needsDetails: tasks.filter(t => t.status === 'Needs Details'),
@@ -170,13 +205,18 @@ export default function PlanPage() {
         if (!t.plannedDate) return false;
         return isBefore(startOfDay(new Date(t.plannedDate + 'T00:00:00')), today);
       }),
+      missedEvents: events.filter(e => {
+        if (e.date >= todayStr) return false;
+        // Event is missed if lastCompleted doesn't match its date
+        return e.lastCompleted !== e.date;
+      }),
       overdue: activeTasks.filter(t => {
         if (!t.dueDate) return false;
         return isBefore(startOfDay(new Date(t.dueDate + 'T00:00:00')), today);
       }),
       archived: tasks.filter(t => t.status === 'Archived'),
     };
-  }, [tasks]);
+  }, [tasks, events]);
 
   // Active tasks (not done/archived/needs details/blocked)
   const activeTasks = useMemo(() => {
@@ -188,12 +228,13 @@ export default function PlanPage() {
     );
   }, [tasks]);
 
-  // Unscheduled tasks (with filters applied)
-  const unscheduledTasks = useMemo(() => {
-    let result = activeTasks.filter(t => !t.plannedDate);
+  // Shared filter logic for applying filterValues to a task list
+  const applyFilters = useCallback((tasks: Task[]) => {
+    let result = tasks;
 
     // Apply multi-select filters
     result = result.filter(t => matchesFilter(filterValues.priority || [], t.taskPriority));
+    result = result.filter(t => matchesFilter(filterValues.urgency || [], t.urgency));
     result = result.filter(t => matchesFilter(filterValues.domain || [], t.domainId || ''));
 
     // Recurrence filter - special handling for 'recurring' option
@@ -201,7 +242,6 @@ export default function PlanPage() {
     if (isFilterActive(recurrenceFilter)) {
       result = result.filter(t => {
         if (recurrenceFilter.includes('recurring')) {
-          // 'recurring' means any recurrence that's not 'None'
           if (t.recurrence !== 'None') return true;
         }
         return recurrenceFilter.includes(t.recurrence);
@@ -222,8 +262,35 @@ export default function PlanPage() {
       });
     }
 
+    // Due date filter
+    const dueDateFilter = filterValues.dueDate || [];
+    if (isFilterActive(dueDateFilter)) {
+      const todayStr = format(startOfDay(new Date()), 'yyyy-MM-dd');
+      result = result.filter(t => {
+        for (const f of dueDateFilter) {
+          if (f === 'overdue' && t.dueDate && t.dueDate < todayStr) return true;
+          if (f === 'today' && t.dueDate === todayStr) return true;
+          if (f === 'this-week' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 7), 'yyyy-MM-dd')) return true;
+          if (f === 'next-two-weeks' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 14), 'yyyy-MM-dd')) return true;
+          if (f === 'this-month' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 30), 'yyyy-MM-dd')) return true;
+          if (f === 'has-due-date' && t.dueDate) return true;
+          if (f === 'no-due-date' && !t.dueDate) return true;
+        }
+        return false;
+      });
+    }
+
+    return result;
+  }, [filterValues]);
+
+  // Filtered active tasks (used by matrix view)
+  const filteredActiveTasks = useMemo(() => applyFilters(activeTasks), [activeTasks, applyFilters]);
+
+  // Unscheduled tasks (with filters + sort applied)
+  const unscheduledTasks = useMemo(() => {
+    const result = applyFilters(activeTasks.filter(t => !t.plannedDate));
     return multiLevelSort(result, sortLevels, comparators);
-  }, [activeTasks, filterValues, sortLevels, comparators]);
+  }, [activeTasks, applyFilters, sortLevels, comparators]);
 
   // Tasks by day for the calendar
   const tasksByDay = useMemo(() => {
@@ -243,9 +310,20 @@ export default function PlanPage() {
     });
   }, [activeTasks, calendarDays]);
 
+  // Events by day for the calendar
+  const eventsByDay = useMemo(() => {
+    return calendarDays.map(day => {
+      const dayStr = format(day, 'yyyy-MM-dd');
+      return {
+        date: day,
+        events: events.filter(e => e.date === dayStr),
+      };
+    });
+  }, [events, calendarDays]);
+
   // Stats
   const stats = useMemo(() => ({
-    needsAttention: triageTasks.needsDetails.length + triageTasks.blocked.length + triageTasks.missed.length + triageTasks.overdue.length,
+    needsAttention: triageTasks.needsDetails.length + triageTasks.blocked.length + triageTasks.missed.length + triageTasks.missedEvents.length + triageTasks.overdue.length,
     unscheduled: unscheduledTasks.length,
   }), [triageTasks, unscheduledTasks]);
 
@@ -333,27 +411,65 @@ export default function PlanPage() {
     const presetAP = presetToArray(preset.filters.actionPoints);
     const presetDomain = presetToArray(preset.filters.domain);
     const presetRecurrence = presetToArray(preset.filters.recurrence);
+    const presetUrgency = presetToArray(preset.filters.urgency);
+    const presetDueDate = presetToArray(preset.filters.dueDate);
     return (
       arraysMatch(filterValues.priority, presetPriority) &&
       arraysMatch(filterValues.actionPoints, presetAP) &&
       arraysMatch(filterValues.domain, presetDomain) &&
-      arraysMatch(filterValues.recurrence, presetRecurrence)
+      arraysMatch(filterValues.recurrence, presetRecurrence) &&
+      arraysMatch(filterValues.urgency, presetUrgency) &&
+      arraysMatch(filterValues.dueDate, presetDueDate)
     );
   };
 
   // Apply a preset's filters (toggle off if already active)
   const applyPreset = (preset: FilterPreset) => {
     if (isPresetActive(preset)) {
-      setFilterValues({ priority: [], actionPoints: [], domain: [], recurrence: [] });
+      setFilterValues({ priority: [], actionPoints: [], domain: [], recurrence: [], urgency: [], dueDate: [] });
     } else {
       setFilterValues({
         priority: presetToArray(preset.filters.priority),
         actionPoints: presetToArray(preset.filters.actionPoints),
         domain: presetToArray(preset.filters.domain),
         recurrence: presetToArray(preset.filters.recurrence),
+        urgency: presetToArray(preset.filters.urgency),
+        dueDate: presetToArray(preset.filters.dueDate),
       });
     }
   };
+
+  // Event handlers
+  const handleOpenCreateEvent = (date?: Date) => {
+    setEditingEvent(null);
+    setSelectedEventDate(date || null);
+    setIsEventModalOpen(true);
+  };
+
+  const handleEditEvent = (event: Event) => {
+    setEditingEvent(event);
+    setSelectedEventDate(null);
+    setIsEventModalOpen(true);
+  };
+
+  async function handleEventSubmit(data: EventFormData) {
+    const eventData = selectedEventDate && !data.date
+      ? { ...data, date: format(selectedEventDate, 'yyyy-MM-dd') }
+      : data;
+
+    if (editingEvent) {
+      await updateEventData(editingEvent.id, eventData);
+    } else {
+      await createEvent(eventData);
+    }
+    setIsEventModalOpen(false);
+    setEditingEvent(null);
+    setSelectedEventDate(null);
+  }
+
+  async function handleDeleteEvent(eventId: string) {
+    await deleteEvent(eventId);
+  }
 
   // Navigate to a specific day in the day view
   const navigateToDay = (date: Date) => {
@@ -392,7 +508,33 @@ export default function PlanPage() {
                 Due {format(parseLocalDate(task.dueDate), 'MMM d')}
               </span>
             )}
+            {getDueSoonLabel(task.dueDate) && (
+              <span className={`${getDueSoonLabel(task.dueDate)!.color} text-white text-[10px] px-1 py-0.5 rounded font-medium`}>
+                {getDueSoonLabel(task.dueDate)!.label}
+              </span>
+            )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render an event card in the calendar
+  const renderCalendarEvent = (event: Event) => (
+    <div
+      key={event.id}
+      className="bg-indigo-500/10 rounded p-1.5 border-l-2 border-indigo-500 hover:bg-indigo-500/20 cursor-pointer transition-colors"
+      onClick={() => handleEditEvent(event)}
+    >
+      <div className="flex items-start gap-1.5">
+        <span className="text-[10px] text-indigo-400 mt-0.5">🕐</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-indigo-300 text-xs line-clamp-1">{event.eventName}</p>
+          {event.time && (
+            <span className="text-[10px] text-indigo-400/70">
+              {new Date(`2000-01-01T${event.time}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -506,6 +648,7 @@ export default function PlanPage() {
           {[
             { key: 'triage' as const, label: 'Triage', count: stats.needsAttention },
             { key: 'planning' as const, label: 'Planning', count: stats.unscheduled },
+            { key: 'matrix' as const, label: 'Matrix', count: 0 },
           ].map(tab => (
             <button
               key={tab.key}
@@ -537,7 +680,7 @@ export default function PlanPage() {
             {[
               { key: 'needsDetails' as const, label: 'Needs Details', count: triageTasks.needsDetails.length, color: 'bg-yellow-600' },
               { key: 'blocked' as const, label: 'Blocked', count: triageTasks.blocked.length, color: 'bg-yellow-600' },
-              { key: 'missed' as const, label: 'Missed', count: triageTasks.missed.length, color: 'bg-orange-600' },
+              { key: 'missed' as const, label: 'Missed', count: triageTasks.missed.length + triageTasks.missedEvents.length, color: 'bg-orange-600' },
               { key: 'overdue' as const, label: 'Overdue', count: triageTasks.overdue.length, color: 'bg-red-600' },
               { key: 'archived' as const, label: 'Archived', count: triageTasks.archived.length, color: 'bg-gray-600' },
             ].map(tab => (
@@ -557,16 +700,43 @@ export default function PlanPage() {
 
           {/* Triage List */}
           <div className="bg-[var(--card-bg)] rounded-lg">
-            {triageTasks[triageTab].length === 0 ? (
+            {triageTasks[triageTab].length === 0 && (triageTab !== 'missed' || triageTasks.missedEvents.length === 0) ? (
               <div className="p-8 text-center text-[var(--muted)]">
                 {triageTab === 'needsDetails' && 'No tasks need details'}
                 {triageTab === 'blocked' && 'No blocked tasks'}
-                {triageTab === 'missed' && 'No missed tasks'}
+                {triageTab === 'missed' && 'No missed items'}
                 {triageTab === 'overdue' && 'No overdue tasks'}
                 {triageTab === 'archived' && 'No archived tasks'}
               </div>
             ) : (
               <div className="divide-y divide-[var(--border-color)]">
+                {/* Missed events (only in missed tab) */}
+                {triageTab === 'missed' && triageTasks.missedEvents.map(event => (
+                  <div
+                    key={event.id}
+                    className="p-4 flex items-center justify-between hover:bg-[var(--card-hover)] cursor-pointer transition-colors border-l-4 border-indigo-500"
+                    onClick={() => handleEditEvent(event)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-indigo-400">🕐</span>
+                      <span className="text-indigo-300">{event.eventName}</span>
+                      {event.domain && (
+                        <span className="text-xs text-[var(--muted)]">
+                          {event.domain.icon} {event.domain.name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-orange-400">
+                        {format(new Date(event.date + 'T00:00:00'), 'MMM d')}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-xs bg-indigo-500/20 text-indigo-300">
+                        Event
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {/* Tasks */}
                 {triageTasks[triageTab].map(task => (
                   <div
                     key={task.id}
@@ -739,6 +909,33 @@ export default function PlanPage() {
                   </div>
                 </div>
 
+                {/* Events for this day */}
+                {eventsByDay[0]?.events.length > 0 && (
+                  <div className="space-y-3 mb-3">
+                    {eventsByDay[0].events.map(event => (
+                      <div
+                        key={event.id}
+                        className="p-4 rounded-lg hover:bg-indigo-500/15 cursor-pointer transition-colors border-l-4 border-indigo-500 bg-indigo-500/5"
+                        onClick={() => handleEditEvent(event)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-indigo-400">🕐</span>
+                          <div className="flex-1">
+                            <h3 className="text-indigo-300 font-medium">{event.eventName}</h3>
+                            <div className="flex items-center gap-3 text-sm text-[var(--muted)] mt-1">
+                              {event.time && (
+                                <span>{new Date(`2000-01-01T${event.time}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                              )}
+                              {event.duration && <span>{event.duration}min</span>}
+                              {event.domain && <span>{event.domain.icon || '📁'} {event.domain.name}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Tasks List */}
                 <div className="space-y-3">
                   {tasksByDay[0]?.tasks.length === 0 ? (
@@ -759,14 +956,22 @@ export default function PlanPage() {
                   ) : (
                     <>
                       {tasksByDay[0]?.tasks.map(task => renderDetailedTask(task))}
-                      <button
-                        onClick={() => handleOpenCreateTask(calendarDays[0])}
-                        className="w-full p-3 text-[var(--muted)] hover:text-white bg-[var(--card-bg)] hover:bg-[var(--card-hover)] rounded-lg text-sm transition-colors"
-                      >
-                        + Add Task
-                      </button>
                     </>
                   )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleOpenCreateTask(calendarDays[0])}
+                      className="flex-1 p-3 text-[var(--muted)] hover:text-white bg-[var(--card-bg)] hover:bg-[var(--card-hover)] rounded-lg text-sm transition-colors"
+                    >
+                      + Add Task
+                    </button>
+                    <button
+                      onClick={() => handleOpenCreateEvent(calendarDays[0])}
+                      className="flex-1 p-3 text-[var(--muted)] hover:text-indigo-400 bg-[var(--card-bg)] hover:bg-[var(--card-hover)] rounded-lg text-sm transition-colors"
+                    >
+                      + Add Event
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -793,6 +998,7 @@ export default function PlanPage() {
                       </p>
                     </button>
                     <div className="bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
+                      {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => renderCalendarEvent(event))}
                       {dayTasks.map(task => renderCalendarTask(task))}
                       {draggedTaskId && dayTasks.length === 0 && (
                         <div className="p-2 text-center text-[var(--muted)] text-xs border-2 border-dashed border-[var(--border-color)] rounded">
@@ -846,28 +1052,52 @@ export default function PlanPage() {
                           </span>
                         </button>
                         <div className="px-1 pb-1 space-y-0.5 max-h-[70px] overflow-y-auto">
-                          {dayTasks.slice(0, 3).map(task => (
-                            <div
-                              key={task.id}
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, task.id)}
-                              onDragEnd={handleDragEnd}
-                              onClick={() => handleEditTask(task)}
-                              className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
-                                getTaskPriorityColor(task.taskPriority)
-                              } hover:opacity-80 ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
-                            >
-                              {task.taskName}
-                            </div>
-                          ))}
-                          {dayTasks.length > 3 && (
-                            <button
-                              onClick={() => navigateToDay(date)}
-                              className="text-xs text-[var(--muted)] hover:text-white text-center w-full transition-colors"
-                            >
-                              +{dayTasks.length - 3} more
-                            </button>
-                          )}
+                          {(() => {
+                            const dayStr = format(date, 'yyyy-MM-dd');
+                            const dayEvents = events.filter(e => e.date === dayStr);
+                            const allItems = [
+                              ...dayEvents.map(e => ({ type: 'event' as const, item: e })),
+                              ...dayTasks.map(t => ({ type: 'task' as const, item: t })),
+                            ];
+                            const visibleItems = allItems.slice(0, 3);
+                            const overflowCount = allItems.length - 3;
+                            return (
+                              <>
+                                {visibleItems.map(({ type, item }) =>
+                                  type === 'event' ? (
+                                    <div
+                                      key={item.id}
+                                      onClick={() => handleEditEvent(item as Event)}
+                                      className="text-xs p-1 rounded truncate cursor-pointer bg-indigo-500/20 text-indigo-300 hover:opacity-80"
+                                    >
+                                      🕐 {(item as Event).eventName}
+                                    </div>
+                                  ) : (
+                                    <div
+                                      key={item.id}
+                                      draggable
+                                      onDragStart={(e) => handleDragStart(e, item.id)}
+                                      onDragEnd={handleDragEnd}
+                                      onClick={() => handleEditTask(item as Task)}
+                                      className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
+                                        getTaskPriorityColor((item as Task).taskPriority)
+                                      } hover:opacity-80 ${draggedTaskId === item.id ? 'opacity-50' : ''}`}
+                                    >
+                                      {(item as Task).taskName}
+                                    </div>
+                                  )
+                                )}
+                                {overflowCount > 0 && (
+                                  <button
+                                    onClick={() => navigateToDay(date)}
+                                    className="text-xs text-[var(--muted)] hover:text-white text-center w-full transition-colors"
+                                  >
+                                    +{overflowCount} more
+                                  </button>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
@@ -876,6 +1106,33 @@ export default function PlanPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Matrix View */}
+      {mainView === 'matrix' && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <FilterButton filters={planFilters} values={filterValues} onChange={setFilterValues} />
+            <div className="flex flex-wrap gap-1">
+              {filterPresets.map(preset => {
+                const colors = PRESET_COLOR_MAP[preset.color] || PRESET_COLOR_MAP.blue;
+                const isActive = isPresetActive(preset);
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset)}
+                    className={`px-2 py-1 rounded text-xs transition-colors ${
+                      isActive ? colors.active : colors.inactive
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <EisenhowerMatrix tasks={filteredActiveTasks} onTaskClick={handleEditTask} />
         </div>
       )}
 
@@ -891,6 +1148,21 @@ export default function PlanPage() {
           domains={domains}
           onSubmit={handleTaskSubmit}
           onCancel={() => { setIsTaskModalOpen(false); setEditingTask(null); setSelectedDate(null); }}
+        />
+      </Modal>
+
+      {/* Event Modal */}
+      <Modal
+        isOpen={isEventModalOpen}
+        onClose={() => { setIsEventModalOpen(false); setEditingEvent(null); setSelectedEventDate(null); }}
+        title={editingEvent ? 'Edit Event' : 'Create Event'}
+        maxWidth="lg"
+      >
+        <EventForm
+          event={editingEvent}
+          domains={domains}
+          onSubmit={handleEventSubmit}
+          onCancel={() => { setIsEventModalOpen(false); setEditingEvent(null); setSelectedEventDate(null); }}
         />
       </Modal>
     </div>

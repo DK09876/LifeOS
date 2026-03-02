@@ -60,6 +60,43 @@ export function getStatusColor(status: string): string {
   }
 }
 
+// Urgency level → badge color (bg + text)
+export function getUrgencyColor(urgency: string): string {
+  switch (urgency) {
+    case '1 - Critical': return 'bg-red-500/20 text-red-400';
+    case '2 - High': return 'bg-orange-500/20 text-orange-400';
+    case '3 - Normal': return 'bg-blue-500/20 text-blue-400';
+    case '4 - Low': return 'bg-gray-500/20 text-gray-400';
+    case '5 - Someday': return 'bg-gray-600/20 text-gray-500';
+    default: return 'bg-blue-500/20 text-blue-400';
+  }
+}
+
+// Urgency level → small dot color
+export function getUrgencyDotColor(urgency: string): string {
+  switch (urgency) {
+    case '1 - Critical': return 'bg-red-500';
+    case '2 - High': return 'bg-orange-500';
+    case '3 - Normal': return 'bg-blue-500';
+    case '4 - Low': return 'bg-gray-500';
+    case '5 - Someday': return 'bg-gray-600';
+    default: return 'bg-blue-500';
+  }
+}
+
+// Due date → "due soon" badge info (label + color) or null if not soon
+export function getDueSoonLabel(dueDate: string | null): { label: string; color: string } | null {
+  if (!dueDate) return null;
+  const due = parseLocalDate(dueDate);
+  const today = startOfDay(new Date());
+  const daysUntil = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (daysUntil < 0) return { label: 'overdue', color: 'bg-red-500' };
+  if (daysUntil === 0) return { label: 'today', color: 'bg-orange-500' };
+  if (daysUntil <= 7) return { label: `${daysUntil}d`, color: 'bg-yellow-500/80' };
+  return null;
+}
+
 // Due date → proximity text color
 export function getDueDateColor(dueDate: string | null): string {
   if (!dueDate) return 'text-[var(--muted)]';

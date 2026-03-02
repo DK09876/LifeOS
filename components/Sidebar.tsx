@@ -29,6 +29,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     { href: '/plan', icon: '📋', label: 'Plan' },
     { type: 'divider' as const },
     { href: '/tasks', icon: '📁', label: 'Tasks' },
+    { href: '/events', icon: '🕐', label: 'Events' },
     { href: '/habits', icon: '🔄', label: 'Habits' },
     { href: '/domains', icon: '🗂️', label: 'Domains' },
     { type: 'divider' as const },

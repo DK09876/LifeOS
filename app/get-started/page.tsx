@@ -33,8 +33,15 @@ const steps = [
   },
   {
     number: 5,
+    title: 'Add Events',
+    description: 'Create events for appointments and time commitments. Events appear on the calendar alongside tasks with distinct styling. Set a date, optional time/duration, and recurrence.',
+    href: '/plan',
+    cta: 'Go to Plan',
+  },
+  {
+    number: 6,
     title: 'Plan Your Week',
-    description: 'Use the Plan page to triage tasks that need attention, then drag tasks onto the calendar to schedule your week.',
+    description: 'Use the Plan page to triage tasks, drag them onto the calendar to schedule, and check the Matrix view to see how your tasks map across importance and urgency.',
     href: '/plan',
     cta: 'Go to Plan',
   },
@@ -45,7 +52,7 @@ export default function GetStartedPage() {
     <div className="max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white mb-1">Get Started</h1>
-        <p className="text-[var(--muted)]">Set up LifeOS in 5 steps</p>
+        <p className="text-[var(--muted)]">Set up LifeOS in 6 steps</p>
       </div>
 
       <div className="space-y-4">

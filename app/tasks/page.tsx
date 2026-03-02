@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, startOfDay, addDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
-import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter } from '@/components/ViewControls';
+import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
-import { getStatusColor, getTaskPriorityColor, getDueDateColor } from '@/lib/colors';
+import { getStatusColor, getTaskPriorityColor, getUrgencyColor, getDueDateColor } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
 
 const TASK_FILTERS: FilterDef[] = [
@@ -37,6 +37,17 @@ const TASK_FILTERS: FilterDef[] = [
     ],
   },
   {
+    key: 'urgency', label: 'Urgency',
+    options: [
+      { value: 'all', label: 'All Urgency' },
+      { value: '1 - Critical', label: 'Critical' },
+      { value: '2 - High', label: 'High' },
+      { value: '3 - Normal', label: 'Normal' },
+      { value: '4 - Low', label: 'Low' },
+      { value: '5 - Someday', label: 'Someday' },
+    ],
+  },
+  {
     key: 'recurrence', label: 'Recurrence',
     options: [
       { value: 'all', label: 'All' },
@@ -51,12 +62,26 @@ const TASK_FILTERS: FilterDef[] = [
       { value: 'Yearly', label: 'Yearly' },
     ],
   },
+  {
+    key: 'dueDate', label: 'Due Date',
+    options: [
+      { value: 'all', label: 'All' },
+      { value: 'overdue', label: 'Overdue' },
+      { value: 'today', label: 'Due Today' },
+      { value: 'this-week', label: 'This Week' },
+      { value: 'next-two-weeks', label: 'Next Two Weeks' },
+      { value: 'this-month', label: 'This Month' },
+      { value: 'has-due-date', label: 'Has Due Date' },
+      { value: 'no-due-date', label: 'No Due Date' },
+    ],
+  },
 ];
 
 const TASK_COLUMNS: ColumnDef[] = [
   { key: 'taskName', label: 'Task', defaultVisible: true },
   { key: 'status', label: 'Status', defaultVisible: true },
   { key: 'taskPriority', label: 'Priority', defaultVisible: true },
+  { key: 'urgency', label: 'Urgency', defaultVisible: true },
   { key: 'dueDate', label: 'Due', defaultVisible: true },
   { key: 'plannedDate', label: 'Planned', defaultVisible: true },
   { key: 'doneDate', label: 'Done', defaultVisible: false },
@@ -81,7 +106,7 @@ export default function TasksPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleColumns, setVisibleColumns] = usePersistedSet('tasks-visible-columns', DEFAULT_VISIBLE);
   const [sortLevels, setSortLevels] = usePersistedSortLevels('tasks-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: [], priority: [], domain: [], recurrence: [] });
+  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: [], priority: [], urgency: [], domain: [], recurrence: [], dueDate: [] });
 
   // Build filters with dynamic domain options
   const taskFilters = useMemo<FilterDef[]>(() => [
@@ -105,6 +130,7 @@ export default function TasksPage() {
     taskName: (a, b) => a.taskName.localeCompare(b.taskName),
     status: (a, b) => a.status.localeCompare(b.status),
     taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
+    urgency: (a, b) => a.urgency.localeCompare(b.urgency),
     dueDate: (a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''),
     plannedDate: (a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''),
     doneDate: (a, b) => (a.doneDate || '').localeCompare(b.doneDate || ''),
@@ -133,8 +159,27 @@ export default function TasksPage() {
     // Apply multi-select filters
     result = result.filter(t => matchesFilter(filterValues.status || [], t.status));
     result = result.filter(t => matchesFilter(filterValues.priority || [], t.taskPriority));
+    result = result.filter(t => matchesFilter(filterValues.urgency || [], t.urgency));
     result = result.filter(t => matchesFilter(filterValues.domain || [], t.domainId || ''));
     result = result.filter(t => matchesFilter(filterValues.recurrence || [], t.recurrence));
+
+    // Due date filter
+    const dueDateFilter = filterValues.dueDate || [];
+    if (isFilterActive(dueDateFilter)) {
+      const todayStr = format(startOfDay(new Date()), 'yyyy-MM-dd');
+      result = result.filter(t => {
+        for (const f of dueDateFilter) {
+          if (f === 'overdue' && t.dueDate && t.dueDate < todayStr) return true;
+          if (f === 'today' && t.dueDate === todayStr) return true;
+          if (f === 'this-week' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 7), 'yyyy-MM-dd')) return true;
+          if (f === 'next-two-weeks' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 14), 'yyyy-MM-dd')) return true;
+          if (f === 'this-month' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 30), 'yyyy-MM-dd')) return true;
+          if (f === 'has-due-date' && t.dueDate) return true;
+          if (f === 'no-due-date' && !t.dueDate) return true;
+        }
+        return false;
+      });
+    }
 
     return multiLevelSort(result, sortLevels, comparators);
   }, [tasks, searchQuery, filterValues, sortLevels, comparators]);
@@ -218,6 +263,9 @@ export default function TasksPage() {
               {show('taskPriority') && (
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-28">Priority</th>
               )}
+              {show('urgency') && (
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-28">Urgency</th>
+              )}
               {show('dueDate') && (
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--muted)] uppercase tracking-wider w-24">Due</th>
               )}
@@ -278,6 +326,13 @@ export default function TasksPage() {
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
                         {task.taskPriority.split(' - ')[1]}
+                      </span>
+                    </td>
+                  )}
+                  {show('urgency') && (
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs ${getUrgencyColor(task.urgency)}`}>
+                        {task.urgency.split(' - ')[1]}
                       </span>
                     </td>
                   )}

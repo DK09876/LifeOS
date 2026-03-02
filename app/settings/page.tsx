@@ -6,6 +6,7 @@ import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, d
 import { FilterPreset } from '@/lib/db';
 import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { getStoredAuth } from '@/lib/google-auth';
+import { getTodayString } from '@/lib/dates';
 
 const COLOR_OPTIONS = [
   { value: 'blue', label: 'Blue', bg: 'bg-blue-600', hover: 'hover:bg-blue-700' },
@@ -37,6 +38,24 @@ const RECURRENCE_OPTIONS = [
   { value: 'recurring', label: 'Recurring only' },
 ];
 
+const URGENCY_OPTIONS = [
+  { value: '1 - Critical', label: 'Critical' },
+  { value: '2 - High', label: 'High' },
+  { value: '3 - Normal', label: 'Normal' },
+  { value: '4 - Low', label: 'Low' },
+  { value: '5 - Someday', label: 'Someday' },
+];
+
+const DUE_DATE_OPTIONS = [
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'today', label: 'Due Today' },
+  { value: 'this-week', label: 'This Week' },
+  { value: 'next-two-weeks', label: 'Next Two Weeks' },
+  { value: 'this-month', label: 'This Month' },
+  { value: 'has-due-date', label: 'Has Due Date' },
+  { value: 'no-due-date', label: 'No Due Date' },
+];
+
 export default function SettingsPage() {
   const [hideGetStarted, setHideGetStarted] = useState(false);
   const filterPresets = useFilterPresets();
@@ -49,6 +68,8 @@ export default function SettingsPage() {
   const [newPresetActionPoints, setNewPresetActionPoints] = useState<string[]>([]);
   const [newPresetDomain, setNewPresetDomain] = useState<string[]>([]);
   const [newPresetRecurrence, setNewPresetRecurrence] = useState<string[]>([]);
+  const [newPresetUrgency, setNewPresetUrgency] = useState<string[]>([]);
+  const [newPresetDueDate, setNewPresetDueDate] = useState<string[]>([]);
 
   // Automations state
   const [recurrenceLastRun, setRecurrenceLastRun] = useState<string | null>(null);
@@ -91,7 +112,7 @@ export default function SettingsPage() {
     setRecurrenceResult(null);
     try {
       const result = await runRecurrenceCheck();
-      setRecurrenceLastRun(new Date().toISOString().slice(0, 10));
+      setRecurrenceLastRun(getTodayString());
       if (result.tasksReset > 0) {
         setRecurrenceResult(`Reset ${result.tasksReset} recurring task${result.tasksReset > 1 ? 's' : ''}`);
       } else {
@@ -186,6 +207,8 @@ export default function SettingsPage() {
         actionPoints: newPresetActionPoints,
         domain: newPresetDomain,
         recurrence: newPresetRecurrence,
+        urgency: newPresetUrgency,
+        dueDate: newPresetDueDate,
       },
       visible: true,
     });
@@ -196,6 +219,8 @@ export default function SettingsPage() {
     setNewPresetActionPoints([]);
     setNewPresetDomain([]);
     setNewPresetRecurrence([]);
+    setNewPresetUrgency([]);
+    setNewPresetDueDate([]);
     setIsAddingPreset(false);
   };
 
@@ -207,6 +232,8 @@ export default function SettingsPage() {
     setNewPresetActionPoints(toArray(preset.filters.actionPoints));
     setNewPresetDomain(toArray(preset.filters.domain));
     setNewPresetRecurrence(toArray(preset.filters.recurrence));
+    setNewPresetUrgency(toArray(preset.filters.urgency));
+    setNewPresetDueDate(toArray(preset.filters.dueDate));
   };
 
   const handleUpdatePreset = async () => {
@@ -220,6 +247,8 @@ export default function SettingsPage() {
         actionPoints: newPresetActionPoints,
         domain: newPresetDomain,
         recurrence: newPresetRecurrence,
+        urgency: newPresetUrgency,
+        dueDate: newPresetDueDate,
       },
     });
 
@@ -230,6 +259,8 @@ export default function SettingsPage() {
     setNewPresetActionPoints([]);
     setNewPresetDomain([]);
     setNewPresetRecurrence([]);
+    setNewPresetUrgency([]);
+    setNewPresetDueDate([]);
   };
 
   const [presetToDelete, setPresetToDelete] = useState<string | null>(null);
@@ -254,6 +285,8 @@ export default function SettingsPage() {
     setNewPresetActionPoints([]);
     setNewPresetDomain([]);
     setNewPresetRecurrence([]);
+    setNewPresetUrgency([]);
+    setNewPresetDueDate([]);
   };
 
   const getColorClasses = (color: string) => {
@@ -391,12 +424,12 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Planning Mode Filter Presets */}
+      {/* Planning & Matrix Filter Presets */}
       <div className="bg-[var(--card-bg)] rounded-lg p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-medium text-white">Planning Mode Filter Presets</h2>
-            <p className="text-sm text-[var(--muted)]">Quick filters shown in the planning view</p>
+            <h2 className="text-lg font-medium text-white">Planning & Matrix Filter Presets</h2>
+            <p className="text-sm text-[var(--muted)]">Quick filters shown in the planning and matrix views</p>
           </div>
           {!isAddingPreset && !editingPreset && (
             <button
@@ -445,6 +478,14 @@ export default function SettingsPage() {
                     const rArr = toArray(preset.filters.recurrence);
                     if (rArr.length > 0) {
                       parts.push(`Recurrence: ${rArr.map(v => v === 'None' ? 'One-time' : 'Recurring').join(', ')}`);
+                    }
+                    const uArr = toArray(preset.filters.urgency);
+                    if (uArr.length > 0) {
+                      parts.push(`Urgency: ${uArr.map(v => v.split(' - ')[1] || v).join(', ')}`);
+                    }
+                    const ddArr = toArray(preset.filters.dueDate);
+                    if (ddArr.length > 0) {
+                      parts.push(`Due: ${ddArr.join(', ')}`);
                     }
                     return parts.length > 0 ? parts.join(' | ') : 'No filters';
                   })()}
@@ -570,6 +611,40 @@ export default function SettingsPage() {
                           type="checkbox"
                           checked={newPresetRecurrence.includes(opt.value)}
                           onChange={() => setNewPresetRecurrence(toggleArrayValue(newPresetRecurrence, opt.value))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-[var(--muted)] mb-1">Urgency {newPresetUrgency.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1">
+                    {URGENCY_OPTIONS.map(opt => (
+                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetUrgency.includes(opt.value)}
+                          onChange={() => setNewPresetUrgency(toggleArrayValue(newPresetUrgency, opt.value))}
+                          className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                        <span className="text-sm text-white">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-[var(--muted)] mb-1">Due Date {newPresetDueDate.length === 0 && <span className="text-[var(--muted)]/60">(all)</span>}</label>
+                  <div className="space-y-1">
+                    {DUE_DATE_OPTIONS.map(opt => (
+                      <label key={opt.value} className="flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-[var(--card-bg)]">
+                        <input
+                          type="checkbox"
+                          checked={newPresetDueDate.includes(opt.value)}
+                          onChange={() => setNewPresetDueDate(toggleArrayValue(newPresetDueDate, opt.value))}
                           className="w-3.5 h-3.5 rounded border-[var(--border-color)] bg-[var(--background)] text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                         <span className="text-sm text-white">{opt.label}</span>

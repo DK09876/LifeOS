@@ -7,7 +7,10 @@ export interface Task {
   taskName: string;
   status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
   taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
+  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
   taskScore: number;
+  importanceScore: number;
+  urgencyScore: number;
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
@@ -47,6 +50,8 @@ export interface FilterPreset {
     actionPoints?: string | string[];
     domain?: string | string[];
     recurrence?: string | string[];
+    urgency?: string | string[];
+    dueDate?: string | string[];
   };
   visible: boolean;
   isDefault: boolean;
@@ -71,12 +76,29 @@ export interface Habit {
   updatedAt: string;
 }
 
+export interface Event {
+  id: string;
+  eventName: string;
+  date: string;
+  time: string | null;
+  duration: number | null;
+  actionPoints: string | null;
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  notes: string;
+  domainId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Sync payload types
 export interface SyncPayload {
   version: 2;
   tasks: Task[];
   domains: Domain[];
   habits: Habit[];
+  events: Event[];
   filterPresets: FilterPreset[];
   preferences: Record<string, string>;
   exportedAt: string;
@@ -102,6 +124,7 @@ class LifeOSDatabase extends Dexie {
   syncMetadata!: Table<SyncMetadata, string>;
   filterPresets!: Table<FilterPreset, string>;
   habits!: Table<Habit, string>;
+  events!: Table<Event, string>;
 
   constructor() {
     super('LifeOSDatabase');
@@ -292,6 +315,27 @@ class LifeOSDatabase extends Dexie {
         }
       });
     });
+
+    // Version 10: Add urgency + importance/urgency scores to tasks, add events table
+    this.version(10).stores({
+      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
+      domains: 'id, name, priority, updatedAt, deletedAt',
+      syncMetadata: 'id',
+      filterPresets: 'id, name, order, deletedAt',
+      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
+      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
+    }).upgrade(async tx => {
+      const domains = await tx.table('domains').toArray();
+      const domainMap = new Map(domains.map((d: Domain) => [d.id, d.priority]));
+      await tx.table('tasks').toCollection().modify((task: Task) => {
+        if (task.urgency === undefined) (task as unknown as Record<string, unknown>).urgency = '3 - Normal';
+        const dp = task.domainId ? domainMap.get(task.domainId) : undefined;
+        const scores = calculateTaskScores(task, dp);
+        task.importanceScore = scores.importanceScore;
+        task.urgencyScore = scores.urgencyScore;
+        task.taskScore = scores.combinedScore;
+      });
+    });
   }
 }
 
@@ -390,46 +434,47 @@ export async function updateSyncMetadata(updates: Partial<SyncMetadata>): Promis
   }
 }
 
-// Calculate task score based on priority, domain, and due date
-export function calculateTaskScore(task: Partial<Task>, domainPriority?: string): number {
-  let score = 0;
-
-  // Task priority contribution (higher priority = higher score)
+// Calculate task scores: importance, urgency, and combined
+export function calculateTaskScores(
+  task: Partial<Task>, domainPriority?: string
+): { importanceScore: number; urgencyScore: number; combinedScore: number } {
+  // Importance = task priority (10-50) + domain priority (10-30) → range 20-80
   const priorityScores: Record<string, number> = {
-    '1 - Urgent': 50,
-    '2 - High': 40,
-    '3 - Normal': 30,
-    '4 - Low': 20,
-    '5 - Optional': 10,
+    '1 - Urgent': 50, '2 - High': 40, '3 - Normal': 30, '4 - Low': 20, '5 - Optional': 10,
   };
-  score += priorityScores[task.taskPriority || '3 - Normal'] || 30;
-
-  // Domain priority contribution
   const domainScores: Record<string, number> = {
-    '1 - Critical': 30,
-    '2 - Important': 20,
-    '3 - Maintenance': 10,
+    '1 - Critical': 30, '2 - Important': 20, '3 - Maintenance': 10,
   };
-  score += domainScores[domainPriority || '3 - Maintenance'] || 10;
+  const importanceScore = (priorityScores[task.taskPriority || '3 - Normal'] || 30)
+    + (domainScores[domainPriority || '3 - Maintenance'] || 10);
 
-  // Due date contribution (closer = higher score)
+  // Urgency = urgency field (10-50) + due date proximity (0-50) → range 10-100
+  const urgencyFieldScores: Record<string, number> = {
+    '1 - Critical': 50, '2 - High': 40, '3 - Normal': 30, '4 - Low': 20, '5 - Someday': 10,
+  };
+  let dueDateBonus = 0;
   if (task.dueDate) {
-    const now = new Date();
-    const due = new Date(task.dueDate + 'T00:00:00');
-    const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysUntilDue < 0) {
-      score += 25; // Overdue
-    } else if (daysUntilDue === 0) {
-      score += 20; // Due today
-    } else if (daysUntilDue <= 7) {
-      score += 15; // Due this week
-    } else if (daysUntilDue <= 30) {
-      score += 10; // Due this month
-    }
+    const days = Math.ceil((new Date(task.dueDate + 'T00:00:00').getTime() - new Date().getTime()) / 86400000);
+    if (days < 0) dueDateBonus = 50;
+    else if (days === 0) dueDateBonus = 45;
+    else if (days === 1) dueDateBonus = 40;
+    else if (days === 2) dueDateBonus = 35;
+    else if (days <= 4) dueDateBonus = 30;
+    else if (days <= 7) dueDateBonus = 25;
+    else if (days <= 14) dueDateBonus = 20;
+    else if (days <= 30) dueDateBonus = 15;
+    else if (days <= 60) dueDateBonus = 10;
+    else dueDateBonus = 5;
   }
+  const urgencyScore = (urgencyFieldScores[task.urgency || '3 - Normal'] || 30) + dueDateBonus;
 
-  return score;
+  const combinedScore = Math.round((importanceScore * urgencyScore) / 100);
+  return { importanceScore, urgencyScore, combinedScore };
+}
+
+// Backward-compat wrapper
+export function calculateTaskScore(task: Partial<Task>, domainPriority?: string): number {
+  return calculateTaskScores(task, domainPriority).combinedScore;
 }
 
 // Check if a recurring task needs reset
@@ -472,10 +517,11 @@ export function checkNeedsReset(task: Task): boolean {
 
 // Export all data for sync (includes tombstones for deletion propagation)
 export async function exportAllData(): Promise<SyncPayload> {
-  const [tasks, domains, habits, filterPresets] = await Promise.all([
+  const [tasks, domains, habits, events, filterPresets] = await Promise.all([
     db.tasks.toArray(),
     db.domains.toArray(),
     db.habits.toArray(),
+    db.events.toArray(),
     db.filterPresets.toArray(),
   ]);
 
@@ -493,6 +539,7 @@ export async function exportAllData(): Promise<SyncPayload> {
     tasks,
     domains,
     habits,
+    events,
     filterPresets,
     preferences,
     exportedAt: new Date().toISOString(),
@@ -500,12 +547,13 @@ export async function exportAllData(): Promise<SyncPayload> {
 }
 
 // Replace all local data with remote data (full replace, not merge)
-export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; exportedAt: string }): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.filterPresets], async () => {
+export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; events?: Event[]; exportedAt: string }): Promise<void> {
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.filterPresets], async () => {
     // Clear all tables
     await db.tasks.clear();
     await db.domains.clear();
     await db.habits.clear();
+    await db.events.clear();
     await db.filterPresets.clear();
 
     // Bulk insert all remote data (with deletedAt fallback for backward compat)
@@ -514,6 +562,11 @@ export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domain
 
     if (data.habits) {
       await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
+    }
+
+    const events = 'events' in data ? data.events : undefined;
+    if (events) {
+      await db.events.bulkAdd(events.map(ev => ({ ...ev, deletedAt: ev.deletedAt ?? null })));
     }
 
     if ('filterPresets' in data && data.filterPresets) {
@@ -544,14 +597,15 @@ export async function hasUnsavedChanges(): Promise<boolean> {
 
   const lastSynced = new Date(syncMeta.lastSyncedAt).getTime();
 
-  const [tasks, domains, habits, filterPresets] = await Promise.all([
+  const [tasks, domains, habits, events, filterPresets] = await Promise.all([
     db.tasks.toArray(),
     db.domains.toArray(),
     db.habits.toArray(),
+    db.events.toArray(),
     db.filterPresets.toArray(),
   ]);
 
-  const allRecords = [...tasks, ...domains, ...habits, ...filterPresets];
+  const allRecords = [...tasks, ...domains, ...habits, ...events, ...filterPresets];
   return allRecords.some(r => new Date(r.updatedAt).getTime() > lastSynced);
 }
 
@@ -560,8 +614,8 @@ export async function compactTombstones(retentionDays: number = 30): Promise<num
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   let purged = 0;
 
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.filterPresets], async () => {
-    const tables = [db.tasks, db.domains, db.habits, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
+  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.filterPresets], async () => {
+    const tables = [db.tasks, db.domains, db.habits, db.events, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
     for (const table of tables) {
       const tombstones = await table.filter(r => !!r.deletedAt && r.deletedAt < cutoff).toArray();
       for (const record of tombstones) {
@@ -576,11 +630,12 @@ export async function compactTombstones(retentionDays: number = 30): Promise<num
 
 // Clear all data (for logout/reset)
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.filterPresets], async () => {
+  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.events, db.filterPresets], async () => {
     await db.tasks.clear();
     await db.domains.clear();
     await db.syncMetadata.clear();
     await db.habits.clear();
+    await db.events.clear();
     await db.filterPresets.clear();
   });
 }
@@ -738,6 +793,80 @@ export async function deleteHabit(id: string): Promise<void> {
 
 // Prune completionDates older than retentionDays to prevent unbounded growth
 export function pruneCompletionDates(dates: string[], retentionDays: number = 90): string[] {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const cutoff = toDateString(new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000));
   return dates.filter(d => d >= cutoff);
+}
+
+// Event CRUD operations
+
+export async function getAllEvents(): Promise<Event[]> {
+  const all = await db.events.toArray();
+  return all.filter(e => !e.deletedAt);
+}
+
+export async function getEventById(id: string): Promise<Event | undefined> {
+  return db.events.get(id);
+}
+
+export async function createEvent(event: Omit<Event, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.events.add({
+    ...event,
+    id,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function updateEvent(id: string, updates: Partial<Event>): Promise<void> {
+  await db.events.update(id, {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function deleteEvent(id: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.events.update(id, { deletedAt: now, updatedAt: now });
+}
+
+// Check if a recurring event needs reset (same logic as checkNeedsReset but for Event type)
+export function checkEventNeedsReset(event: Event): boolean {
+  if (event.recurrence === 'None' || !event.lastCompleted) {
+    return false;
+  }
+
+  const lastCompleted = new Date(event.lastCompleted);
+  const now = new Date();
+
+  switch (event.recurrence) {
+    case 'Daily':
+      return now.getTime() - lastCompleted.getTime() >= 24 * 60 * 60 * 1000;
+    case 'Weekly':
+      return now.getTime() - lastCompleted.getTime() >= 7 * 24 * 60 * 60 * 1000;
+    case 'Biweekly':
+      return now.getTime() - lastCompleted.getTime() >= 14 * 24 * 60 * 60 * 1000;
+    case 'Monthly':
+      return now.getMonth() !== lastCompleted.getMonth() || now.getFullYear() !== lastCompleted.getFullYear();
+    case 'Bimonthly': {
+      const diffMonths = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonths >= 2;
+    }
+    case 'Quarterly': {
+      const lastQ = Math.floor(lastCompleted.getMonth() / 3);
+      const nowQ = Math.floor(now.getMonth() / 3);
+      return nowQ !== lastQ || now.getFullYear() !== lastCompleted.getFullYear();
+    }
+    case 'Half-Yearly': {
+      const diffMonthsHY = (now.getFullYear() - lastCompleted.getFullYear()) * 12 + (now.getMonth() - lastCompleted.getMonth());
+      return diffMonthsHY >= 6;
+    }
+    case 'Yearly':
+      return now.getFullYear() !== lastCompleted.getFullYear();
+    default:
+      return false;
+  }
 }

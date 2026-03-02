@@ -2,6 +2,45 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.5.0] - 2026-03-02
+
+### Eisenhower Matrix & Urgency Scoring
+- Add urgency field to tasks (Critical, High, Normal, Low, Someday) — separate from priority/importance
+- Rework scoring: importance score (priority + domain), urgency score (urgency field + due date proximity), combined score (importance x urgency)
+- Due date proximity now uses 10 granular tiers (overdue through 2+ months) with up to 50 points
+- Add Eisenhower Matrix scatter plot in planning dashboard — plots tasks by importance (Y) vs urgency (X)
+- Matrix shows four labeled quadrants: Do Now, Schedule, Fit In, Backburner
+- Task dots cluster when overlapping, click to pin tooltip with task list, click task to edit
+- Matrix view shares filter presets with Planning view
+- Add "Due Soon" badges on unscheduled tasks in planning sidebar (e.g., "2d", "today", "overdue")
+
+### Due Date Filters
+- Add due date filter across all pages: Overdue, Due Today, This Week, Next Two Weeks, This Month, Has Due Date, No Due Date
+- Add urgency filter across all pages
+- Filter presets in Settings now support urgency and due date fields
+
+### Events
+- Add events system for calendar appointments and time commitments
+- Add dedicated Events page with Today/Upcoming/Past sections and sidebar navigation
+- Events have date, optional time/duration, action points, recurrence, domain
+- Events shown on calendar (day/week/month views) alongside tasks with distinct indigo styling
+- Events shown on Today page with AM/PM time formatting, labeled details (Time, Duration), and mark-done button
+- Mark events done from Today page — completed events appear in "Completed Today" with undo
+- Missed events (past date, not completed) appear in Triage view alongside missed tasks
+- Events clickable to edit in Plan day/week views
+- Recurring events auto-reset like recurring tasks
+- Events included in Google Drive sync
+
+### Sorting
+- Tasks sorted alphabetically as tiebreaker when scores are equal
+- Habits sorted alphabetically across all views
+- Events sorted by time first, then alphabetically as tiebreaker
+
+### Bug Fixes
+- Fix timezone bug: replace all `toISOString().slice(0,10)` with `getTodayString()`/`toDateString()` — was producing UTC dates instead of local dates, causing items to not appear on correct day in US timezones
+- Fix events not showing in Plan day view when no tasks are scheduled
+- Fix events not appearing in Plan month view
+
 ## [0.4.1] - 2026-02-26
 
 ### Planning

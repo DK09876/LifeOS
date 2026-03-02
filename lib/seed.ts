@@ -1,4 +1,4 @@
-import { db, calculateTaskScore } from './db';
+import { db, calculateTaskScores } from './db';
 import type { Task, Domain } from './db';
 
 // Import Notion JSON data
@@ -93,7 +93,10 @@ export async function seedDatabase(): Promise<boolean> {
       taskName: nt.name,
       status: nt.status as Task['status'],
       taskPriority,
-      taskScore: 0, // Will be calculated
+      urgency: '3 - Normal',
+      taskScore: 0,
+      importanceScore: 0,
+      urgencyScore: 0,
       dueDate: nt.dueDate,
       plannedDate: null,
       recurrence,
@@ -107,8 +110,11 @@ export async function seedDatabase(): Promise<boolean> {
       updatedAt: now,
     };
 
-    // Calculate task score
-    task.taskScore = calculateTaskScore(task, domainPriority);
+    // Calculate task scores
+    const scores = calculateTaskScores(task, domainPriority);
+    task.importanceScore = scores.importanceScore;
+    task.urgencyScore = scores.urgencyScore;
+    task.taskScore = scores.combinedScore;
 
     return task;
   });

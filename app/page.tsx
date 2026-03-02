@@ -6,10 +6,11 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import HabitForm, { HabitFormData } from '@/components/HabitForm';
+import EventForm, { EventFormData } from '@/components/EventForm';
 import HabitCard from '@/components/HabitCard';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit } from '@/lib/hooks';
-import { Task, Habit } from '@/types';
+import { useTasks, useDomains, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
+import { Task, Habit, Event } from '@/types';
 import { getTodayString } from '@/lib/dates';
 import { getTaskPriorityBorder } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
@@ -19,6 +20,8 @@ export default function TodayPage() {
   const domains = useDomains();
   const habitsDueToday = useHabitsDueToday();
   const habitsCompletedToday = useHabitsCompletedToday();
+  const eventsToday = useEventsToday();
+  const eventsCompletedToday = useEventsCompletedToday();
   const { showToast } = useToast();
 
   // Task CRUD modals
@@ -30,6 +33,10 @@ export default function TodayPage() {
   const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
   const [habitToDelete, setHabitToDelete] = useState<string | null>(null);
+
+  // Event CRUD modals
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
   // Filter tasks for today
   const todayTasks = useMemo(() => {
@@ -139,6 +146,36 @@ export default function TodayPage() {
     } catch { showToast('Failed to delete habit', 'error'); }
   }
 
+  // Event handlers
+  async function handleMarkEventDone(eventId: string) {
+    try {
+      await markEventDone(eventId);
+    } catch { showToast('Failed to complete event', 'error'); }
+  }
+
+  async function handleUndoEventDone(eventId: string) {
+    try {
+      await undoEventDone(eventId);
+    } catch { showToast('Failed to undo event', 'error'); }
+  }
+
+  function handleEditEvent(event: Event) {
+    setEditingEvent(event);
+    setIsEventModalOpen(true);
+  }
+
+  async function handleEventSubmit(data: EventFormData) {
+    try {
+      if (editingEvent) {
+        await updateEventData(editingEvent.id, data);
+      } else {
+        await createEvent({ ...data, date: data.date || getTodayString() });
+      }
+      setIsEventModalOpen(false);
+      setEditingEvent(null);
+    } catch { showToast('Failed to save event', 'error'); }
+  }
+
   return (
     <div>
       {/* Page Header */}
@@ -181,6 +218,59 @@ export default function TodayPage() {
                 onMarkDone={handleMarkHabitDone}
                 onEdit={handleEditHabit}
               />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Events Section */}
+      {eventsToday.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-white">Events</h2>
+          </div>
+          <div className="space-y-2">
+            {eventsToday.map(event => (
+              <div
+                key={event.id}
+                className="bg-[var(--card-bg)] rounded-lg border-l-4 border-indigo-500 bg-indigo-500/5 p-4 flex items-start gap-4 group hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
+                onClick={() => handleEditEvent(event)}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleMarkEventDone(event.id); }}
+                  className="w-5 h-5 mt-0.5 rounded-full border-2 border-indigo-400 hover:border-indigo-300 hover:bg-indigo-500/20 flex items-center justify-center flex-shrink-0 transition-colors"
+                  aria-label={`Mark "${event.eventName}" as done`}
+                >
+                  <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-indigo-300 text-xs">✓</span>
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-indigo-300 font-medium">{event.eventName}</p>
+                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted)]">
+                    {event.time && (
+                      <span className="flex items-center gap-1">
+                        <span>Time:</span>
+                        <span>{new Date(`2000-01-01T${event.time}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
+                      </span>
+                    )}
+                    {event.duration && (
+                      <span className="flex items-center gap-1">
+                        <span>Duration:</span>
+                        <span>{event.duration}min</span>
+                      </span>
+                    )}
+                    {event.domain && (
+                      <span className="flex items-center gap-1">
+                        <span>{event.domain.icon || '📁'}</span>
+                        <span>{event.domain.name}</span>
+                      </span>
+                    )}
+                    {event.actionPoints && <span>AP: {event.actionPoints}</span>}
+                    {event.recurrence !== 'None' && (
+                      <span className="text-indigo-400">{event.recurrence}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -254,7 +344,7 @@ export default function TodayPage() {
       </div>
 
       {/* Completed Today */}
-      {(completedToday.length > 0 || habitsCompletedToday.length > 0) && (
+      {(completedToday.length > 0 || habitsCompletedToday.length > 0 || eventsCompletedToday.length > 0) && (
         <div>
           <h2 className="text-lg font-medium text-[var(--muted)] mb-4">Completed Today</h2>
           <div className="space-y-2">
@@ -273,6 +363,25 @@ export default function TodayPage() {
                   onClick={() => handleUndoHabitDone(habit.id)}
                   className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
                   aria-label={`Undo completion of "${habit.habitName}"`}
+                >
+                  Undo
+                </button>
+              </div>
+            ))}
+            {/* Completed Events */}
+            {eventsCompletedToday.map(event => (
+              <div
+                key={event.id}
+                className="bg-[var(--card-bg)] rounded-lg p-4 flex items-center gap-4 opacity-60 group hover:opacity-80 transition-opacity"
+              >
+                <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-indigo-400 text-xs">✓</span>
+                </div>
+                <p className="text-[var(--muted)] line-through flex-1">{event.eventName}</p>
+                <button
+                  onClick={() => handleUndoEventDone(event.id)}
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"
+                  aria-label={`Undo completion of "${event.eventName}"`}
                 >
                   Undo
                 </button>
@@ -350,6 +459,22 @@ export default function TodayPage() {
         confirmLabel="Delete"
         variant="danger"
       />
+
+      {/* Event Modal */}
+      <Modal
+        isOpen={isEventModalOpen}
+        onClose={() => { setIsEventModalOpen(false); setEditingEvent(null); }}
+        title={editingEvent ? 'Edit Event' : 'Create Event'}
+        maxWidth="lg"
+      >
+        <EventForm
+          key={editingEvent?.id ?? 'new'}
+          event={editingEvent}
+          domains={domains}
+          onSubmit={handleEventSubmit}
+          onCancel={() => { setIsEventModalOpen(false); setEditingEvent(null); }}
+        />
+      </Modal>
     </div>
   );
 }

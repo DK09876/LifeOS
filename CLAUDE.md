@@ -35,7 +35,7 @@ User's Device                          User's Google Drive
 
 - **Framework**: Next.js 16 with App Router
 - **UI**: React 19 + Tailwind CSS 4
-- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 9
+- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 10
 - **Auth**: Google OAuth 2.0 (popup with callback page + localStorage events)
 - **Sync**: Google Drive API (REST) — Push/Pull only, no auto-sync
 - **Date Handling**: date-fns
@@ -45,13 +45,13 @@ User's Device                          User's Google Drive
 | File | Purpose |
 |------|---------|
 | `lib/db.ts` | Dexie database schema, CRUD operations, score calculation, sync payload types |
-| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, action functions |
+| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, action functions |
 | `lib/sync.ts` | Google Drive Push/Pull: `pushToGoogleDrive()`, `pullFromGoogleDrive()` |
 | `lib/colors.ts` | Shared color utility functions (priority, status, due date colors) |
 | `lib/google-auth.ts` | Google OAuth: sign in, sign out, token management |
 | `components/AppLayout.tsx` | Main layout: sidebar, header with Push/Pull buttons, quote |
 | `app/page.tsx` | Today view: due tasks + habits, completed today |
-| `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar |
+| `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix |
 | `app/habits/page.tsx` | Habits management: due now, on track, paused |
 
 ## Data Models
@@ -65,7 +65,10 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   taskName: string;
   status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
   taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
-  taskScore: number;
+  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
+  importanceScore: number;   // priority + domain, range 20-80
+  urgencyScore: number;      // urgency field + due date proximity, range 10-100
+  taskScore: number;         // combined: (importance × urgency) / 100
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
@@ -111,6 +114,25 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
 }
 ```
 
+### Event
+```typescript
+{
+  id: string;
+  eventName: string;
+  date: string;              // YYYY-MM-DD
+  time: string | null;       // HH:mm
+  duration: number | null;   // minutes
+  actionPoints: string | null;
+  recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  lastCompleted: string | null;
+  notes: string;
+  domainId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
 ## Commands
 
 ```bash
@@ -134,10 +156,12 @@ npm run lint     # Run ESLint
 const tasks = useTasks();
 const domains = useDomains();
 const habits = useHabits();
+const events = useEvents();
 
 // For actions
 import { markTaskDone, undoTaskDone, createTask, deleteTask } from '@/lib/hooks';
 import { markHabitDone, undoHabitDone, createHabit } from '@/lib/hooks';
+import { createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 ```
 
 ### Color Utilities
@@ -171,12 +195,25 @@ When making changes to LifeOS, keep these artifacts up to date:
 4. **This file (CLAUDE.md)** — Update data models, key files, or patterns if architecture changes.
 
 ### Date Handling
+
+**CRITICAL**: All date-only strings (YYYY-MM-DD) in this app represent **local** dates. Using UTC-based methods to produce them causes bugs in non-UTC timezones (e.g., US timezones where local date can differ from UTC date).
+
 ```typescript
 // NEVER use new Date("YYYY-MM-DD") — parses as UTC midnight, wrong in US timezones
 // ALWAYS use parseLocalDate for date-only strings (YYYY-MM-DD)
 import { parseLocalDate, getTodayString, toDateString } from '@/lib/dates';
 parseLocalDate('2026-02-04') // → local midnight Feb 4 (correct)
 new Date('2026-02-04')       // → UTC midnight Feb 4 = Feb 3 in US (wrong!)
+
+// NEVER use .toISOString().slice(0, 10) to get today's date — returns UTC date, not local
+// ALWAYS use getTodayString() or toDateString(someDate) from lib/dates.ts
+getTodayString()             // → local today as 'YYYY-MM-DD' (correct)
+toDateString(someDate)       // → local date string from a Date object (correct)
+new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
+
+// .toISOString() is fine for full timestamps (createdAt, updatedAt) since those
+// store the exact moment in time. The bug only affects date-only strings used for
+// comparison with stored local dates (plannedDate, dueDate, completionDates, etc.)
 ```
 
 ## Notes
@@ -184,6 +221,6 @@ new Date('2026-02-04')       // → UTC midnight Feb 4 = Feb 3 in US (wrong!)
 - The app works fully offline without Google sign-in
 - Google Drive sync is optional — Push/Pull only, no auto-sync
 - Deletions use tombstones (`deletedAt`) that propagate across devices via sync
-- Task scores are recalculated when priority or domain changes
+- Task scores (importance, urgency, combined) are recalculated when priority, urgency, due date, or domain changes
 - Recurring tasks have `needsReset` computed at runtime (not stored)
 - `completionDates` on habits are pruned to 90 days to prevent unbounded growth

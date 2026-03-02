@@ -6,13 +6,15 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
+import { useTasks, useDomains, useEvents, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getPriorityDotColor } from '@/lib/colors';
+import { Event } from '@/types';
 
 export default function WeekPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const events = useEvents();
   const [weekOffset, setWeekOffset] = useState(0);
 
   // Task CRUD modals
@@ -160,6 +162,23 @@ export default function WeekPage() {
 
             {/* Day Tasks */}
             <div className="bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 min-h-[250px]">
+              {/* Events for this day */}
+              {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => (
+                <div
+                  key={event.id}
+                  className="bg-indigo-500/10 rounded p-2 border-l-2 border-indigo-500 hover:bg-indigo-500/20 transition-colors"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-[10px] text-indigo-400 mt-0.5">🕐</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-indigo-300 text-sm line-clamp-2">{event.eventName}</p>
+                      {event.time && (
+                        <span className="text-xs text-indigo-400/70">{event.time}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
               {dayTasks.map(task => (
                 <div
                   key={task.id}
