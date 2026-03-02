@@ -1,5 +1,9 @@
 // LifeOS Types - Independent of any external service
 
+export type BlockedByEntry =
+  | { type: 'task'; taskId: string }
+  | { type: 'note'; note: string };
+
 export interface Task {
   id: string;
   taskName: string;
@@ -17,6 +21,8 @@ export interface Task {
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
+  projectId: string | null;
+  blockedBy: BlockedByEntry[];
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -83,4 +89,24 @@ export interface Event {
   updatedAt: string;
   // Computed fields
   domain?: Domain | null;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  icon: string | null;
+  status: 'Active' | 'Completed' | 'Archived';
+  domainId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Computed fields (not stored)
+  domain?: Domain | null;
+  tasks?: Task[];
+  taskCount?: number;
+  completedTaskCount?: number;
+  totalAP?: number;
+  completedAP?: number;
+  completionPercent?: number;
 }

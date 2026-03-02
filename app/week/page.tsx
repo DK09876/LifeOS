@@ -6,7 +6,7 @@ import Modal from '@/components/Modal';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useEvents, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
+import { useTasks, useDomains, useProjects, useEvents, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getPriorityDotColor } from '@/lib/colors';
 import { Event } from '@/types';
@@ -14,6 +14,7 @@ import { Event } from '@/types';
 export default function WeekPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const projects = useProjects();
   const events = useEvents();
   const [weekOffset, setWeekOffset] = useState(0);
 
@@ -229,6 +230,8 @@ export default function WeekPage() {
         <TaskForm
           task={editingTask}
           domains={domains}
+          allTasks={tasks}
+          projects={projects}
           onSubmit={handleTaskSubmit}
           onCancel={() => { setIsTaskModalOpen(false); setEditingTask(null); setSelectedDate(null); }}
         />

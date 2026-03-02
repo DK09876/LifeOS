@@ -35,7 +35,7 @@ User's Device                          User's Google Drive
 
 - **Framework**: Next.js 16 with App Router
 - **UI**: React 19 + Tailwind CSS 4
-- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 10
+- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 11
 - **Auth**: Google OAuth 2.0 (popup with callback page + localStorage events)
 - **Sync**: Google Drive API (REST) — Push/Pull only, no auto-sync
 - **Date Handling**: date-fns
@@ -45,7 +45,7 @@ User's Device                          User's Google Drive
 | File | Purpose |
 |------|---------|
 | `lib/db.ts` | Dexie database schema, CRUD operations, score calculation, sync payload types |
-| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, action functions |
+| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, `useProjects()`, action functions |
 | `lib/sync.ts` | Google Drive Push/Pull: `pushToGoogleDrive()`, `pullFromGoogleDrive()` |
 | `lib/colors.ts` | Shared color utility functions (priority, status, due date colors) |
 | `lib/suggest.ts` | Auto-suggest algorithm: scoring, suggestNextTask, suggestWeekSchedule (pure functions) |
@@ -53,6 +53,7 @@ User's Device                          User's Google Drive
 | `components/AppLayout.tsx` | Main layout: sidebar, header with Push/Pull buttons, quote |
 | `app/page.tsx` | Today view: due tasks + habits, completed today |
 | `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix + Auto-Suggest |
+| `app/projects/page.tsx` | Projects management: cards, progress bars, task lists |
 | `app/habits/page.tsx` | Habits management: due now, on track, paused |
 
 ## Data Models
@@ -78,9 +79,27 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
+  projectId: string | null;
+  blockedBy: BlockedByEntry[];   // { type: 'task', taskId } | { type: 'note', note }
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+```
+
+### Project
+```typescript
+{
+  id: string;
+  name: string;
+  description: string;
+  icon: string | null;
+  status: 'Active' | 'Completed' | 'Archived';
+  domainId: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Computed: completionPercent = completedAP / totalAP (AP-weighted, default 2 AP per task)
 }
 ```
 
@@ -158,11 +177,13 @@ const tasks = useTasks();
 const domains = useDomains();
 const habits = useHabits();
 const events = useEvents();
+const projects = useProjects();
 
 // For actions
 import { markTaskDone, undoTaskDone, createTask, deleteTask } from '@/lib/hooks';
 import { markHabitDone, undoHabitDone, createHabit } from '@/lib/hooks';
 import { createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
+import { createProject, updateProjectData, deleteProject } from '@/lib/hooks';
 ```
 
 ### Color Utilities

@@ -105,6 +105,8 @@ export async function seedDatabase(): Promise<boolean> {
       actionPoints: nt.actionPoints?.toString() || null,
       notes: nt.notes || '',
       domainId: nt.domainId,
+      projectId: null,
+      blockedBy: [],
       deletedAt: null,
       createdAt: now,
       updatedAt: now,

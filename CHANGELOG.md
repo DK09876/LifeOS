@@ -2,6 +2,31 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.6.0] - 2026-03-02
+
+### Blocked-by Tasks
+- Tasks can now be blocked by specific other tasks or freeform notes instead of using a manual "Blocked" status
+- Adding a blocker auto-sets status to Blocked; when all blockers are resolved, the task auto-unblocks
+- Task-type blockers are auto-removed when the blocking task is completed, deleted, or archived
+- Note-type blockers must be manually removed
+- Circular dependency prevention: cannot add a blocker that would create a cycle
+- Triage Blocked section now shows specific blocker details inline (task names and notes)
+
+### Projects
+- Add projects system for grouping related tasks with AP-weighted completion tracking
+- Projects have name, description, icon (emoji), status (Active/Completed/Archived), and optional domain
+- Progress bar shows completion percentage based on action points (completedAP / totalAP)
+- Tasks without AP set use default of 2 AP for progress calculation
+- Dedicated /projects page with project cards, expandable task lists, filters by status and domain
+- Create tasks directly within a project from the expanded view
+- Project dropdown added to task form for assigning tasks to projects
+- Projects link added to sidebar navigation between Tasks and Events
+- Project filter added to Tasks page and Plan page filter controls
+- Projects included in Google Drive sync (backward compatible — optional field)
+
+### Database
+- Schema upgraded to version 11: adds `projects` table, `blockedBy` and `projectId` fields on tasks
+
 ## [0.5.1] - 2026-03-02
 
 ### Auto-Suggest for Planning

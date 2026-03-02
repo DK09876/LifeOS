@@ -7,7 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDef, FilterValues, multiLevelSort, usePersistedSet, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
+import { useTasks, useDomains, useProjects, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
 import { getStatusColor, getTaskPriorityColor, getUrgencyColor, getDueDateColor } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
@@ -100,15 +100,16 @@ const DEFAULT_VISIBLE = new Set(TASK_COLUMNS.filter(c => c.defaultVisible).map(c
 export default function TasksPage() {
   const tasks = useTasks();
   const domains = useDomains();
+  const projects = useProjects();
   const { showToast } = useToast();
 
   // State
   const [searchQuery, setSearchQuery] = useState('');
   const [visibleColumns, setVisibleColumns] = usePersistedSet('tasks-visible-columns', DEFAULT_VISIBLE);
   const [sortLevels, setSortLevels] = usePersistedSortLevels('tasks-sort-levels', [{ field: 'taskScore', direction: 'desc' }]);
-  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: [], priority: [], urgency: [], domain: [], recurrence: [], dueDate: [] });
+  const [filterValues, setFilterValues] = usePersistedFilters('tasks-filters', { status: [], priority: [], urgency: [], domain: [], recurrence: [], dueDate: [], project: [] });
 
-  // Build filters with dynamic domain options
+  // Build filters with dynamic domain and project options
   const taskFilters = useMemo<FilterDef[]>(() => [
     ...TASK_FILTERS,
     {
@@ -118,7 +119,15 @@ export default function TasksPage() {
         ...domains.map(d => ({ value: d.id, label: `${d.icon || '📁'} ${d.name}` })),
       ],
     },
-  ], [domains]);
+    {
+      key: 'project', label: 'Project',
+      options: [
+        { value: 'all', label: 'All Projects' },
+        { value: 'none', label: 'No Project' },
+        ...projects.filter(p => p.status === 'Active').map(p => ({ value: p.id, label: `${p.icon || '📦'} ${p.name}` })),
+      ],
+    },
+  ], [domains, projects]);
 
   // Modal state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -176,6 +185,18 @@ export default function TasksPage() {
           if (f === 'this-month' && t.dueDate && t.dueDate >= todayStr && t.dueDate <= format(addDays(startOfDay(new Date()), 30), 'yyyy-MM-dd')) return true;
           if (f === 'has-due-date' && t.dueDate) return true;
           if (f === 'no-due-date' && !t.dueDate) return true;
+        }
+        return false;
+      });
+    }
+
+    // Project filter
+    const projectFilter = filterValues.project || [];
+    if (isFilterActive(projectFilter)) {
+      result = result.filter(t => {
+        for (const f of projectFilter) {
+          if (f === 'none' && !t.projectId) return true;
+          if (f === t.projectId) return true;
         }
         return false;
       });
@@ -430,6 +451,8 @@ export default function TasksPage() {
         <TaskForm
           task={editingTask}
           domains={domains}
+          allTasks={tasks}
+          projects={projects}
           onSubmit={handleTaskSubmit}
           onCancel={() => { setIsTaskModalOpen(false); setEditingTask(null); }}
         />
