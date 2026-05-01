@@ -592,12 +592,43 @@ export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domain
     await db.projects.clear();
     await db.filterPresets.clear();
 
-    // Bulk insert all remote data (with deletedAt fallback for backward compat)
-    await db.domains.bulkAdd(data.domains.map(d => ({ ...d, deletedAt: d.deletedAt ?? null })));
-    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null, blockedBy: t.blockedBy ?? [], projectId: t.projectId ?? null })));
+    // Bulk insert all remote data with fallback defaults for fields added in later migrations.
+    // Remote data may predate the current schema if it was pushed before migrations ran.
+    await db.domains.bulkAdd(data.domains.map(d => ({
+      ...d,
+      icon: d.icon ?? null,               // v2
+      deletedAt: d.deletedAt ?? null,      // v8
+    })));
+
+    // Need domain map for score calculation on stale tasks
+    const domainMap = new Map(data.domains.map(d => [d.id, d.priority]));
+    await db.tasks.bulkAdd(data.tasks.map(t => {
+      const task = {
+        ...t,
+        doneDate: (t as unknown as Record<string, unknown>).doneDate ?? null,                 // v4
+        urgency: (t as unknown as Record<string, unknown>).urgency ?? '3 - Normal',         // v10
+        deletedAt: t.deletedAt ?? null,                                                     // v8
+        blockedBy: t.blockedBy ?? [],                                                       // v11
+        projectId: t.projectId ?? null,                                                     // v11
+      } as Task;
+      // Recalculate scores if missing (v10)
+      if (task.importanceScore == null || task.urgencyScore == null) {
+        const dp = task.domainId ? domainMap.get(task.domainId) : undefined;
+        const scores = calculateTaskScores(task, dp);
+        task.importanceScore = scores.importanceScore;
+        task.urgencyScore = scores.urgencyScore;
+        task.taskScore = scores.combinedScore;
+      }
+      return task;
+    }));
 
     if (data.habits) {
-      await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
+      await db.habits.bulkAdd(data.habits.map(h => ({
+        ...h,
+        targetPerWeek: (h as unknown as Record<string, unknown>).targetPerWeek ?? null,
+        completionDates: h.completionDates ?? [],
+        deletedAt: h.deletedAt ?? null,
+      } as Habit)));
     }
 
     const events = 'events' in data ? data.events : undefined;
@@ -612,7 +643,19 @@ export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domain
 
     if ('filterPresets' in data && data.filterPresets) {
       await db.filterPresets.bulkAdd(
-        (data as SyncPayload).filterPresets.map(p => ({ ...p, deletedAt: p.deletedAt ?? null }))
+        (data as SyncPayload).filterPresets.map(p => {
+          const preset = { ...p, deletedAt: p.deletedAt ?? null };
+          // v9: convert string filter values to arrays
+          if (preset.filters) {
+            for (const key of ['priority', 'actionPoints', 'domain', 'recurrence', 'urgency', 'dueDate'] as const) {
+              const val = preset.filters[key];
+              if (typeof val === 'string') {
+                (preset.filters as Record<string, unknown>)[key] = val === 'all' ? [] : [val];
+              }
+            }
+          }
+          return preset;
+        })
       );
     }
   });
