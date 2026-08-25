@@ -199,6 +199,57 @@ export function mergePayload(userId: string, payload: Payload): { applied: numbe
   return { applied };
 }
 
+/** Upsert one record. Whole-record write: callers send the complete object. */
+export function putRecord(userId: string, collection: Collection, record: StoredRecord) {
+  const conn = connect();
+  const columns = project(collection, record);
+  conn.run(
+    `INSERT INTO records
+       (userId, collection, id, name, status, dueDate, domainId, updatedAt, deletedAt, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (userId, collection, id) DO UPDATE SET
+       name=excluded.name, status=excluded.status, dueDate=excluded.dueDate,
+       domainId=excluded.domainId, updatedAt=excluded.updatedAt,
+       deletedAt=excluded.deletedAt, data=excluded.data`,
+    [
+      userId, collection, record.id,
+      columns.name, columns.status, columns.dueDate, columns.domainId,
+      columns.updatedAt, columns.deletedAt, JSON.stringify(record),
+    ],
+  );
+}
+
+/** Upsert many records in one transaction. */
+export function putRecords(userId: string, collection: Collection, records: StoredRecord[]) {
+  const conn = connect();
+  conn.run('BEGIN');
+  try {
+    for (const record of records) if (record?.id) putRecord(userId, collection, record);
+    conn.run('COMMIT');
+  } catch (error) {
+    conn.run('ROLLBACK');
+    throw error;
+  }
+}
+
+/** Hard-delete. Soft deletion is done by writing a record with deletedAt set. */
+export function deleteRecord(userId: string, collection: Collection, id: string) {
+  connect().run('DELETE FROM records WHERE userId=? AND collection=? AND id=?',
+    [userId, collection, id]);
+}
+
+export function clearCollection(userId: string, collection: Collection) {
+  connect().run('DELETE FROM records WHERE userId=? AND collection=?', [userId, collection]);
+}
+
+export function setPreference(userId: string, key: string, value: string) {
+  connect().run(
+    `INSERT INTO preferences (userId, key, value) VALUES (?, ?, ?)
+     ON CONFLICT (userId, key) DO UPDATE SET value=excluded.value`,
+    [userId, key, value],
+  );
+}
+
 /** The user's full dataset, in the shape the client's SyncPayload expects. */
 export function readPayload(userId: string): Payload & { exportedAt: string } {
   const conn = connect();

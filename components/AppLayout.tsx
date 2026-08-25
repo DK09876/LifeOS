@@ -10,6 +10,7 @@ import { hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { push as pushSync, pull as pullSync } from '@/lib/sync-backend';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
+import { ProfileGate, ProfileSwitcher } from './ProfileGate';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -239,8 +240,10 @@ function AppLayoutInner({ children }: AppLayoutProps) {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   return (
+    <ProfileGate>
     <ToastProvider>
       <AppLayoutInner>{children}</AppLayoutInner>
     </ToastProvider>
+    </ProfileGate>
   );
 }

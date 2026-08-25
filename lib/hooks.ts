@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from './live-query';
 import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
 import { getTodayString } from './dates';
 import { BlockedByEntry } from '@/types';

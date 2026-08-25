@@ -1,4 +1,4 @@
-import Dexie, { Table } from 'dexie';
+import { makeTable } from './store';
 import { toDateString } from './dates';
 import { BlockedByEntry } from '@/types';
 
@@ -133,247 +133,37 @@ export const SYNCABLE_LOCALSTORAGE_KEYS = [
   'plan-filters',
 ];
 
-// Dexie database class
-class LifeOSDatabase extends Dexie {
-  tasks!: Table<Task, string>;
-  domains!: Table<Domain, string>;
-  syncMetadata!: Table<SyncMetadata, string>;
-  filterPresets!: Table<FilterPreset, string>;
-  habits!: Table<Habit, string>;
-  events!: Table<Event, string>;
-  projects!: Table<Project, string>;
-
-  constructor() {
-    super('LifeOSDatabase');
-
-    this.version(1).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    });
-
-    // Version 2: Add icon field to domains
-    this.version(2).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      // Add icon: null to all existing domains
-      return tx.table('domains').toCollection().modify(domain => {
-        if (domain.icon === undefined) {
-          domain.icon = null;
-        }
-      });
-    });
-
-    // Version 3: Promote Backlog tasks with plannedDate to Planned status
-    this.version(3).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      return tx.table('tasks').toCollection().modify(task => {
-        if (task.plannedDate && task.status === 'Backlog') {
-          task.status = 'Planned';
-          task.updatedAt = new Date().toISOString();
-        }
-      });
-    });
-
-    // Version 4: Add doneDate field to tasks
-    this.version(4).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      return tx.table('tasks').toCollection().modify(task => {
-        if (task.doneDate === undefined) {
-          task.doneDate = null;
-        }
-      });
-    });
-
-    // Version 5: Add filter presets table with default presets
-    this.version(5).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-    }).upgrade(async tx => {
-      const now = new Date().toISOString();
-      const defaultPresets: FilterPreset[] = [
-        {
-          id: 'preset-all',
-          name: 'All',
-          color: 'blue',
-          filters: { priority: 'all', actionPoints: 'all' },
-          visible: true,
-          isDefault: true,
-          order: 0,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-urgent',
-          name: 'Urgent',
-          color: 'red',
-          filters: { priority: '1 - Urgent', actionPoints: 'all' },
-          visible: true,
-          isDefault: true,
-          order: 1,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-low-ap',
-          name: 'Low AP',
-          color: 'green',
-          filters: { priority: 'all', actionPoints: 'low' },
-          visible: true,
-          isDefault: true,
-          order: 2,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-med-ap',
-          name: 'Med AP',
-          color: 'yellow',
-          filters: { priority: 'all', actionPoints: 'med' },
-          visible: true,
-          isDefault: true,
-          order: 3,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-high-ap',
-          name: 'High AP',
-          color: 'red',
-          filters: { priority: 'all', actionPoints: 'high' },
-          visible: true,
-          isDefault: true,
-          order: 4,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
-      await tx.table('filterPresets').bulkAdd(defaultPresets);
-    });
-
-    // Version 6: Add habits table
-    this.version(6).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-      habits: 'id, habitName, recurrence, isActive, updatedAt',
-    });
-
-    // Version 7: Add targetPerWeek and completionDates to habits
-    this.version(7).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-      habits: 'id, habitName, recurrence, isActive, updatedAt',
-    }).upgrade(tx => {
-      return tx.table('habits').toCollection().modify(habit => {
-        if (habit.targetPerWeek === undefined) {
-          habit.targetPerWeek = null;
-        }
-        if (habit.completionDates === undefined) {
-          habit.completionDates = [];
-        }
-      });
-    });
-
-    // Version 8: Add deletedAt for tombstone-based soft deletes
-    this.version(8).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('tasks').toCollection().modify(task => {
-        if (task.deletedAt === undefined) task.deletedAt = null;
-      });
-      await tx.table('domains').toCollection().modify(domain => {
-        if (domain.deletedAt === undefined) domain.deletedAt = null;
-      });
-      await tx.table('filterPresets').toCollection().modify(preset => {
-        if (preset.deletedAt === undefined) preset.deletedAt = null;
-      });
-      await tx.table('habits').toCollection().modify(habit => {
-        if (habit.deletedAt === undefined) habit.deletedAt = null;
-      });
-    });
-
-    // Version 9: Convert filter preset string values to arrays for multi-select
-    this.version(9).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('filterPresets').toCollection().modify(preset => {
-        for (const key of ['priority', 'actionPoints', 'domain', 'recurrence'] as const) {
-          const val = preset.filters[key];
-          if (typeof val === 'string') {
-            preset.filters[key] = val === 'all' ? [] : [val];
-          }
-        }
-      });
-    });
-
-    // Version 10: Add urgency + importance/urgency scores to tasks, add events table
-    this.version(10).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      const domains = await tx.table('domains').toArray();
-      const domainMap = new Map(domains.map((d: Domain) => [d.id, d.priority]));
-      await tx.table('tasks').toCollection().modify((task: Task) => {
-        if (task.urgency === undefined) (task as unknown as Record<string, unknown>).urgency = '3 - Normal';
-        const dp = task.domainId ? domainMap.get(task.domainId) : undefined;
-        const scores = calculateTaskScores(task, dp);
-        task.importanceScore = scores.importanceScore;
-        task.urgencyScore = scores.urgencyScore;
-        task.taskScore = scores.combinedScore;
-      });
-    });
-
-    // Version 11: Add projects table, blockedBy + projectId to tasks
-    this.version(11).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, projectId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
-      projects: 'id, name, status, domainId, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('tasks').toCollection().modify(task => {
-        if (task.blockedBy === undefined) task.blockedBy = [];
-        if (task.projectId === undefined) task.projectId = null;
-      });
-    });
-  }
-}
-
-// Create database instance
-export const db = new LifeOSDatabase();
+/**
+ * Storage is the server; see lib/store.ts. These table objects expose the
+ * slice of the old Dexie API the app used, so call sites did not change when
+ * IndexedDB was retired. The local-first version is tagged
+ * pre-server-migration if it is ever needed again.
+ */
+export const db = {
+  tasks: makeTable<Task>('tasks'),
+  domains: makeTable<Domain>('domains'),
+  habits: makeTable<Habit>('habits'),
+  events: makeTable<Event>('events'),
+  projects: makeTable<Project>('projects'),
+  filterPresets: makeTable<FilterPreset>('filterPresets'),
+  // Sync bookkeeping was a local-first concern; kept as a no-op shim so the
+  // handful of remaining callers keep type-checking.
+  /**
+   * Dexie ran these atomically; the server applies each write on its own.
+   * Kept so the existing bulk helpers read the same, but note it is no
+   * longer a real transaction - a failure part-way leaves partial state.
+   */
+  async transaction<T>(_mode: string, _tables: unknown, fn?: () => Promise<T>): Promise<T | undefined> {
+    return typeof _tables === 'function' ? (_tables as () => Promise<T>)() : fn?.();
+  },
+  syncMetadata: {
+    async get(_id: string): Promise<SyncMetadata | undefined> { return undefined; },
+    async put(_value: SyncMetadata): Promise<void> {},
+    async update(_id: string, _changes: Partial<SyncMetadata>): Promise<void> {},
+    async add(_value: SyncMetadata): Promise<void> {},
+    async clear(): Promise<void> {},
+  },
+};
 
 // Helper functions for common operations
 
@@ -656,16 +446,17 @@ export async function compactTombstones(retentionDays: number = 30): Promise<num
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
   let purged = 0;
 
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    const tables = [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
-    for (const table of tables) {
-      const tombstones = await table.filter(r => !!r.deletedAt && r.deletedAt < cutoff).toArray();
-      for (const record of tombstones) {
-        await table.delete(record.id);
-        purged++;
-      }
+  const tables = [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets];
+  for (const table of tables) {
+    const rows = await table.toArray();
+    const tombstones = rows.filter(
+      (row) => !!row.deletedAt && row.deletedAt < cutoff,
+    );
+    for (const record of tombstones) {
+      await table.delete(record.id);
+      purged++;
     }
-  });
+  }
 
   return purged;
 }
