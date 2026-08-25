@@ -12,6 +12,9 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { getProfile, hydrate, isHydrated, listProfiles, setProfile, type Profile } from '@/lib/store';
 
+/** Used when this browser has no remembered choice. */
+const DEFAULT_PROFILE = 'dk';
+
 export function ProfileGate({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [active, setActive] = useState('');
@@ -22,10 +25,23 @@ export function ProfileGate({ children }: { children: React.ReactNode }) {
     try {
       const available = await listProfiles();
       setProfiles(available);
-      const current = getProfile();
-      if (current && available.some((p) => p.id === current)) {
-        await hydrate();
-        setActive(current);
+
+      // Remembered choice wins; otherwise fall back to DK so a fresh browser
+      // lands straight in the app rather than on a chooser. The picker below
+      // is only for when neither is available.
+      const remembered = getProfile();
+      const fallback = available.find((p) => p.id === DEFAULT_PROFILE) ?? available[0];
+      const chosen = available.some((p) => p.id === remembered)
+        ? remembered
+        : fallback?.id;
+
+      if (chosen) {
+        if (chosen !== remembered) {
+          await setProfile(chosen);
+        } else {
+          await hydrate();
+        }
+        setActive(chosen);
         setReady(isHydrated());
       }
     } catch (err) {
@@ -64,7 +80,7 @@ export function ProfileGate({ children }: { children: React.ReactNode }) {
             <button
               key={profile.id}
               onClick={() => choose(profile.id)}
-              className="w-full px-4 py-3 text-left bg-[var(--card)] hover:bg-white/5 border border-white/10 rounded-lg text-white"
+              className="w-full px-4 py-3 text-left bg-[var(--card-bg)] hover:bg-white/5 border border-[var(--border-color)] rounded-lg text-white"
             >
               {profile.name}
             </button>
@@ -79,34 +95,5 @@ export function ProfileGate({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </div>
-  );
-}
-
-/** Small control for switching profile from inside the app. */
-export function ProfileSwitcher() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [active, setActive] = useState('');
-
-  useEffect(() => {
-    listProfiles().then(setProfiles).catch(() => {});
-    setActive(getProfile());
-  }, []);
-
-  if (profiles.length < 2) return null;
-
-  return (
-    <select
-      value={active}
-      onChange={async (event) => {
-        await setProfile(event.target.value);
-        setActive(event.target.value);
-      }}
-      className="px-2 py-1 bg-[var(--card)] border border-white/10 rounded text-sm text-white"
-      aria-label="Active profile"
-    >
-      {profiles.map((profile) => (
-        <option key={profile.id} value={profile.id}>{profile.name}</option>
-      ))}
-    </select>
   );
 }

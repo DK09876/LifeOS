@@ -10,7 +10,8 @@ import { hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
 import { push as pushSync, pull as pullSync } from '@/lib/sync-backend';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
-import { ProfileGate, ProfileSwitcher } from './ProfileGate';
+import { ProfileGate } from './ProfileGate';
+import { ProfileSwitcher } from './ProfileSwitcher';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -202,20 +203,10 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               >
                 {pushing ? 'Pushing...' : 'Push'}
               </button>
-              <button
-                onClick={handleSignOut}
-                className="px-3 py-1.5 text-[var(--muted)] hover:text-white text-sm hidden sm:inline"
-              >
-                Sign Out
-              </button>
+              <ProfileSwitcher />
             </>
           ) : (
-            <button
-              onClick={handleSignIn}
-              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
-            >
-              Sign in with Google
-            </button>
+            <ProfileSwitcher />
           )}
         </header>
 

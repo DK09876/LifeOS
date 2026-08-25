@@ -54,12 +54,20 @@ if (command === 'list') {
          [id, name, token, new Date().toISOString()]);
   console.log(`created ${id}`);
   console.log(`token:  ${token}`);
-} else if (command === 'token') {
+} else if (command === 'rename') {
+  if (!id || !name) { console.error('usage: rename <id> "<name>"'); process.exit(1); }
+  db.run('UPDATE users SET name = ? WHERE id = ?', [name, id]);
+  const row = db.get('SELECT id, name FROM users WHERE id = ?', [id]);
+  console.log(row ? `renamed ${row.id} -> ${row.name}` : `no such user: ${id}`);
+  process.exit(0);
+}
+
+if (command === 'token') {
   if (!id) { console.error('usage: token <id>'); process.exit(1); }
   const token = randomBytes(24).toString('base64url');
   db.run('UPDATE users SET token=? WHERE id=?', [token, id]);
   console.log(`new token for ${id}: ${token}`);
 } else {
-  console.log('usage: list | add <id> "<name>" | token <id>');
+  console.log('usage: list | add <id> "<name>" | rename <id> "<name>" | token <id>');
 }
 db.close();
