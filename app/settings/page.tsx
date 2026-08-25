@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
-import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
+import { hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
+import { push as pushSync, pull as pullSync, getSyncBackend, setSyncBackend, syncBackendLabel, type SyncBackend } from '@/lib/sync-backend';
+import { getServerConfig, setServerConfig } from '@/lib/sync-server';
 import { getStoredAuth } from '@/lib/google-auth';
 import { getTodayString } from '@/lib/dates';
 
@@ -76,6 +78,10 @@ export default function SettingsPage() {
   const [recurrenceRunning, setRecurrenceRunning] = useState(false);
   const [recurrenceResult, setRecurrenceResult] = useState<string | null>(null);
   const [syncLastRun, setSyncLastRun] = useState<string | null>(null);
+  const [backend, setBackend] = useState<SyncBackend>('server');
+  const [serverUrl, setServerUrl] = useState('');
+  const [serverToken, setServerToken] = useState('');
+  const [serverSaved, setServerSaved] = useState(false);
   const [pushRunning, setPushRunning] = useState(false);
   const [pushResult, setPushResult] = useState<string | null>(null);
   const [pullRunning, setPullRunning] = useState(false);
@@ -87,6 +93,11 @@ export default function SettingsPage() {
     setHideGetStarted(localStorage.getItem('hideGetStarted') === 'true');
 
     // Load automation statuses
+    setBackend(getSyncBackend());
+    const config = getServerConfig();
+    setServerUrl(config.url);
+    setServerToken(config.token);
+
     async function loadStatuses() {
       const recurrenceStatus = await getRecurrenceCheckStatus();
       setRecurrenceLastRun(recurrenceStatus.lastRun);
@@ -130,7 +141,7 @@ export default function SettingsPage() {
     setPushRunning(true);
     setPushResult(null);
     try {
-      const result = await pushToGoogleDrive();
+      const result = await pushSync();
       if (result.lastSyncedAt) {
         setSyncLastRun(result.lastSyncedAt);
       }
@@ -147,7 +158,7 @@ export default function SettingsPage() {
     setPullRunning(true);
     setPullResult(null);
     try {
-      const result = await pullFromGoogleDrive();
+      const result = await pullSync();
       if (result.lastSyncedAt) {
         setSyncLastRun(result.lastSyncedAt);
       }
@@ -356,10 +367,64 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          {/* Where LifeOS syncs. IndexedDB is always the local working
+              copy; this chooses what it syncs against. */}
+          <div className="p-4 bg-[var(--background)] rounded-lg">
+            <p className="text-white font-medium">Sync backend</p>
+            <p className="text-sm text-[var(--muted)] mb-3">
+              Your data is always kept on this device. This chooses where it syncs.
+            </p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(['server', 'drive', 'local'] as SyncBackend[]).map((option) => (
+                <button
+                  key={option}
+                  onClick={() => { setSyncBackend(option); setBackend(option); }}
+                  className={`px-3 py-1.5 text-sm rounded border ${
+                    backend === option
+                      ? 'bg-blue-600 border-blue-500 text-white'
+                      : 'bg-transparent border-white/20 text-[var(--muted)] hover:border-white/40'
+                  }`}
+                >
+                  {syncBackendLabel(option)}
+                </button>
+              ))}
+            </div>
+
+            {backend === 'server' && (
+              <div className="space-y-2">
+                <label className="block text-xs text-[var(--muted)]">
+                  Server URL (leave blank when LifeOS is served by that server)
+                </label>
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(event) => { setServerUrl(event.target.value); setServerSaved(false); }}
+                  placeholder="https://pai.example.ts.net"
+                  className="w-full px-3 py-2 bg-[var(--card)] border border-white/10 rounded text-sm text-white"
+                />
+                <label className="block text-xs text-[var(--muted)]">Access token</label>
+                <input
+                  type="password"
+                  value={serverToken}
+                  onChange={(event) => { setServerToken(event.target.value); setServerSaved(false); }}
+                  placeholder="paste the token from scripts/user.cjs"
+                  className="w-full px-3 py-2 bg-[var(--card)] border border-white/10 rounded text-sm text-white"
+                />
+                <button
+                  onClick={() => { setServerConfig(serverUrl, serverToken); setServerSaved(true); }}
+                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded"
+                >
+                  Save
+                </button>
+                {serverSaved && <span className="ml-2 text-xs text-green-400">Saved</span>}
+              </div>
+            )}
+          </div>
+
           {/* Push to Google Drive */}
           <div className="flex items-center justify-between p-4 bg-[var(--background)] rounded-lg">
             <div className="flex-1">
-              <p className="text-white font-medium">Push to Google Drive</p>
+              <p className="text-white font-medium">Push to {syncBackendLabel(backend)}</p>
               <p className="text-sm text-[var(--muted)]">
                 Upload local data to Google Drive, replacing the remote backup.
               </p>
@@ -371,13 +436,13 @@ export default function SettingsPage() {
                   {pushResult}
                 </p>
               )}
-              {!isSignedIn && (
+              {backend === 'drive' && !isSignedIn && (
                 <p className="text-xs text-yellow-400 mt-1">Sign in with Google to enable push</p>
               )}
             </div>
             <button
               onClick={handlePushToDrive}
-              disabled={pushRunning || pullRunning || !isSignedIn}
+              disabled={pushRunning || pullRunning || (backend === 'drive' && !isSignedIn) || backend === 'local'}
               className="ml-4 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {pushRunning ? (
@@ -393,7 +458,7 @@ export default function SettingsPage() {
           {/* Pull from Google Drive */}
           <div className="flex items-center justify-between p-4 bg-[var(--background)] rounded-lg">
             <div className="flex-1">
-              <p className="text-white font-medium">Pull from Google Drive</p>
+              <p className="text-white font-medium">Pull from {syncBackendLabel(backend)}</p>
               <p className="text-sm text-[var(--muted)]">
                 Overwrite local data with the latest backup from Google Drive. This replaces all local data.
               </p>
@@ -408,7 +473,7 @@ export default function SettingsPage() {
             </div>
             <button
               onClick={handlePullFromDrive}
-              disabled={pullRunning || pushRunning || !isSignedIn}
+              disabled={pullRunning || pushRunning || (backend === 'drive' && !isSignedIn) || backend === 'local'}
               className="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {pullRunning ? (

@@ -6,7 +6,8 @@ import Sidebar from './Sidebar';
 import ConfirmDialog from './ConfirmDialog';
 import { ToastProvider, useToast } from './Toast';
 import { handleAuthRedirect, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
-import { pushToGoogleDrive, pullFromGoogleDrive, hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
+import { hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
+import { push as pushSync, pull as pullSync } from '@/lib/sync-backend';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
 
@@ -55,7 +56,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const handlePush = async () => {
     setPushing(true);
     try {
-      const result = await pushToGoogleDrive();
+      const result = await pushSync();
       if (!result.success && result.message.includes('Not signed in')) {
         setUser(null);
         showToast('Session expired — please sign in again', 'error');
@@ -75,7 +76,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const executePull = useCallback(async () => {
     setPulling(true);
     try {
-      const result = await pullFromGoogleDrive();
+      const result = await pullSync();
       if (!result.success && result.message.includes('Not signed in')) {
         setUser(null);
         showToast('Session expired — please sign in again', 'error');
