@@ -4,6 +4,8 @@ A modern, local-first Progressive Web App for personal productivity and task man
 
 **Live App: [my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
 
+**[Architecture and diagrams â†’](docs/architecture.md)**
+
 ## Quick Start
 
 1. Visit **[my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
