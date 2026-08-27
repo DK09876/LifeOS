@@ -1,13 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import Image from 'next/image';
+import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
-import ConfirmDialog from './ConfirmDialog';
 import { ToastProvider, useToast } from './Toast';
-import { handleAuthRedirect, signInWithGoogle, signOut, getStoredAuth, GoogleUser } from '@/lib/google-auth';
-import { hasUnsavedChanges, getSyncStatus } from '@/lib/sync';
-import { push as pushSync, pull as pullSync } from '@/lib/sync-backend';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
 import { ProfileGate } from './ProfileGate';
@@ -20,30 +15,14 @@ interface AppLayoutProps {
 function AppLayoutInner({ children }: AppLayoutProps) {
   useRecurrenceCheck();
   const { showToast } = useToast();
-  const [user, setUser] = useState<GoogleUser | null>(null);
-  const [pushing, setPushing] = useState(false);
-  const [pulling, setPulling] = useState(false);
-  const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [showPullConfirm, setShowPullConfirm] = useState(false);
 
   useEffect(() => {
     async function init() {
       try {
-        // Check for OAuth callback data (from popup or redirect fallback)
-        const redirectUser = await handleAuthRedirect();
-        if (redirectUser) {
-          setUser(redirectUser);
-        } else {
-          const storedUser = getStoredAuth();
-          setUser(storedUser);
-        }
-        const status = await getSyncStatus();
-        setLastSynced(status.lastSyncedAt);
-        // Fetch daily quote
         const liveQuote = await fetchDailyQuote();
         setQuote(liveQuote);
       } catch (err) {
@@ -55,76 +34,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
     init();
   }, []);
 
-  const handlePush = async () => {
-    setPushing(true);
-    try {
-      const result = await pushSync();
-      if (!result.success && result.message.includes('Not signed in')) {
-        setUser(null);
-        showToast('Session expired — please sign in again', 'error');
-      } else {
-        showToast(result.message, result.success ? 'success' : 'error');
-      }
-      if (result.lastSyncedAt) {
-        setLastSynced(result.lastSyncedAt);
-      }
-    } catch {
-      showToast('Push failed', 'error');
-    } finally {
-      setPushing(false);
-    }
-  };
-
-  const executePull = useCallback(async () => {
-    setPulling(true);
-    try {
-      const result = await pullSync();
-      if (!result.success && result.message.includes('Not signed in')) {
-        setUser(null);
-        showToast('Session expired — please sign in again', 'error');
-      } else {
-        showToast(result.message, result.success ? 'success' : 'error');
-      }
-      if (result.lastSyncedAt) {
-        setLastSynced(result.lastSyncedAt);
-      }
-    } catch {
-      showToast('Pull failed', 'error');
-    } finally {
-      setPulling(false);
-    }
-  }, [showToast]);
-
-  const handlePull = async () => {
-    try {
-      const unsaved = await hasUnsavedChanges();
-      if (unsaved) {
-        setShowPullConfirm(true);
-        return;
-      }
-    } catch {
-      // If check fails, proceed anyway
-    }
-    executePull();
-  };
-
-  const handleSignIn = async () => {
-    try {
-      const googleUser = await signInWithGoogle();
-      setUser(googleUser);
-      showToast('Signed in successfully', 'success');
-    } catch (error) {
-      console.error('Sign in failed:', error);
-      showToast('Sign in failed', 'error');
-    }
-  };
-
-  const handleSignOut = () => {
-    signOut();
-    setUser(null);
-    setLastSynced(null);
-  };
-
   if (!initialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
@@ -135,8 +44,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
       </div>
     );
   }
-
-  const isBusy = pushing || pulling;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -174,40 +81,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               &ldquo;{quote.text}&rdquo; — {quote.author}
             </p>
           </div>
-          {user ? (
-            <>
-              <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
-                {user.picture && (
-                  <Image src={user.picture} alt={user.name} width={24} height={24} className="rounded-full" />
-                )}
-                <span className="hidden lg:inline">{user.email}</span>
-              </div>
-              {lastSynced && (
-                <span className="text-xs text-[var(--muted)] hidden lg:inline">
-                  Synced: {new Date(lastSynced).toLocaleTimeString()}
-                </span>
-              )}
-              <button
-                onClick={handlePull}
-                disabled={isBusy}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-sm"
-                aria-label="Pull data from Google Drive"
-              >
-                {pulling ? 'Pulling...' : 'Pull'}
-              </button>
-              <button
-                onClick={handlePush}
-                disabled={isBusy}
-                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-sm"
-                aria-label="Push data to Google Drive"
-              >
-                {pushing ? 'Pushing...' : 'Push'}
-              </button>
-              <ProfileSwitcher />
-            </>
-          ) : (
-            <ProfileSwitcher />
-          )}
+          <ProfileSwitcher />
         </header>
 
         {/* Page content */}
@@ -216,15 +90,6 @@ function AppLayoutInner({ children }: AppLayoutProps) {
         </main>
       </div>
 
-      <ConfirmDialog
-        isOpen={showPullConfirm}
-        onClose={() => setShowPullConfirm(false)}
-        onConfirm={executePull}
-        title="Pull from Google Drive"
-        message="Pull will replace all local data. You have changes that haven't been pushed. Continue?"
-        confirmLabel="Pull"
-        variant="warning"
-      />
     </div>
   );
 }
