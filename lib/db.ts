@@ -1,4 +1,4 @@
-import Dexie, { Table } from 'dexie';
+import { clearAllOnServer, makeTable } from './store';
 import { toDateString } from './dates';
 import { BlockedByEntry } from '@/types';
 
@@ -47,13 +47,6 @@ export interface Domain {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface SyncMetadata {
-  id: string;
-  lastSyncedAt: string | null;
-  googleDriveFileId: string | null;
-  userEmail: string | null;
 }
 
 export interface FilterPreset {
@@ -133,247 +126,20 @@ export const SYNCABLE_LOCALSTORAGE_KEYS = [
   'plan-filters',
 ];
 
-// Dexie database class
-class LifeOSDatabase extends Dexie {
-  tasks!: Table<Task, string>;
-  domains!: Table<Domain, string>;
-  syncMetadata!: Table<SyncMetadata, string>;
-  filterPresets!: Table<FilterPreset, string>;
-  habits!: Table<Habit, string>;
-  events!: Table<Event, string>;
-  projects!: Table<Project, string>;
-
-  constructor() {
-    super('LifeOSDatabase');
-
-    this.version(1).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    });
-
-    // Version 2: Add icon field to domains
-    this.version(2).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      // Add icon: null to all existing domains
-      return tx.table('domains').toCollection().modify(domain => {
-        if (domain.icon === undefined) {
-          domain.icon = null;
-        }
-      });
-    });
-
-    // Version 3: Promote Backlog tasks with plannedDate to Planned status
-    this.version(3).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      return tx.table('tasks').toCollection().modify(task => {
-        if (task.plannedDate && task.status === 'Backlog') {
-          task.status = 'Planned';
-          task.updatedAt = new Date().toISOString();
-        }
-      });
-    });
-
-    // Version 4: Add doneDate field to tasks
-    this.version(4).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-    }).upgrade(tx => {
-      return tx.table('tasks').toCollection().modify(task => {
-        if (task.doneDate === undefined) {
-          task.doneDate = null;
-        }
-      });
-    });
-
-    // Version 5: Add filter presets table with default presets
-    this.version(5).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-    }).upgrade(async tx => {
-      const now = new Date().toISOString();
-      const defaultPresets: FilterPreset[] = [
-        {
-          id: 'preset-all',
-          name: 'All',
-          color: 'blue',
-          filters: { priority: 'all', actionPoints: 'all' },
-          visible: true,
-          isDefault: true,
-          order: 0,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-urgent',
-          name: 'Urgent',
-          color: 'red',
-          filters: { priority: '1 - Urgent', actionPoints: 'all' },
-          visible: true,
-          isDefault: true,
-          order: 1,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-low-ap',
-          name: 'Low AP',
-          color: 'green',
-          filters: { priority: 'all', actionPoints: 'low' },
-          visible: true,
-          isDefault: true,
-          order: 2,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-med-ap',
-          name: 'Med AP',
-          color: 'yellow',
-          filters: { priority: 'all', actionPoints: 'med' },
-          visible: true,
-          isDefault: true,
-          order: 3,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-        {
-          id: 'preset-high-ap',
-          name: 'High AP',
-          color: 'red',
-          filters: { priority: 'all', actionPoints: 'high' },
-          visible: true,
-          isDefault: true,
-          order: 4,
-          deletedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
-      await tx.table('filterPresets').bulkAdd(defaultPresets);
-    });
-
-    // Version 6: Add habits table
-    this.version(6).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-      habits: 'id, habitName, recurrence, isActive, updatedAt',
-    });
-
-    // Version 7: Add targetPerWeek and completionDates to habits
-    this.version(7).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt',
-      domains: 'id, name, priority, updatedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order',
-      habits: 'id, habitName, recurrence, isActive, updatedAt',
-    }).upgrade(tx => {
-      return tx.table('habits').toCollection().modify(habit => {
-        if (habit.targetPerWeek === undefined) {
-          habit.targetPerWeek = null;
-        }
-        if (habit.completionDates === undefined) {
-          habit.completionDates = [];
-        }
-      });
-    });
-
-    // Version 8: Add deletedAt for tombstone-based soft deletes
-    this.version(8).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('tasks').toCollection().modify(task => {
-        if (task.deletedAt === undefined) task.deletedAt = null;
-      });
-      await tx.table('domains').toCollection().modify(domain => {
-        if (domain.deletedAt === undefined) domain.deletedAt = null;
-      });
-      await tx.table('filterPresets').toCollection().modify(preset => {
-        if (preset.deletedAt === undefined) preset.deletedAt = null;
-      });
-      await tx.table('habits').toCollection().modify(habit => {
-        if (habit.deletedAt === undefined) habit.deletedAt = null;
-      });
-    });
-
-    // Version 9: Convert filter preset string values to arrays for multi-select
-    this.version(9).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('filterPresets').toCollection().modify(preset => {
-        for (const key of ['priority', 'actionPoints', 'domain', 'recurrence'] as const) {
-          const val = preset.filters[key];
-          if (typeof val === 'string') {
-            preset.filters[key] = val === 'all' ? [] : [val];
-          }
-        }
-      });
-    });
-
-    // Version 10: Add urgency + importance/urgency scores to tasks, add events table
-    this.version(10).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      const domains = await tx.table('domains').toArray();
-      const domainMap = new Map(domains.map((d: Domain) => [d.id, d.priority]));
-      await tx.table('tasks').toCollection().modify((task: Task) => {
-        if (task.urgency === undefined) (task as unknown as Record<string, unknown>).urgency = '3 - Normal';
-        const dp = task.domainId ? domainMap.get(task.domainId) : undefined;
-        const scores = calculateTaskScores(task, dp);
-        task.importanceScore = scores.importanceScore;
-        task.urgencyScore = scores.urgencyScore;
-        task.taskScore = scores.combinedScore;
-      });
-    });
-
-    // Version 11: Add projects table, blockedBy + projectId to tasks
-    this.version(11).stores({
-      tasks: 'id, taskName, status, taskPriority, taskScore, dueDate, domainId, projectId, updatedAt, deletedAt',
-      domains: 'id, name, priority, updatedAt, deletedAt',
-      syncMetadata: 'id',
-      filterPresets: 'id, name, order, deletedAt',
-      habits: 'id, habitName, recurrence, isActive, updatedAt, deletedAt',
-      events: 'id, eventName, date, domainId, updatedAt, deletedAt',
-      projects: 'id, name, status, domainId, updatedAt, deletedAt',
-    }).upgrade(async tx => {
-      await tx.table('tasks').toCollection().modify(task => {
-        if (task.blockedBy === undefined) task.blockedBy = [];
-        if (task.projectId === undefined) task.projectId = null;
-      });
-    });
-  }
-}
-
-// Create database instance
-export const db = new LifeOSDatabase();
+/**
+ * Storage is the server; see lib/store.ts. These table objects expose the
+ * slice of the old Dexie API the app used, so call sites did not change when
+ * IndexedDB was retired. The local-first version is tagged
+ * pre-server-migration if it is ever needed again.
+ */
+export const db = {
+  tasks: makeTable<Task>('tasks'),
+  domains: makeTable<Domain>('domains'),
+  habits: makeTable<Habit>('habits'),
+  events: makeTable<Event>('events'),
+  projects: makeTable<Project>('projects'),
+  filterPresets: makeTable<FilterPreset>('filterPresets'),
+};
 
 // Helper functions for common operations
 
@@ -444,27 +210,6 @@ export async function updateDomain(id: string, updates: Partial<Domain>): Promis
 export async function deleteDomain(id: string): Promise<void> {
   const now = new Date().toISOString();
   await db.domains.update(id, { deletedAt: now, updatedAt: now });
-}
-
-// Get sync metadata
-export async function getSyncMetadata(): Promise<SyncMetadata | undefined> {
-  return db.syncMetadata.get('main');
-}
-
-// Update sync metadata
-export async function updateSyncMetadata(updates: Partial<SyncMetadata>): Promise<void> {
-  const existing = await getSyncMetadata();
-  if (existing) {
-    await db.syncMetadata.update('main', updates);
-  } else {
-    await db.syncMetadata.add({
-      id: 'main',
-      lastSyncedAt: null,
-      googleDriveFileId: null,
-      userEmail: null,
-      ...updates,
-    });
-  }
 }
 
 // Calculate task scores: importance, urgency, and combined
@@ -548,139 +293,11 @@ export function checkNeedsReset(task: Task): boolean {
   }
 }
 
-// Export all data for sync (includes tombstones for deletion propagation)
-export async function exportAllData(): Promise<SyncPayload> {
-  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
-    db.tasks.toArray(),
-    db.domains.toArray(),
-    db.habits.toArray(),
-    db.events.toArray(),
-    db.projects.toArray(),
-    db.filterPresets.toArray(),
-  ]);
-
-  // Collect syncable localStorage preferences
-  const preferences: Record<string, string> = {};
-  for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
-    const value = localStorage.getItem(key);
-    if (value !== null) {
-      preferences[key] = value;
-    }
-  }
-
-  return {
-    version: 2,
-    tasks,
-    domains,
-    habits,
-    events,
-    projects,
-    filterPresets,
-    preferences,
-    exportedAt: new Date().toISOString(),
-  };
-}
-
-// Replace all local data with remote data (full replace, not merge)
-export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; events?: Event[]; projects?: Project[]; exportedAt: string }): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    // Clear all tables
-    await db.tasks.clear();
-    await db.domains.clear();
-    await db.habits.clear();
-    await db.events.clear();
-    await db.projects.clear();
-    await db.filterPresets.clear();
-
-    // Bulk insert all remote data (with deletedAt fallback for backward compat)
-    await db.domains.bulkAdd(data.domains.map(d => ({ ...d, deletedAt: d.deletedAt ?? null })));
-    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null, blockedBy: t.blockedBy ?? [], projectId: t.projectId ?? null })));
-
-    if (data.habits) {
-      await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
-    }
-
-    const events = 'events' in data ? data.events : undefined;
-    if (events) {
-      await db.events.bulkAdd(events.map(ev => ({ ...ev, deletedAt: ev.deletedAt ?? null })));
-    }
-
-    const projects = 'projects' in data ? data.projects : undefined;
-    if (projects) {
-      await db.projects.bulkAdd(projects.map(p => ({ ...p, deletedAt: p.deletedAt ?? null })));
-    }
-
-    if ('filterPresets' in data && data.filterPresets) {
-      await db.filterPresets.bulkAdd(
-        (data as SyncPayload).filterPresets.map(p => ({ ...p, deletedAt: p.deletedAt ?? null }))
-      );
-    }
-  });
-
-  // Replace localStorage preferences from payload
-  if ('preferences' in data && data.preferences) {
-    for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
-      if (key in data.preferences) {
-        localStorage.setItem(key, data.preferences[key]);
-      } else {
-        localStorage.removeItem(key);
-      }
-    }
-    // Dispatch storage event so Sidebar/ViewControls listeners update
-    window.dispatchEvent(new Event('storage'));
-  }
-}
-
-// Check if there are unsaved local changes since last sync
-export async function hasUnsavedChanges(): Promise<boolean> {
-  const syncMeta = await getSyncMetadata();
-  if (!syncMeta?.lastSyncedAt) return true; // Never synced = has changes
-
-  const lastSynced = new Date(syncMeta.lastSyncedAt).getTime();
-
-  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
-    db.tasks.toArray(),
-    db.domains.toArray(),
-    db.habits.toArray(),
-    db.events.toArray(),
-    db.projects.toArray(),
-    db.filterPresets.toArray(),
-  ]);
-
-  const allRecords = [...tasks, ...domains, ...habits, ...events, ...projects, ...filterPresets];
-  return allRecords.some(r => new Date(r.updatedAt).getTime() > lastSynced);
-}
-
-// Hard-delete tombstones older than retention period
-export async function compactTombstones(retentionDays: number = 30): Promise<number> {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-  let purged = 0;
-
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    const tables = [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets] as Table<{ id: string; deletedAt: string | null }, string>[];
-    for (const table of tables) {
-      const tombstones = await table.filter(r => !!r.deletedAt && r.deletedAt < cutoff).toArray();
-      for (const record of tombstones) {
-        await table.delete(record.id);
-        purged++;
-      }
-    }
-  });
-
-  return purged;
-}
-
 // Clear all data (for logout/reset)
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    await db.tasks.clear();
-    await db.domains.clear();
-    await db.syncMetadata.clear();
-    await db.habits.clear();
-    await db.events.clear();
-    await db.projects.clear();
-    await db.filterPresets.clear();
-  });
+  // One request, wiped inside a SQLite transaction. Clearing each collection
+  // separately meant a failure part-way left the profile half-deleted.
+  await clearAllOnServer();
 }
 
 // Filter Preset CRUD operations
@@ -725,11 +342,16 @@ export async function deleteFilterPreset(id: string): Promise<void> {
 }
 
 export async function reorderFilterPresets(orderedIds: string[]): Promise<void> {
-  await db.transaction('rw', db.filterPresets, async () => {
-    for (let i = 0; i < orderedIds.length; i++) {
-      await db.filterPresets.update(orderedIds[i], { order: i, updatedAt: new Date().toISOString() });
-    }
-  });
+  // Was one HTTP request per preset; now a single bulk write.
+  const now = new Date().toISOString();
+  const byId = new Map((await db.filterPresets.toArray()).map((preset) => [preset.id, preset]));
+  const updated = orderedIds
+    .map((id, index) => {
+      const preset = byId.get(id);
+      return preset ? { ...preset, order: index, updatedAt: now } : null;
+    })
+    .filter((preset): preset is FilterPreset => preset !== null);
+  await db.filterPresets.bulkPut(updated);
 }
 
 // Habit functions

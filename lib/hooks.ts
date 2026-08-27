@@ -1,13 +1,17 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useLiveQuery } from './live-query';
 import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
 import { getTodayString } from './dates';
+import { getPreference, savePreference } from './store';
+
+/** Per-profile marker for the last daily maintenance run. */
+const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
 import { BlockedByEntry } from '@/types';
 
 // Core recurrence check logic - resets recurring tasks that are due
-async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
+async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksRescored: number }> {
   const allTasks = await db.tasks.toArray();
   let tasksReset = 0;
 
@@ -25,6 +29,43 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
     }
   }
 
+  // Part of a task's score comes from how close its due date is, so a stored
+  // score decays into nonsense as time passes: a task written a month before
+  // it was due keeps that month-away score even once it is overdue. Since the
+  // lists sort by taskScore, an overdue task could sit below a trivial one.
+  // Recompute here, once a day, and write back only what actually moved.
+  //
+  // updatedAt is deliberately not bumped: the score is derived from fields
+  // the user did not touch, and treating it as an edit would churn sync on
+  // every device every day.
+  const domains = await db.domains.toArray();
+  const priorityByDomain = new Map(domains.map((domain) => [domain.id, domain.priority]));
+  const rescored = await db.tasks.toArray();
+  let tasksRescored = 0;
+
+  for (const task of rescored) {
+    if (task.deletedAt) continue;
+    if (task.status === 'Done' || task.status === 'Archived') continue;
+
+    const scores = calculateTaskScores(
+      task,
+      task.domainId ? priorityByDomain.get(task.domainId) : undefined,
+    );
+    if (
+      scores.combinedScore === task.taskScore &&
+      scores.importanceScore === task.importanceScore &&
+      scores.urgencyScore === task.urgencyScore
+    ) {
+      continue;
+    }
+    await db.tasks.update(task.id, {
+      importanceScore: scores.importanceScore,
+      urgencyScore: scores.urgencyScore,
+      taskScore: scores.combinedScore,
+    });
+    tasksRescored++;
+  }
+
   // Check events for recurrence reset
   const allEvents = await db.events.toArray();
   for (const event of allEvents) {
@@ -34,26 +75,18 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
     }
   }
 
-  // Update the timestamp to mark when this ran
-  const today = getTodayString();
-  await db.syncMetadata.put({
-    id: 'recurrenceCheck',
-    lastSyncedAt: today,
-    googleDriveFileId: null,
-    userEmail: null,
-  });
+  // Record when this ran, per profile, so it happens once a day rather than
+  // on every page load.
+  await savePreference(RECURRENCE_LAST_RUN, getTodayString());
 
-  return { tasksReset };
+  return { tasksReset, tasksRescored };
 }
 
 // Hook to run daily auto-reset check for recurring tasks (runs once on app load)
 export function useRecurrenceCheck() {
   useEffect(() => {
     (async () => {
-      const today = getTodayString();
-      const meta = await db.syncMetadata.get('recurrenceCheck');
-      if (meta?.lastSyncedAt === today) return;
-
+      if (getPreference(RECURRENCE_LAST_RUN) === getTodayString()) return;
       await runRecurrenceCheckCore();
     })();
   }, []);
@@ -70,8 +103,7 @@ export async function runRecurrenceCheck(): Promise<{ tasksReset: number; lastRu
 
 // Get the last time recurrence check ran
 export async function getRecurrenceCheckStatus(): Promise<{ lastRun: string | null }> {
-  const meta = await db.syncMetadata.get('recurrenceCheck');
-  return { lastRun: meta?.lastSyncedAt || null };
+  return { lastRun: getPreference(RECURRENCE_LAST_RUN) ?? null };
 }
 
 // Hook to get all tasks with computed fields
@@ -543,7 +575,7 @@ export async function markHabitDone(habitId: string): Promise<void> {
   const todayStr = getTodayString();
 
   // Add today to completionDates if not already there, and prune old entries
-  let completionDates = pruneCompletionDates(habit.completionDates || []);
+  const completionDates = pruneCompletionDates(habit.completionDates || []);
   if (!completionDates.includes(todayStr)) {
     completionDates.push(todayStr);
   }

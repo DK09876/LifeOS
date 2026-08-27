@@ -48,3 +48,11 @@ next-env.d.ts
 
 # notion data export (contains personal data)
 /notion-data
+
+# server database
+/data
+
+# SQLite database and snapshots
+data/
+*.db
+*.db.gz
