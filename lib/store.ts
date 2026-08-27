@@ -31,6 +31,14 @@ let preferences: Record<string, string> = {};
 let hydrated = false;
 const listeners = new Set<() => void>();
 
+// The raw body of the last hydrate. Polling compares against this so an
+// unchanged poll costs nothing beyond the request - no parse, no re-render.
+let lastBody = '';
+// Writes are optimistic, so a poll landing mid-write would briefly show the
+// server's older state and undo the change on screen.
+let writesInFlight = 0;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
 // --- profile -------------------------------------------------------------
 
 export function getProfile(): string {
@@ -43,6 +51,7 @@ export async function setProfile(id: string): Promise<void> {
   cache = {};
   preferences = {};
   hydrated = false;
+  lastBody = '';
   await hydrate();
 }
 
@@ -79,7 +88,12 @@ export async function hydrate(): Promise<void> {
     cache: 'no-store',
   });
   if (!response.ok) throw new Error(`Could not load data (HTTP ${response.status})`);
-  const body = (await response.json()) as Record<string, unknown>;
+
+  const text = await response.text();
+  if (hydrated && text === lastBody) return; // nothing moved
+  lastBody = text;
+
+  const body = JSON.parse(text) as Record<string, unknown>;
   cache = {};
   for (const collection of COLLECTIONS) {
     cache[collection] = (body[collection] as Row[]) ?? [];
@@ -87,6 +101,34 @@ export async function hydrate(): Promise<void> {
   preferences = (body.preferences as Record<string, string>) ?? {};
   hydrated = true;
   notify();
+}
+
+/**
+ * Watch the server for changes made elsewhere - another device, or the voice
+ * assistant writing straight to the database.
+ *
+ * Polling rather than SSE on purpose: a dropped stream needs reconnect and
+ * backoff logic, and this has to keep working unattended. An unchanged poll
+ * is a single request whose body matches the last one, so it costs one
+ * round trip and nothing else.
+ */
+export function startLiveUpdates(intervalMs = 2000): () => void {
+  stopLiveUpdates();
+  pollTimer = setInterval(() => {
+    // Skip while hidden (nobody is looking) or mid-write (the optimistic
+    // change is newer than anything the server can tell us).
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (writesInFlight > 0) return;
+    hydrate().catch(() => {});
+  }, intervalMs);
+  return stopLiveUpdates;
+}
+
+export function stopLiveUpdates() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
 
 async function writeRecords(collection: CollectionName, records: Row[], clear = false) {
@@ -100,6 +142,7 @@ async function writeRecords(collection: CollectionName, records: Row[], clear = 
   const previous = cache[collection] ? [...cache[collection]] : [];
   applyLocally(collection, records, clear);
 
+  writesInFlight++;
   let response: Response;
   try {
     response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
@@ -111,12 +154,16 @@ async function writeRecords(collection: CollectionName, records: Row[], clear = 
     cache[collection] = previous;
     notify();
     throw error;
+  } finally {
+    writesInFlight--;
   }
   if (!response.ok) {
     cache[collection] = previous;
     notify();
     throw new Error(`Save failed (HTTP ${response.status})`);
   }
+  // The next poll must not restore the pre-write body from cache.
+  lastBody = '';
 }
 
 /** Mirror a successful write into the in-memory copy and wake the UI. */

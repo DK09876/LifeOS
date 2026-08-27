@@ -30,11 +30,23 @@ function stubBrowser() {
   vi.stubGlobal('window', { localStorage: storage });
 }
 
+// hydrate reads the body as text so it can compare against the previous
+// poll without parsing, so mocks must offer both.
 const ok = (body: unknown = { ok: true }) =>
-  ({ ok: true, status: 200, json: async () => body }) as Response;
+  ({
+    ok: true,
+    status: 200,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  }) as Response;
 
 const failure = (status = 500) =>
-  ({ ok: false, status, json: async () => ({ error: 'nope' }) }) as Response;
+  ({
+    ok: false,
+    status,
+    json: async () => ({ error: 'nope' }),
+    text: async () => '{"error":"nope"}',
+  }) as Response;
 
 /** A hydrate response containing the given tasks. */
 const payload = (tasks: unknown[]) => ok({
@@ -168,5 +180,46 @@ describe('profiles', () => {
     const fresh = await import('./store');
     await expect(fresh.makeTable<{ id: string }>('tasks').add({ id: 'x' }))
       .rejects.toThrow(/No profile selected/);
+  });
+});
+
+describe('live updates', () => {
+  it('re-renders only when the server body actually differs', async () => {
+    vi.useFakeTimers();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const stop = store.startLiveUpdates(1000);
+
+    // Two identical polls: one request each, no notify.
+    fetchMock.mockResolvedValue(payload([{ id: 'existing', taskName: 'Original' }]));
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).not.toHaveBeenCalled();
+
+    // A different body must land and notify.
+    fetchMock.mockResolvedValue(payload([
+      { id: 'existing', taskName: 'Original' },
+      { id: 'from-the-pi', taskName: 'Added by voice' },
+    ]));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenCalled();
+    expect((await store.makeTable<{ id: string }>('tasks').toArray()).map((t) => t.id))
+      .toContain('from-the-pi');
+
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('stops polling once stopped', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue(payload([]));
+    const stop = store.startLiveUpdates(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    const callsWhileRunning = fetchMock.mock.calls.length;
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetchMock.mock.calls.length).toBe(callsWhileRunning);
+    vi.useRealTimers();
   });
 });

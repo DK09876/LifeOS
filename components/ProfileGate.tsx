@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { getProfile, hydrate, isHydrated, listProfiles, setProfile, type Profile } from '@/lib/store';
+import { getProfile, hydrate, isHydrated, listProfiles, setProfile, startLiveUpdates, type Profile } from '@/lib/store';
 
 /** Used when this browser has no remembered choice. */
 const DEFAULT_PROFILE = 'dk';
@@ -50,6 +50,13 @@ export function ProfileGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Once a profile is loaded, watch for changes made elsewhere - another
+  // device, or the voice assistant writing to the database directly.
+  useEffect(() => {
+    if (!ready) return;
+    return startLiveUpdates();
+  }, [ready]);
 
   const choose = async (id: string) => {
     setError(null);
