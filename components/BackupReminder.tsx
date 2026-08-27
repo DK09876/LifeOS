@@ -13,9 +13,8 @@
 
 import { useEffect, useRef } from 'react';
 
+import { backupReminderDetail, isBackupDue } from '@/lib/backup-reminder';
 import { useToast } from './Toast';
-
-const INTERVAL_DAYS = 30;
 
 export function BackupReminder() {
   const { showToast } = useToast();
@@ -34,27 +33,24 @@ export function BackupReminder() {
           backupLastConfirmedAt: string | null;
         };
 
-        const due = !backupLastConfirmedAt
-          || Date.now() - new Date(backupLastConfirmedAt).getTime()
-             > INTERVAL_DAYS * 86_400_000;
-        if (!due) return;
+        if (!isBackupDue(backupLastConfirmedAt)) return;
 
-        const since = backupLastConfirmedAt
-          ? `Last copied ${new Date(backupLastConfirmedAt).toLocaleDateString()}.`
-          : 'Never copied off the Pi.';
-
-        showToast(`Back up your data to your PC. ${since}`, 'info', {
-          action: {
-            label: 'Done',
-            onClick: async () => {
-              await fetch('/api/system', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ confirmBackup: true }),
-              });
+        showToast(
+          `Back up your data to your PC. ${backupReminderDetail(backupLastConfirmedAt)}`,
+          'info',
+          {
+            action: {
+              label: 'Done',
+              onClick: async () => {
+                await fetch('/api/system', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ confirmBackup: true }),
+                });
+              },
             },
           },
-        });
+        );
       } catch {
         // A reminder is not worth surfacing an error over.
       }

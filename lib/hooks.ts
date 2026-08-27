@@ -575,7 +575,7 @@ export async function markHabitDone(habitId: string): Promise<void> {
   const todayStr = getTodayString();
 
   // Add today to completionDates if not already there, and prune old entries
-  let completionDates = pruneCompletionDates(habit.completionDates || []);
+  const completionDates = pruneCompletionDates(habit.completionDates || []);
   if (!completionDates.includes(todayStr)) {
     completionDates.push(todayStr);
   }

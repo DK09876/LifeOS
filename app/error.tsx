@@ -6,6 +6,7 @@
  * server is down, Tailscale dropped, the response was malformed.
  */
 
+import Link from 'next/link';
 import { useEffect } from 'react';
 
 export default function Error({
@@ -37,13 +38,13 @@ export default function Error({
           >
             Try again
           </button>
-          <a
+          <Link
             href="/"
             className="px-4 py-2 rounded-md text-sm text-[var(--muted)]
                        hover:text-[var(--foreground)] transition-colors"
           >
             Go home
-          </a>
+          </Link>
         </div>
       </div>
     </div>
