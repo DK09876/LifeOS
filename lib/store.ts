@@ -98,7 +98,24 @@ async function writeRecords(collection: CollectionName, records: Row[], clear = 
     body: JSON.stringify({ collection, records, clear }),
   });
   if (!response.ok) throw new Error(`Save failed (HTTP ${response.status})`);
-  await hydrate();
+
+  // Apply the same change locally rather than refetching. Refetching pulled
+  // every collection back over the wire after each individual save, which is
+  // a lot of traffic for one checkbox and gets slower as the data grows.
+  // The server stores records verbatim, so the local copy is what it wrote.
+  applyLocally(collection, records, clear);
+}
+
+/** Mirror a successful write into the in-memory copy and wake the UI. */
+function applyLocally(collection: CollectionName, records: Row[], clear: boolean) {
+  const current = clear ? [] : [...(cache[collection] ?? [])];
+  for (const record of records) {
+    const index = current.findIndex((row) => row.id === record.id);
+    if (index >= 0) current[index] = record;
+    else current.push(record);
+  }
+  cache[collection] = current;
+  notify();
 }
 
 export async function savePreference(key: string, value: string) {
@@ -166,11 +183,13 @@ export function makeTable<T extends HasId>(collection: CollectionName): Table<T>
     },
     async delete(id) {
       const profile = getProfile();
-      await fetch(
+      const response = await fetch(
         `/api/data?profile=${encodeURIComponent(profile)}&collection=${collection}&id=${encodeURIComponent(id)}`,
         { method: 'DELETE' },
       );
-      await hydrate();
+      if (!response.ok) throw new Error(`Delete failed (HTTP ${response.status})`);
+      cache[collection] = (cache[collection] ?? []).filter((row) => row.id !== id);
+      notify();
     },
     async bulkAdd(items) { if (items.length) await writeRecords(collection, items as unknown as Row[]); },
     async bulkPut(items) { if (items.length) await writeRecords(collection, items as unknown as Row[]); },

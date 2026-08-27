@@ -7,7 +7,7 @@ import { getTodayString } from './dates';
 import { BlockedByEntry } from '@/types';
 
 // Core recurrence check logic - resets recurring tasks that are due
-async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
+async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksRescored: number }> {
   const allTasks = await db.tasks.toArray();
   let tasksReset = 0;
 
@@ -23,6 +23,43 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
       });
       tasksReset++;
     }
+  }
+
+  // Part of a task's score comes from how close its due date is, so a stored
+  // score decays into nonsense as time passes: a task written a month before
+  // it was due keeps that month-away score even once it is overdue. Since the
+  // lists sort by taskScore, an overdue task could sit below a trivial one.
+  // Recompute here, once a day, and write back only what actually moved.
+  //
+  // updatedAt is deliberately not bumped: the score is derived from fields
+  // the user did not touch, and treating it as an edit would churn sync on
+  // every device every day.
+  const domains = await db.domains.toArray();
+  const priorityByDomain = new Map(domains.map((domain) => [domain.id, domain.priority]));
+  const rescored = await db.tasks.toArray();
+  let tasksRescored = 0;
+
+  for (const task of rescored) {
+    if (task.deletedAt) continue;
+    if (task.status === 'Done' || task.status === 'Archived') continue;
+
+    const scores = calculateTaskScores(
+      task,
+      task.domainId ? priorityByDomain.get(task.domainId) : undefined,
+    );
+    if (
+      scores.combinedScore === task.taskScore &&
+      scores.importanceScore === task.importanceScore &&
+      scores.urgencyScore === task.urgencyScore
+    ) {
+      continue;
+    }
+    await db.tasks.update(task.id, {
+      importanceScore: scores.importanceScore,
+      urgencyScore: scores.urgencyScore,
+      taskScore: scores.combinedScore,
+    });
+    tasksRescored++;
   }
 
   // Check events for recurrence reset
@@ -43,7 +80,7 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number }> {
     userEmail: null,
   });
 
-  return { tasksReset };
+  return { tasksReset, tasksRescored };
 }
 
 // Hook to run daily auto-reset check for recurring tasks (runs once on app load)
