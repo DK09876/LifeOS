@@ -4,14 +4,28 @@ import { createContext, useContext, useState, useCallback, useRef, useEffect } f
 
 type ToastType = 'success' | 'error' | 'info';
 
+interface ToastAction {
+  label: string;
+  onClick: () => void | Promise<void>;
+}
+
+interface ToastOptions {
+  /** Adds a button. A toast with an action does not auto-dismiss, so it
+   *  cannot disappear before it has been acted on. */
+  action?: ToastAction;
+  /** Milliseconds before auto-dismiss. Ignored when an action is present. */
+  duration?: number;
+}
+
 interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: ToastAction;
 }
 
 interface ToastContextType {
-  showToast: (message: string, type?: ToastType) => void;
+  showToast: (message: string, type?: ToastType, options?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -35,11 +49,17 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+  const showToast = useCallback((
+    message: string,
+    type: ToastType = 'info',
+    options?: ToastOptions,
+  ) => {
     const id = crypto.randomUUID();
-    setToasts(prev => [...prev, { id, message, type }]);
-    const timer = setTimeout(() => removeToast(id), 3000);
-    timers.current.set(id, timer);
+    setToasts(prev => [...prev, { id, message, type, action: options?.action }]);
+    if (!options?.action) {
+      const timer = setTimeout(() => removeToast(id), options?.duration ?? 3000);
+      timers.current.set(id, timer);
+    }
   }, [removeToast]);
 
   useEffect(() => {
@@ -65,6 +85,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             className={`${typeStyles[toast.type]} px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 pointer-events-auto animate-in slide-in-from-right min-w-[280px] max-w-[400px]`}
           >
             <span className="flex-1 text-sm">{toast.message}</span>
+            {toast.action && (
+              <button
+                onClick={async () => {
+                  await toast.action?.onClick();
+                  removeToast(toast.id);
+                }}
+                className="flex-shrink-0 px-2 py-1 rounded text-xs font-medium
+                           bg-white/20 hover:bg-white/30 transition-colors"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               onClick={() => removeToast(toast.id)}
               className="text-white/70 hover:text-white flex-shrink-0"

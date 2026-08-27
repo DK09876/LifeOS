@@ -285,6 +285,14 @@ export function clearCollection(userId: string, collection: Collection) {
   connect().run('DELETE FROM records WHERE userId=? AND collection=?', [userId, collection]);
 }
 
+/** Every preference for a user (or for the reserved '_system' row). */
+export function getPreferences(userId: string): Record<string, string> {
+  const rows = connect().all(
+    'SELECT key, value FROM preferences WHERE userId = ?', [userId],
+  ) as { key: string; value: string }[];
+  return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
+
 export function setPreference(userId: string, key: string, value: string) {
   connect().run(
     `INSERT INTO preferences (userId, key, value) VALUES (?, ?, ?)

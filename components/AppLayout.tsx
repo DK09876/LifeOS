@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
+import { BackupReminder } from './BackupReminder';
 import { ToastProvider, useToast } from './Toast';
 import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
@@ -47,6 +48,8 @@ function AppLayoutInner({ children }: AppLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
+      <BackupReminder />
+
       {/* Desktop sidebar */}
       <div className="hidden md:block">
         <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} />
