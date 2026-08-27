@@ -4,6 +4,10 @@ import { useEffect } from 'react';
 import { useLiveQuery } from './live-query';
 import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
 import { getTodayString } from './dates';
+import { getPreference, savePreference } from './store';
+
+/** Per-profile marker for the last daily maintenance run. */
+const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
 import { BlockedByEntry } from '@/types';
 
 // Core recurrence check logic - resets recurring tasks that are due
@@ -71,14 +75,9 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
     }
   }
 
-  // Update the timestamp to mark when this ran
-  const today = getTodayString();
-  await db.syncMetadata.put({
-    id: 'recurrenceCheck',
-    lastSyncedAt: today,
-    googleDriveFileId: null,
-    userEmail: null,
-  });
+  // Record when this ran, per profile, so it happens once a day rather than
+  // on every page load.
+  await savePreference(RECURRENCE_LAST_RUN, getTodayString());
 
   return { tasksReset, tasksRescored };
 }
@@ -87,10 +86,7 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
 export function useRecurrenceCheck() {
   useEffect(() => {
     (async () => {
-      const today = getTodayString();
-      const meta = await db.syncMetadata.get('recurrenceCheck');
-      if (meta?.lastSyncedAt === today) return;
-
+      if (getPreference(RECURRENCE_LAST_RUN) === getTodayString()) return;
       await runRecurrenceCheckCore();
     })();
   }, []);
@@ -107,8 +103,7 @@ export async function runRecurrenceCheck(): Promise<{ tasksReset: number; lastRu
 
 // Get the last time recurrence check ran
 export async function getRecurrenceCheckStatus(): Promise<{ lastRun: string | null }> {
-  const meta = await db.syncMetadata.get('recurrenceCheck');
-  return { lastRun: meta?.lastSyncedAt || null };
+  return { lastRun: getPreference(RECURRENCE_LAST_RUN) ?? null };
 }
 
 // Hook to get all tasks with computed fields

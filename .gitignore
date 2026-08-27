@@ -51,3 +51,8 @@ next-env.d.ts
 
 # server database
 /data
+
+# SQLite database and snapshots
+data/
+*.db
+*.db.gz

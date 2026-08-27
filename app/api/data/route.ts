@@ -14,7 +14,9 @@ import { NextResponse } from 'next/server';
 
 import {
   COLLECTIONS,
+  clearAllForUser,
   clearCollection,
+  replaceAllForUser,
   deleteRecord,
   putRecords,
   readPayload,
@@ -50,7 +52,14 @@ export async function POST(request: Request) {
   const profile = profileOf(request);
   if (!profile) return NextResponse.json({ error: 'profile required' }, { status: 400 });
 
-  let body: { collection?: string; records?: StoredRecord[]; preferences?: Record<string, string>; clear?: boolean };
+  let body: {
+    collection?: string;
+    records?: StoredRecord[];
+    preferences?: Record<string, string>;
+    clear?: boolean;
+    clearAll?: boolean;
+    replaceAll?: Partial<Record<Collection, StoredRecord[]>>;
+  };
   try {
     body = await request.json();
   } catch {
@@ -58,6 +67,16 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Wipes everything for the profile atomically; see clearAllForUser.
+    if (body.clearAll) {
+      clearAllForUser(profile);
+      return NextResponse.json({ ok: true });
+    }
+    // Import: old data is only dropped once the new data commits with it.
+    if (body.replaceAll) {
+      replaceAllForUser(profile, body.replaceAll);
+      return NextResponse.json({ ok: true });
+    }
     if (body.preferences) {
       for (const [key, value] of Object.entries(body.preferences)) {
         setPreference(profile, key, value);

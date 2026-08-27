@@ -238,6 +238,49 @@ export function deleteRecord(userId: string, collection: Collection, id: string)
     [userId, collection, id]);
 }
 
+/**
+ * Remove everything belonging to one profile, in a single transaction.
+ *
+ * The client used to clear each collection with its own request, so a
+ * failure part-way through left some collections wiped and others intact.
+ */
+export function clearAllForUser(userId: string) {
+  const conn = connect();
+  conn.run('BEGIN');
+  try {
+    conn.run('DELETE FROM records WHERE userId = ?', [userId]);
+    conn.run('DELETE FROM preferences WHERE userId = ?', [userId]);
+    conn.run('COMMIT');
+  } catch (error) {
+    conn.run('ROLLBACK');
+    throw error;
+  }
+}
+
+/**
+ * Swap a profile's entire dataset in one transaction. Used by import: the
+ * old data is only gone once the new data is committed alongside it.
+ */
+export function replaceAllForUser(
+  userId: string,
+  collections: Partial<Record<Collection, StoredRecord[]>>,
+) {
+  const conn = connect();
+  conn.run('BEGIN');
+  try {
+    conn.run('DELETE FROM records WHERE userId = ?', [userId]);
+    for (const [collection, records] of Object.entries(collections)) {
+      for (const record of records ?? []) {
+        if (record?.id) putRecord(userId, collection as Collection, record);
+      }
+    }
+    conn.run('COMMIT');
+  } catch (error) {
+    conn.run('ROLLBACK');
+    throw error;
+  }
+}
+
 export function clearCollection(userId: string, collection: Collection) {
   connect().run('DELETE FROM records WHERE userId=? AND collection=?', [userId, collection]);
 }

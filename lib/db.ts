@@ -1,4 +1,4 @@
-import { makeTable } from './store';
+import { clearAllOnServer, makeTable } from './store';
 import { toDateString } from './dates';
 import { BlockedByEntry } from '@/types';
 
@@ -47,13 +47,6 @@ export interface Domain {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface SyncMetadata {
-  id: string;
-  lastSyncedAt: string | null;
-  googleDriveFileId: string | null;
-  userEmail: string | null;
 }
 
 export interface FilterPreset {
@@ -146,23 +139,6 @@ export const db = {
   events: makeTable<Event>('events'),
   projects: makeTable<Project>('projects'),
   filterPresets: makeTable<FilterPreset>('filterPresets'),
-  // Sync bookkeeping was a local-first concern; kept as a no-op shim so the
-  // handful of remaining callers keep type-checking.
-  /**
-   * Dexie ran these atomically; the server applies each write on its own.
-   * Kept so the existing bulk helpers read the same, but note it is no
-   * longer a real transaction - a failure part-way leaves partial state.
-   */
-  async transaction<T>(_mode: string, _tables: unknown, fn?: () => Promise<T>): Promise<T | undefined> {
-    return typeof _tables === 'function' ? (_tables as () => Promise<T>)() : fn?.();
-  },
-  syncMetadata: {
-    async get(_id: string): Promise<SyncMetadata | undefined> { return undefined; },
-    async put(_value: SyncMetadata): Promise<void> {},
-    async update(_id: string, _changes: Partial<SyncMetadata>): Promise<void> {},
-    async add(_value: SyncMetadata): Promise<void> {},
-    async clear(): Promise<void> {},
-  },
 };
 
 // Helper functions for common operations
@@ -234,27 +210,6 @@ export async function updateDomain(id: string, updates: Partial<Domain>): Promis
 export async function deleteDomain(id: string): Promise<void> {
   const now = new Date().toISOString();
   await db.domains.update(id, { deletedAt: now, updatedAt: now });
-}
-
-// Get sync metadata
-export async function getSyncMetadata(): Promise<SyncMetadata | undefined> {
-  return db.syncMetadata.get('main');
-}
-
-// Update sync metadata
-export async function updateSyncMetadata(updates: Partial<SyncMetadata>): Promise<void> {
-  const existing = await getSyncMetadata();
-  if (existing) {
-    await db.syncMetadata.update('main', updates);
-  } else {
-    await db.syncMetadata.add({
-      id: 'main',
-      lastSyncedAt: null,
-      googleDriveFileId: null,
-      userEmail: null,
-      ...updates,
-    });
-  }
 }
 
 // Calculate task scores: importance, urgency, and combined
@@ -338,140 +293,11 @@ export function checkNeedsReset(task: Task): boolean {
   }
 }
 
-// Export all data for sync (includes tombstones for deletion propagation)
-export async function exportAllData(): Promise<SyncPayload> {
-  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
-    db.tasks.toArray(),
-    db.domains.toArray(),
-    db.habits.toArray(),
-    db.events.toArray(),
-    db.projects.toArray(),
-    db.filterPresets.toArray(),
-  ]);
-
-  // Collect syncable localStorage preferences
-  const preferences: Record<string, string> = {};
-  for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
-    const value = localStorage.getItem(key);
-    if (value !== null) {
-      preferences[key] = value;
-    }
-  }
-
-  return {
-    version: 2,
-    tasks,
-    domains,
-    habits,
-    events,
-    projects,
-    filterPresets,
-    preferences,
-    exportedAt: new Date().toISOString(),
-  };
-}
-
-// Replace all local data with remote data (full replace, not merge)
-export async function replaceAllData(data: SyncPayload | { tasks: Task[]; domains: Domain[]; habits?: Habit[]; events?: Event[]; projects?: Project[]; exportedAt: string }): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    // Clear all tables
-    await db.tasks.clear();
-    await db.domains.clear();
-    await db.habits.clear();
-    await db.events.clear();
-    await db.projects.clear();
-    await db.filterPresets.clear();
-
-    // Bulk insert all remote data (with deletedAt fallback for backward compat)
-    await db.domains.bulkAdd(data.domains.map(d => ({ ...d, deletedAt: d.deletedAt ?? null })));
-    await db.tasks.bulkAdd(data.tasks.map(t => ({ ...t, deletedAt: t.deletedAt ?? null, blockedBy: t.blockedBy ?? [], projectId: t.projectId ?? null })));
-
-    if (data.habits) {
-      await db.habits.bulkAdd(data.habits.map(h => ({ ...h, deletedAt: h.deletedAt ?? null })));
-    }
-
-    const events = 'events' in data ? data.events : undefined;
-    if (events) {
-      await db.events.bulkAdd(events.map(ev => ({ ...ev, deletedAt: ev.deletedAt ?? null })));
-    }
-
-    const projects = 'projects' in data ? data.projects : undefined;
-    if (projects) {
-      await db.projects.bulkAdd(projects.map(p => ({ ...p, deletedAt: p.deletedAt ?? null })));
-    }
-
-    if ('filterPresets' in data && data.filterPresets) {
-      await db.filterPresets.bulkAdd(
-        (data as SyncPayload).filterPresets.map(p => ({ ...p, deletedAt: p.deletedAt ?? null }))
-      );
-    }
-  });
-
-  // Replace localStorage preferences from payload
-  if ('preferences' in data && data.preferences) {
-    for (const key of SYNCABLE_LOCALSTORAGE_KEYS) {
-      if (key in data.preferences) {
-        localStorage.setItem(key, data.preferences[key]);
-      } else {
-        localStorage.removeItem(key);
-      }
-    }
-    // Dispatch storage event so Sidebar/ViewControls listeners update
-    window.dispatchEvent(new Event('storage'));
-  }
-}
-
-// Check if there are unsaved local changes since last sync
-export async function hasUnsavedChanges(): Promise<boolean> {
-  const syncMeta = await getSyncMetadata();
-  if (!syncMeta?.lastSyncedAt) return true; // Never synced = has changes
-
-  const lastSynced = new Date(syncMeta.lastSyncedAt).getTime();
-
-  const [tasks, domains, habits, events, projects, filterPresets] = await Promise.all([
-    db.tasks.toArray(),
-    db.domains.toArray(),
-    db.habits.toArray(),
-    db.events.toArray(),
-    db.projects.toArray(),
-    db.filterPresets.toArray(),
-  ]);
-
-  const allRecords = [...tasks, ...domains, ...habits, ...events, ...projects, ...filterPresets];
-  return allRecords.some(r => new Date(r.updatedAt).getTime() > lastSynced);
-}
-
-// Hard-delete tombstones older than retention period
-export async function compactTombstones(retentionDays: number = 30): Promise<number> {
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
-  let purged = 0;
-
-  const tables = [db.tasks, db.domains, db.habits, db.events, db.projects, db.filterPresets];
-  for (const table of tables) {
-    const rows = await table.toArray();
-    const tombstones = rows.filter(
-      (row) => !!row.deletedAt && row.deletedAt < cutoff,
-    );
-    for (const record of tombstones) {
-      await table.delete(record.id);
-      purged++;
-    }
-  }
-
-  return purged;
-}
-
 // Clear all data (for logout/reset)
 export async function clearAllData(): Promise<void> {
-  await db.transaction('rw', [db.tasks, db.domains, db.syncMetadata, db.habits, db.events, db.projects, db.filterPresets], async () => {
-    await db.tasks.clear();
-    await db.domains.clear();
-    await db.syncMetadata.clear();
-    await db.habits.clear();
-    await db.events.clear();
-    await db.projects.clear();
-    await db.filterPresets.clear();
-  });
+  // One request, wiped inside a SQLite transaction. Clearing each collection
+  // separately meant a failure part-way left the profile half-deleted.
+  await clearAllOnServer();
 }
 
 // Filter Preset CRUD operations
@@ -516,11 +342,16 @@ export async function deleteFilterPreset(id: string): Promise<void> {
 }
 
 export async function reorderFilterPresets(orderedIds: string[]): Promise<void> {
-  await db.transaction('rw', db.filterPresets, async () => {
-    for (let i = 0; i < orderedIds.length; i++) {
-      await db.filterPresets.update(orderedIds[i], { order: i, updatedAt: new Date().toISOString() });
-    }
-  });
+  // Was one HTTP request per preset; now a single bulk write.
+  const now = new Date().toISOString();
+  const byId = new Map((await db.filterPresets.toArray()).map((preset) => [preset.id, preset]));
+  const updated = orderedIds
+    .map((id, index) => {
+      const preset = byId.get(id);
+      return preset ? { ...preset, order: index, updatedAt: now } : null;
+    })
+    .filter((preset): preset is FilterPreset => preset !== null);
+  await db.filterPresets.bulkPut(updated);
 }
 
 // Habit functions

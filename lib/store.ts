@@ -92,18 +92,31 @@ export async function hydrate(): Promise<void> {
 async function writeRecords(collection: CollectionName, records: Row[], clear = false) {
   const profile = getProfile();
   if (!profile) throw new Error('No profile selected');
-  const response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
+
+  // Show the change immediately and undo it if the server refuses. Waiting
+  // for the round trip made every checkbox feel laggy over Tailscale, and
+  // the server stores records verbatim so the local copy matches what it
+  // will hold.
+  const previous = cache[collection] ? [...cache[collection]] : [];
+  applyLocally(collection, records, clear);
+
+  let response: Response;
+  try {
+    response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ collection, records, clear }),
-  });
-  if (!response.ok) throw new Error(`Save failed (HTTP ${response.status})`);
-
-  // Apply the same change locally rather than refetching. Refetching pulled
-  // every collection back over the wire after each individual save, which is
-  // a lot of traffic for one checkbox and gets slower as the data grows.
-  // The server stores records verbatim, so the local copy is what it wrote.
-  applyLocally(collection, records, clear);
+      body: JSON.stringify({ collection, records, clear }),
+    });
+  } catch (error) {
+    cache[collection] = previous;
+    notify();
+    throw error;
+  }
+  if (!response.ok) {
+    cache[collection] = previous;
+    notify();
+    throw new Error(`Save failed (HTTP ${response.status})`);
+  }
 }
 
 /** Mirror a successful write into the in-memory copy and wake the UI. */
@@ -116,6 +129,36 @@ function applyLocally(collection: CollectionName, records: Row[], clear: boolean
   }
   cache[collection] = current;
   notify();
+}
+
+/** Wipe every collection for the active profile, atomically, server-side. */
+export async function clearAllOnServer(): Promise<void> {
+  const profile = getProfile();
+  if (!profile) throw new Error('No profile selected');
+  const response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clearAll: true }),
+  });
+  if (!response.ok) throw new Error(`Clear failed (HTTP ${response.status})`);
+  for (const collection of COLLECTIONS) cache[collection] = [];
+  preferences = {};
+  notify();
+}
+
+/** Swap the whole dataset for the active profile, atomically. */
+export async function replaceAllOnServer(
+  collections: Partial<Record<CollectionName, Row[]>>,
+): Promise<void> {
+  const profile = getProfile();
+  if (!profile) throw new Error('No profile selected');
+  const response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ replaceAll: collections }),
+  });
+  if (!response.ok) throw new Error(`Import failed (HTTP ${response.status})`);
+  await hydrate();
 }
 
 export async function savePreference(key: string, value: string) {
