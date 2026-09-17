@@ -5,6 +5,7 @@ import { useLiveQuery } from './live-query';
 import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, nextEventDate } from './db';
 import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
+import { bestStreakSoFar, currentStreak } from './streaks';
 
 /** Per-profile marker for the last daily maintenance run. */
 const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
@@ -594,9 +595,12 @@ export async function markHabitDone(habitId: string): Promise<void> {
     completionDates.push(todayStr);
   }
 
+  const { current } = currentStreak(completionDates, habit.targetPerWeek, todayStr);
+
   await db.habits.update(habitId, {
     lastCompleted: now,
     completionDates,
+    bestStreak: bestStreakSoFar(habit.bestStreak, current),
     updatedAt: now,
   });
 }
@@ -654,6 +658,7 @@ export async function createHabit(habitData: {
     lastCompleted: null,
     targetPerWeek: habitData.targetPerWeek ?? null,
     completionDates: [],
+    bestStreak: 0,
     notes: habitData.notes || '',
     icon: habitData.icon ?? null,
     isActive: habitData.isActive ?? true,

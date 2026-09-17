@@ -45,9 +45,11 @@ export default function WeekPage() {
       // on its due day. One task, one square - see lib/schedule.
       return {
         date: day,
-        tasks: tasksForDay(tasks, dayStr).sort((a, b) => {
-          // Committed work first, then the deadlines still to be placed.
-          if (a.kind !== b.kind) return a.kind === 'planned' ? -1 : 1;
+        tasks: tasksForDay(tasks, dayStr, true).sort((a, b) => {
+          // Committed work first, then deadlines still to be placed, then
+          // what is already finished - done work is context, not a call to act.
+          const rank = { planned: 0, due: 1, done: 2 } as const;
+          if (a.kind !== b.kind) return rank[a.kind] - rank[b.kind];
           return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
         })
       };
@@ -102,9 +104,11 @@ export default function WeekPage() {
   }
 
   const totalTasks = weekTasks.reduce((sum, day) => sum + day.tasks.length, 0);
-  const plannedCount = weekTasks.reduce(
-    (sum, day) => sum + day.tasks.filter(t => t.kind === 'planned').length, 0);
-  const dueCount = totalTasks - plannedCount;
+  const count = (kind: 'planned' | 'due' | 'done') =>
+    weekTasks.reduce((sum, day) => sum + day.tasks.filter(t => t.kind === kind).length, 0);
+  const plannedCount = count('planned');
+  const dueCount = count('due');
+  const doneCount = count('done');
 
   return (
     <div>
@@ -145,27 +149,29 @@ export default function WeekPage() {
         <p className="text-[var(--muted)] text-sm">
           <span className="text-white font-semibold">{totalTasks}</span> tasks this week
           {totalTasks > 0 && (
-            <span className="text-[var(--muted)]"> — {plannedCount} planned, {dueCount} due</span>
+            <span className="text-[var(--muted)]">
+              {' — '}{plannedCount} planned, {dueCount} due{doneCount > 0 && `, ${doneCount} done`}
+            </span>
           )}
         </p>
       </div>
 
       {/* Week Grid */}
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
         {weekTasks.map(({ date, tasks: dayTasks }) => (
-          <div key={date.toISOString()} className="min-h-[300px]">
+          <div key={date.toISOString()} className="sm:min-h-[300px]">
             {/* Day Header */}
-            <div className={`p-2 rounded-t-lg text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
+            <div className={`p-2 rounded-t-lg flex sm:block items-baseline gap-2 text-left sm:text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
               <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
                 {format(date, 'EEE')}
               </p>
-              <p className={`text-lg font-semibold ${isToday(date) ? 'text-white' : 'text-white'}`}>
+              <p className="text-lg font-semibold text-white">
                 {format(date, 'd')}
               </p>
             </div>
 
             {/* Day Tasks */}
-            <div className="group bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 min-h-[250px]">
+            <div className="group bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 sm:min-h-[250px]">
               {/* Events for this day */}
               {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => (
                 <div
@@ -191,20 +197,31 @@ export default function WeekPage() {
                   className={`rounded p-2 group cursor-pointer transition-colors hover:bg-[var(--card-hover)] ${
                     kind === 'due'
                       ? 'bg-transparent border border-dashed border-amber-500/50'
-                      : 'bg-[var(--background)]'
+                      : kind === 'done'
+                        ? 'bg-[var(--background)]/40 opacity-50'
+                        : 'bg-[var(--background)]'
                   }`}
                   onClick={() => handleEditTask(task)}
                 >
                   <div className="flex items-start gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
-                      className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
-                      aria-label={`Mark "${task.taskName}" as done`}
-                    >
-                      <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
-                    </button>
+                    {kind === 'done' ? (
+                      <span
+                        className="w-4 h-4 mt-0.5 rounded-full border border-green-600/60 flex items-center justify-center flex-shrink-0 text-green-500 text-[10px]"
+                        aria-label={`"${task.taskName}" is done`}
+                      >
+                        ✓
+                      </span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
+                        className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+                        aria-label={`Mark "${task.taskName}" as done`}
+                      >
+                        <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
+                      </button>
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm line-clamp-2">{task.taskName}</p>
+                      <p className={`text-sm line-clamp-2 ${kind === 'done' ? 'text-[var(--muted)] line-through' : 'text-white'}`}>{task.taskName}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
                         {kind === 'due' && (

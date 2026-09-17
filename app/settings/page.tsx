@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
 import { getTodayString } from '@/lib/dates';
+import { backupFilename, buildBackup, parseBackup, type ParsedBackup } from '@/lib/backup-file';
+import { getProfile, replaceAllOnServer, savePreference } from '@/lib/store';
 
 const COLOR_OPTIONS = [
   { value: 'blue', label: 'Blue', bg: 'bg-blue-600', hover: 'hover:bg-blue-700' },
@@ -117,6 +119,67 @@ export default function SettingsPage() {
       return new Date(dateStr + 'T00:00:00').toLocaleDateString();
     }
     return new Date(dateStr).toLocaleString();
+  };
+
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [dataMessage, setDataMessage] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [pendingImport, setPendingImport] = useState<ParsedBackup | null>(null);
+
+  const handleExport = async () => {
+    setBusy(true);
+    setDataMessage(null);
+    try {
+      const profile = getProfile();
+      const response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
+      const backup = buildBackup(profile, await response.json());
+      // Object URL rather than a data: URI - a large dataset can exceed what
+      // a URI is allowed to carry, and it fails silently when it does.
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = backupFilename(profile);
+      link.click();
+      URL.revokeObjectURL(url);
+      const total = Object.values(backup.collections).reduce((n, rows) => n + (rows?.length ?? 0), 0);
+      setDataMessage({ text: `Downloaded ${total} records as ${link.download}.` });
+    } catch (error) {
+      setDataMessage({ text: error instanceof Error ? error.message : 'Export failed.', bad: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleFilePicked = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Reset immediately so picking the same file twice still fires onChange.
+    event.target.value = '';
+    if (!file) return;
+    setDataMessage(null);
+    try {
+      setPendingImport(parseBackup(await file.text()));
+    } catch (error) {
+      setDataMessage({ text: error instanceof Error ? error.message : 'Could not read that file.', bad: true });
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!pendingImport) return;
+    setBusy(true);
+    try {
+      await replaceAllOnServer(pendingImport.collections as never);
+      for (const [key, value] of Object.entries(pendingImport.preferences)) {
+        await savePreference(key, value);
+      }
+      const total = Object.values(pendingImport.counts).reduce((a, b) => a + b, 0);
+      setDataMessage({ text: `Restored ${total} records.` });
+    } catch (error) {
+      setDataMessage({ text: error instanceof Error ? error.message : 'Restore failed.', bad: true });
+    } finally {
+      setBusy(false);
+      setPendingImport(null);
+    }
   };
 
   const handleTogglePresetVisibility = async (presetId: string) => {
@@ -294,6 +357,63 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Your data */}
+      <div className="bg-[var(--card-bg)] rounded-lg p-5 mb-6">
+        <h2 className="text-lg font-medium text-white mb-1">Your data</h2>
+        <p className="text-sm text-[var(--muted)] mb-4">
+          Everything lives on the Pi. A downloaded copy is what protects you if the card fails.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleExport}
+            disabled={busy}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded"
+          >
+            Download a backup
+          </button>
+          <button
+            onClick={() => fileInput.current?.click()}
+            disabled={busy}
+            className="px-4 py-2 bg-[var(--background)] hover:bg-white/5 disabled:opacity-50 text-white rounded border border-[var(--border-color)]"
+          >
+            Restore from a file…
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleFilePicked}
+          />
+        </div>
+
+        {dataMessage && (
+          <p className={`text-sm mt-3 ${dataMessage.bad ? 'text-red-400' : 'text-green-400'}`}>
+            {dataMessage.text}
+          </p>
+        )}
+      </div>
+
+      <ConfirmDialog
+        isOpen={pendingImport !== null}
+        onClose={() => setPendingImport(null)}
+        onConfirm={confirmImport}
+        title="Restore from backup"
+        message={
+          pendingImport
+            ? `This replaces everything in this profile with the backup's ${
+                Object.values(pendingImport.counts).reduce((a, b) => a + b, 0)
+              } records (${
+                Object.entries(pendingImport.counts).filter(([, n]) => n > 0)
+                  .map(([name, n]) => `${n} ${name}`).join(', ') || 'nothing'
+              }). Anything currently here that is not in the file is lost.`
+            : ''
+        }
+        confirmLabel="Replace my data"
+        variant="danger"
+      />
 
       {/* Planning & Matrix Filter Presets */}
       <div className="bg-[var(--card-bg)] rounded-lg p-5">

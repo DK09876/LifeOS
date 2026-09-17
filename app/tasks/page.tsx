@@ -257,7 +257,7 @@ export default function TasksPage() {
       </div>
 
       {/* Filters + View Controls */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
         <input
           type="text"
           placeholder="Search tasks..."

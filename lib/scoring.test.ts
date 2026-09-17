@@ -50,8 +50,9 @@ describe('calculateTaskScores', () => {
   });
 
   describe('urgency and the due-date bonus', () => {
-    it('applies no bonus without a due date', () => {
-      expect(calculateTaskScores({ urgency: '3 - Normal' }).urgencyScore).toBe(30);
+    it('applies no pressure to a fresh undated task', () => {
+      const now = new Date().toISOString();
+      expect(calculateTaskScores({ urgency: '3 - Normal', updatedAt: now }).urgencyScore).toBe(30);
     });
 
     it('scores each documented tier as specified', () => {
@@ -122,5 +123,64 @@ describe('calculateTaskScores', () => {
       expect(tomorrow).toBeGreaterThan(farOut);
       expect(overdue).toBeGreaterThan(tomorrow);
     });
+  });
+});
+
+describe('rot: overdue escalates and neglect accrues', () => {
+  // Same pinned clock as above: dueIn() is built relative to NOW, so without
+  // this the ladder is measured against the real date and every case lands
+  // in the "over a month gone" bucket.
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString();
+  const pressure = (extra: Record<string, unknown>) =>
+    calculateTaskScores({ urgency: '3 - Normal', ...extra }).urgencyScore - 30;
+
+  // A flat overdue value made a task one day late and one three months late
+  // rank identically, so nothing ever visibly rotted.
+  it('climbs for each of the first five days late', () => {
+    expect(pressure({ dueDate: dueIn(-1) })).toBe(50);
+    expect(pressure({ dueDate: dueIn(-2) })).toBe(53);
+    expect(pressure({ dueDate: dueIn(-3) })).toBe(56);
+    expect(pressure({ dueDate: dueIn(-4) })).toBe(59);
+    expect(pressure({ dueDate: dueIn(-5) })).toBe(62);
+  });
+
+  it('then steps by week and by month', () => {
+    expect(pressure({ dueDate: dueIn(-6) })).toBe(65);
+    expect(pressure({ dueDate: dueIn(-7) })).toBe(65);
+    expect(pressure({ dueDate: dueIn(-20) })).toBe(68);
+    expect(pressure({ dueDate: dueIn(-31) })).toBe(70);
+  });
+
+  it('never lets a later task rank below an earlier one', () => {
+    const lateness = [-1, -2, -3, -4, -5, -8, -40].map((d) => pressure({ dueDate: dueIn(d) }));
+    const sorted = [...lateness].sort((a, b) => a - b);
+    expect(lateness).toEqual(sorted);
+  });
+
+  it('accrues pressure on an undated task that is left alone', () => {
+    expect(pressure({ updatedAt: daysAgo(1) })).toBe(0);
+    expect(pressure({ updatedAt: daysAgo(14) })).toBe(5);
+    expect(pressure({ updatedAt: daysAgo(30) })).toBe(10);
+    expect(pressure({ updatedAt: daysAgo(60) })).toBe(15);
+    expect(pressure({ updatedAt: daysAgo(120) })).toBe(20);
+  });
+
+  // The case that motivated the change: a long-neglected urgent task should
+  // not sit below a middling one that merely has a date on it.
+  it('lets a rotted urgent task outrank a medium task due next week', () => {
+    const rotted = calculateTaskScores(
+      { taskPriority: '3 - Normal', urgency: '1 - Critical', updatedAt: daysAgo(120) }, '1 - Critical');
+    const dated = calculateTaskScores(
+      { taskPriority: '3 - Normal', urgency: '3 - Normal', dueDate: dueIn(7) }, '2 - Important');
+    expect(rotted.combinedScore).toBeGreaterThan(dated.combinedScore);
+  });
+
+  // But a deadline still beats a vague intention, which is the point of
+  // keeping the dated ladder above the neglect one.
+  it('keeps a task due today above a freshly written undated one', () => {
+    expect(pressure({ dueDate: dueIn(0) })).toBeGreaterThan(pressure({ updatedAt: daysAgo(120) }));
   });
 });

@@ -80,6 +80,9 @@ export interface Habit {
   lastCompleted: string | null;
   targetPerWeek: number | null;
   completionDates: string[];
+  // High water mark, carried forward. completionDates prune at 90 days, so a
+  // best streak derived from them alone would quietly shrink over time.
+  bestStreak: number | null;
   notes: string;
   icon: string | null;
   isActive: boolean;
@@ -230,25 +233,65 @@ export function calculateTaskScores(
   const importanceScore = (priorityScores[task.taskPriority || '3 - Normal'] || 30)
     + (domainScores[domainPriority || '3 - Maintenance'] || 10);
 
-  // Urgency = urgency field (10-50) + due date proximity (0-50) → range 10-100
+  // Urgency = urgency field (10-50) + time pressure (0-70) → range 10-120.
+  //
+  // Time pressure answers "how much has the clock earned this task", and it
+  // comes from one of two places:
+  //
+  //   a deadline    - how close (or how far past) the due date is
+  //   neglect       - how long an undated task has sat untouched
+  //
+  // A real deadline outranks a vague intention, which is why the dated ladder
+  // starts where it does and climbs higher. But neglect is its own kind of
+  // deadline: something undated that has been ignored for three months is
+  // more pressing than something due in three months, and without the second
+  // ladder an undated task could never rise at all, however long it rotted.
   const urgencyFieldScores: Record<string, number> = {
     '1 - Critical': 50, '2 - High': 40, '3 - Normal': 30, '4 - Low': 20, '5 - Someday': 10,
   };
-  let dueDateBonus = 0;
+
+  let timePressure = 0;
   if (task.dueDate) {
     const days = Math.ceil((new Date(task.dueDate + 'T00:00:00').getTime() - new Date().getTime()) / 86400000);
-    if (days < 0) dueDateBonus = 50;
-    else if (days === 0) dueDateBonus = 45;
-    else if (days === 1) dueDateBonus = 40;
-    else if (days === 2) dueDateBonus = 35;
-    else if (days <= 4) dueDateBonus = 30;
-    else if (days <= 7) dueDateBonus = 25;
-    else if (days <= 14) dueDateBonus = 20;
-    else if (days <= 30) dueDateBonus = 15;
-    else if (days <= 60) dueDateBonus = 10;
-    else dueDateBonus = 5;
+    if (days < 0) {
+      // Overdue escalates instead of saturating. A flat value meant a task a
+      // day late and one three months late were indistinguishable, so nothing
+      // ever visibly rotted.
+      const late = -days;
+      if (late === 1) timePressure = 50;
+      else if (late === 2) timePressure = 53;
+      else if (late === 3) timePressure = 56;
+      else if (late === 4) timePressure = 59;
+      else if (late === 5) timePressure = 62;
+      else if (late <= 7) timePressure = 65;    // the rest of the first week
+      else if (late <= 30) timePressure = 68;   // within the month
+      else timePressure = 70;                   // over a month gone
+    }
+    else if (days === 0) timePressure = 45;
+    else if (days === 1) timePressure = 40;
+    else if (days === 2) timePressure = 35;
+    else if (days <= 4) timePressure = 30;
+    else if (days <= 7) timePressure = 25;
+    else if (days <= 14) timePressure = 20;
+    else if (days <= 30) timePressure = 15;
+    else if (days <= 60) timePressure = 10;
+    else timePressure = 5;
+  } else {
+    // No deadline: pressure accrues from neglect instead. Measured from the
+    // last time the task was touched, not when it was created - editing or
+    // rescheduling it means you are still engaged with it. The daily rescore
+    // deliberately does not bump updatedAt, so this keeps accruing.
+    const touched = task.updatedAt || task.createdAt;
+    if (touched) {
+      const age = Math.floor((new Date().getTime() - new Date(touched).getTime()) / 86400000);
+      if (age >= 90) timePressure = 20;
+      else if (age >= 60) timePressure = 15;
+      else if (age >= 30) timePressure = 10;
+      else if (age >= 14) timePressure = 5;
+    }
   }
-  const urgencyScore = (urgencyFieldScores[task.urgency || '3 - Normal'] || 30) + dueDateBonus;
+
+  const urgencyScore = (urgencyFieldScores[task.urgency || '3 - Normal'] || 30) + timePressure;
 
   const combinedScore = Math.round((importanceScore * urgencyScore) / 100);
   return { importanceScore, urgencyScore, combinedScore };

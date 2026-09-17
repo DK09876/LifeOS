@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { taskPlacement, tasksForDay } from './schedule';
 
 const task = (extra: Record<string, unknown> = {}) =>
-  ({ status: 'Backlog', plannedDate: null, dueDate: null, ...extra }) as never;
+  ({ status: 'Backlog', plannedDate: null, dueDate: null, doneDate: null, ...extra }) as never;
 
 describe('taskPlacement', () => {
   it('uses the planned date when there is one', () => {
@@ -26,9 +26,33 @@ describe('taskPlacement', () => {
     expect(taskPlacement(task())).toBeNull();
   });
 
-  it('keeps finished work off the calendar', () => {
+  it('keeps finished work off the calendar by default', () => {
     expect(taskPlacement(task({ status: 'Done', dueDate: '2026-09-20' }))).toBeNull();
     expect(taskPlacement(task({ status: 'Archived', plannedDate: '2026-09-18' }))).toBeNull();
+  });
+
+  describe('when a view asks for finished work too', () => {
+    // The Week view is a record of what a day held, so a completed task stays
+    // put and greys out rather than vanishing the moment it is ticked.
+    it('leaves a done task on the day it was meant for', () => {
+      expect(taskPlacement(task({ status: 'Done', plannedDate: '2026-09-16', dueDate: '2026-09-18',
+        doneDate: '2026-09-17T10:00:00.000Z' }), true))
+        .toEqual({ date: '2026-09-16', kind: 'done' });
+    });
+
+    it('falls back to the day it was finished when it had no dates', () => {
+      expect(taskPlacement(task({ status: 'Done', doneDate: '2026-09-17T10:00:00.000Z' }), true))
+        .toEqual({ date: '2026-09-17', kind: 'done' });
+    });
+
+    it('reads a date-only doneDate as its local day', () => {
+      expect(taskPlacement(task({ status: 'Done', doneDate: '2026-09-17' }), true))
+        .toEqual({ date: '2026-09-17', kind: 'done' });
+    });
+
+    it('still hides archived work', () => {
+      expect(taskPlacement(task({ status: 'Archived', plannedDate: '2026-09-18' }), true)).toBeNull();
+    });
   });
 
   // The double-draw this replaced: planned Wednesday, due Friday used to show

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, DragEvent } from 'react';
+import { DragEvent, useCallback, useMemo, useState } from 'react';
 import { format, startOfWeek, startOfMonth, addDays, addWeeks, addMonths, isToday, startOfDay, endOfMonth, getDay, isBefore, differenceInCalendarDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
@@ -15,6 +15,8 @@ import { getDueDateColor, getDueSoonLabel, getPriorityDotColor, getTaskPriorityB
 import { parseLocalDate, toDateString } from '@/lib/dates';
 import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeekSchedule, WeekDayInfo } from '@/lib/suggest';
 import { tasksForDay } from '@/lib/schedule';
+import { getPreference, savePreference } from '@/lib/store';
+import { useLiveQuery } from '@/lib/live-query';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -97,6 +99,8 @@ const PRESET_COLOR_MAP: Record<string, { active: string; inactive: string }> = {
   gray: { active: 'bg-gray-600 text-white', inactive: 'bg-[var(--background)] text-[var(--muted)] hover:text-white' },
 };
 
+const SUGGEST_SETTINGS = 'suggest.settings';
+
 export default function PlanPage() {
   const tasks = useTasks();
   const domains = useDomains();
@@ -125,17 +129,34 @@ export default function PlanPage() {
   const [pinnedTaskIds, setPinnedTaskIds] = useState<Set<string>>(new Set());
   const [suggestRemovedPlacements, setSuggestRemovedPlacements] = useState<Set<string>>(new Set()); // "taskId:dateStr"
   const [suggestSettingsOpen, setSuggestSettingsOpen] = useState(false);
+  // Kept against the profile on the server, not in localStorage. Your daily
+  // AP budget is a fact about you, not about the browser you happened to open
+  // - stored locally it did not follow you to your phone and was in no backup.
   const [suggestControls, setSuggestControls] = useState<SuggestControls>(() => {
-    if (typeof window === 'undefined') return DEFAULT_SUGGEST_CONTROLS;
     try {
-      const stored = localStorage.getItem('suggest-settings');
+      const stored = getPreference(SUGGEST_SETTINGS);
       if (stored) return { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
     } catch {}
     return DEFAULT_SUGGEST_CONTROLS;
   });
+  // The store hydrates after first render, so pick the saved value up once it
+  // arrives; without this the slider silently snaps back to the default.
+  // Adjusted during render rather than in an effect - React re-runs this
+  // component before committing, so there is no flash of the stale value and
+  // no cascading second render.
+  const storedSuggest = useLiveQuery(() => getPreference(SUGGEST_SETTINGS), []);
+  const [seenSuggest, setSeenSuggest] = useState<string | undefined>(undefined);
+  if (storedSuggest !== seenSuggest) {
+    setSeenSuggest(storedSuggest);
+    if (storedSuggest) {
+      try {
+        setSuggestControls({ ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(storedSuggest) });
+      } catch {}
+    }
+  }
   const updateSuggestControls = useCallback((c: SuggestControls) => {
     setSuggestControls(c);
-    localStorage.setItem('suggest-settings', JSON.stringify(c));
+    void savePreference(SUGGEST_SETTINGS, JSON.stringify(c));
   }, []);
 
   // Planning view state
@@ -741,7 +762,7 @@ export default function PlanPage() {
   );
 
   // Render a task in the calendar
-  const renderCalendarTask = (task: Task, kind: 'planned' | 'due' = 'planned') => (
+  const renderCalendarTask = (task: Task, kind: 'planned' | 'due' | 'done' = 'planned') => (
     <div
       key={task.id}
       draggable
@@ -1069,8 +1090,8 @@ export default function PlanPage() {
           {/* Right: Calendar */}
           <div className="flex-1 min-w-0">
             {/* Calendar Navigation */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setDateOffset(prev => prev - 1)}
                   className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
@@ -1095,7 +1116,7 @@ export default function PlanPage() {
               </div>
 
               {/* View Toggle */}
-              <div className="flex items-center gap-1 bg-[var(--card-bg)] rounded-lg p-1">
+              <div className="flex items-center gap-1 bg-[var(--card-bg)] rounded-lg p-1 flex-shrink-0">
                 {(['day', 'week', 'month'] as CalendarView[]).map(view => (
                   <button
                     key={view}
@@ -1272,7 +1293,8 @@ export default function PlanPage() {
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="grid grid-cols-7 gap-2">
+              <div className="overflow-x-auto -mx-1 px-1">
+              <div className="grid grid-cols-7 gap-2 min-w-[640px]">
                 {tasksByDay.map(({ date, tasks: dayTasks }) => {
                   const dayStr = format(date, 'yyyy-MM-dd');
                   const dayEvents = events.filter(e => e.date === dayStr);
@@ -1383,6 +1405,7 @@ export default function PlanPage() {
                     </div>
                   );
                 })}
+              </div>
               </div>
             )}
 

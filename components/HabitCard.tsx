@@ -3,6 +3,7 @@
 import { Habit } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { getCompletionsThisWeek } from '@/lib/db';
+import HabitHistory from './HabitHistory';
 
 interface HabitCardProps {
   habit: Habit;
@@ -179,6 +180,11 @@ export default function HabitCard({
 
           {/* Last completed */}
           <p className="text-sm text-[var(--muted)] mt-2">{lastCompletedText}</p>
+
+          {/* Streak and the last 30 days */}
+          <div className="mt-3">
+            <HabitHistory habit={habit} />
+          </div>
 
           {/* Notes */}
           {habit.notes && (

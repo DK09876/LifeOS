@@ -2,6 +2,46 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.7.0] - 2026-09-17
+
+### Dates and recurrence
+- Fixed completed tasks being recorded a day early. `doneDate` has two writers — the web app stores a timestamp, the voice assistant a plain date — and the date-only form was being read as UTC midnight, which is the previous evening in any western timezone. Anything completed by voice never reached today's count
+- Recurring tasks now roll their dates forward when they reset, anchored on when you completed them and preserving the gap between planned and due. Previously only the status reset, so a weekly task came back Planned for a day that had already passed and sat in Triage permanently
+- Recurring events roll forward too, anchored on the event's own date so a standing Monday meeting marked done late does not drift a day each week
+
+### Scoring
+- Overdue now escalates instead of flattening: +50 the first day late rising to +70 beyond a month. A task one day late and one three months late used to score identically
+- Undated tasks accrue pressure from neglect (+5 after two weeks, up to +20 after three months), so important work with no deadline can rise instead of sinking forever
+- Urgency now ranges 10–120. The Eisenhower Matrix thresholds moved with it (importance 60, urgency 65); previously nine of fifteen priority/domain combinations cleared the importance line and no undated task could ever cross the urgency one, leaving "Fit In" structurally empty
+
+### Tasks
+- Priority and urgency can now be left unset, and both are required before a task promotes out of Needs Details. Previously priority was checked but defaulted to Normal so could never be empty, and urgency was not checked at all — in practice only domain and action points gated promotion
+- Level badges, sorting and filtering all understand an unset value
+
+### Today
+- Added a day effort meter: capacity, what you have used, and what is still planned. Capacity starts from your Plan budget and can be adjusted for a single day
+- Added a strip for plans whose day has passed, with per-item actions (today, tomorrow, unplan, done) rather than dumping them into today's list. Overdue deadlines stay in Plan
+
+### Calendars
+- A task now appears on exactly one day: its planned date, or its due date when unplanned. Unplanned deadlines are drawn dashed and chipped so a deadline reads differently from a commitment. Previously a planned task was drawn twice and the Week and Plan calendars disagreed about the same week
+- Finished tasks stay on the Week view, greyed out, instead of disappearing
+- The Week counter no longer calls due-dated tasks "planned"
+
+### Habits
+- Fixed habits appearing as due and completed at the same time. A weekly target made the already-done-today check unreachable
+- Added streaks and a 30-day history strip. The streak unit follows the habit — days for a plain habit, target-hitting weeks for one with a weekly target
+- Best streak is stored rather than derived, so it does not shrink as completion history ages out
+
+### Data
+- Added backup download and restore in Settings. The app had been asking people to copy data off the Pi while offering no way to do it
+- The backup reminder no longer fires on an empty profile
+
+### Other
+- Added a global quick-add: the + button in the top bar, or pressing `n` from any page
+- The daily AP budget and suggester settings now live on the server against your profile instead of in browser storage, so they follow you between devices and are included in backups
+- Fixed the "+ Add" buttons on both calendars being invisible until hovered exactly
+- Made Today, Week, Plan and Tasks usable at phone width
+
 ## [0.6.0] - 2026-03-02
 
 ### Blocked-by Tasks

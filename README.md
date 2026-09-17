@@ -1,163 +1,110 @@
 # LifeOS
 
-A modern, local-first Progressive Web App for personal productivity and task management. Your data stays on your device — no account required.
+A self-hosted personal productivity app — tasks, habits, events and projects —
+running on a Raspberry Pi on your own network. No cloud account, no third
+party, and the database is a file you can pick up and take with you.
 
-**Live App: [my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
+It is also the app the [pantry](https://github.com/DK09876/pantry) voice
+assistant drives, so a task added out loud in the kitchen shows up in the
+browser a couple of seconds later.
 
-## Quick Start
+## The idea
 
-1. Visit **[my-lifeos.vercel.app](https://my-lifeos.vercel.app)**
-2. Create your first **Domain** (life area like Work, Health, Finance)
-3. Add **Tasks** and assign them to domains
-4. Use **Today** and **Week** views to focus on what matters
-5. Check the **How it Works** page in the sidebar for detailed guidance
-
-That's it! Your data is saved automatically in your browser.
-
-## Features
-
-### Local-First Architecture
-- **Works Offline**: Full functionality even without internet
-- **No Account Required**: Start using immediately, no sign-up
-- **Your Data, Your Device**: Data stored locally in your browser's IndexedDB
-- **Privacy First**: No server, no tracking, no data collection
-
-### Pages
-
-| Page | Description |
-|------|-------------|
-| **Today** | Tasks due or planned for today with completion stats |
-| **Week** | Calendar view of your week, navigate between weeks |
-| **Plan** | Triage tasks needing attention, manage your backlog |
-| **Tasks** | Full database with sorting, filtering, and search |
-| **Domains** | Manage life areas (Work, Health, Finance, etc.) |
-| **How it Works** | In-app guide explaining features and workflow |
-
-### Task Management
-- **Smart Priority Scoring**: Automatic scoring based on priority, domain, and due date
-- **Multiple Statuses**: Needs Details, Backlog, Blocked, Done, Archived
-- **Recurring Tasks**: Daily, weekly, biweekly, monthly, quarterly, yearly
-- **Planned Dates**: Schedule tasks for specific days
-
-### Domain Organization
-- **Priority Levels**: Critical, Important, or Maintenance
-- **Icons**: Emoji icons for quick visual identification
-- **Task Tracking**: See task counts per domain
-
-### Progressive Web App
-- **Installable**: Add to home screen on iOS, Android, Windows, macOS
-- **Offline Support**: Works without internet
-- **Daily Quotes**: Inspirational quotes from ZenQuotes API
-
-## How Task Score Works
-
-Tasks are automatically scored to help you prioritize:
+Most task apps have one "priority" field, which quietly conflates two
+different questions: *how much does this matter* and *how soon*. LifeOS keeps
+them apart.
 
 ```
-Score = Task Priority + Domain Priority + Due Date Urgency
+importance = task priority + domain priority          20–80
+urgency    = urgency field + time pressure            10–120
+score      = importance × urgency / 100
 ```
 
-| Factor | Values |
-|--------|--------|
-| Task Priority | Urgent (50), High (40), Normal (30), Low (20), Optional (10) |
-| Domain Priority | Critical (30), Important (20), Maintenance (10) |
-| Due Date | Overdue (+25), Today (+20), Within 7 days (+15), Within 30 days (+10) |
+Multiplied rather than added, so something both important and urgent pulls
+clearly ahead of something that is a bit of each. Recalculated daily, so an
+approaching deadline actually moves a task up the list instead of leaving it
+frozen at the score it had when written.
 
-Higher score = more urgent. Range: 20-105.
+**Time pressure** comes from a deadline if there is one, and from neglect if
+there is not:
 
-## Tech Stack
+| | |
+|---|---|
+| Due today / tomorrow / this week | +45 / +40 / +25 |
+| Overdue | +50 the first day, climbing to +70 past a month |
+| No due date, untouched for 2 weeks / 1 month / 3 months | +5 / +10 / +20 |
 
-- **Framework**: Next.js 16 with App Router
-- **UI**: React 19 + Tailwind CSS 4
-- **Language**: TypeScript 5
-- **Local Database**: Dexie.js (IndexedDB)
-- **Date Handling**: date-fns
+A real deadline still beats a vague intention — but a task you have ignored
+for three months is more pressing than one due in three months, and without
+the second ladder undated work could never rise however long it rotted.
 
-## Running Locally
+## What's in it
 
-### Prerequisites
-- Node.js 20+
+**Today** — habits, events and tasks for today, an effort meter for the day,
+and a strip for plans whose day has passed asking what you want to do about
+each one.
 
-### Installation
+**Week** — seven days. A task appears once: on the day you planned it, or on
+its due date if you have not planned it, drawn dashed so a deadline looks
+different from a commitment. Finished work stays put, greyed.
+
+**Plan** — triage what needs attention, drag unscheduled tasks onto a
+day/week/month calendar, or let auto-suggest fill a week within a daily effort
+budget. Plus an Eisenhower matrix over the two scoring axes.
+
+**Tasks** — the full table: search, multi-select filters, column control,
+saved presets.
+
+**Projects** group tasks with AP-weighted progress. **Habits** recur on a
+cadence or a weekly target, with streaks and a 30-day history. **Domains** are
+life areas whose priority feeds every task's importance.
+
+Tasks promote themselves: give one a name and it waits in *Needs Details*;
+fill in priority, urgency, domain and an effort estimate and it becomes
+*Backlog*, or *Planned* once it has a date.
+
+## Running it
 
 ```bash
-git clone https://github.com/DK09876/LifeOS.git
-cd LifeOS
 npm install
-npm run dev
+npm run dev            # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
-
-### Building for Production
+The database is created on first run. Add a profile before using the app:
 
 ```bash
-npm run build
-npm start
+node scripts/user.cjs add dk "DK"
 ```
 
-## Project Structure
+| Variable | Default | |
+|---|---|---|
+| `LIFEOS_DB_PATH` | `./data/lifeos.db` | where the SQLite file lives |
 
-```
-LifeOS/
-├── app/
-│   ├── page.tsx          # Today view
-│   ├── week/page.tsx     # Week calendar view
-│   ├── plan/page.tsx     # Planning & triage
-│   ├── tasks/page.tsx    # Tasks database
-│   ├── domains/page.tsx  # Domains database
-│   ├── help/page.tsx     # How it Works guide
-│   ├── layout.tsx        # Root layout
-│   └── globals.css       # Dark theme styles
-├── components/
-│   ├── AppLayout.tsx     # Main layout with sidebar
-│   ├── Sidebar.tsx       # Navigation sidebar
-│   ├── Modal.tsx         # Reusable modal
-│   ├── TaskForm.tsx      # Task create/edit form
-│   ├── DomainForm.tsx    # Domain create/edit form
-│   └── ConfirmDialog.tsx # Delete confirmation
-├── lib/
-│   ├── db.ts             # Dexie database & scoring
-│   ├── hooks.ts          # React hooks for data
-│   ├── quotes.ts         # Daily quote fetching
-│   ├── google-auth.ts    # Google OAuth (coming soon)
-│   └── sync.ts           # Google Drive sync (coming soon)
-├── types/
-│   └── index.ts          # TypeScript types
-└── public/
-    ├── manifest.json     # PWA manifest
-    ├── sw.js             # Service worker
-    └── icons/            # App icons
+```bash
+npm run build && npm start   # production
+npm test                     # vitest
+npm run lint
 ```
 
-## Installing as an App
+## On the Pi
 
-| Platform | How to Install |
-|----------|----------------|
-| **iOS Safari** | Share button → "Add to Home Screen" |
-| **Android Chrome** | Menu → "Install app" |
-| **Desktop Chrome** | URL bar install icon → "Install" |
+Runs under systemd and is published to the tailnet with Tailscale Serve, so
+it is reachable from a phone or laptop without opening anything to the
+internet. A timer snapshots the database nightly, skipping unchanged nights
+and verifying what it wrote.
 
-## Privacy
+Snapshots share the SD card with the database, so they do not protect against
+the card failing — **Settings → Your data** downloads everything as a single
+JSON file, and restores one. The app reminds you monthly.
 
-- **No Server**: Runs entirely in your browser
-- **No Account**: No sign-up or login required
-- **No Tracking**: Zero analytics or data collection
-- **Open Source**: Full code transparency
+## Tech
 
-## Roadmap
+Next.js 16 (App Router), React 19, Tailwind 4, TypeScript. SQLite through
+`node-sqlite3-wasm` — the native addon segfaults on Debian 13 aarch64. Dates
+via date-fns, charts via Recharts.
 
-- [ ] Habits tracking
-- [ ] Recurring tasks improvements
-- [ ] Google Drive sync for cross-device access
-- [ ] Data export/import
-- [ ] Custom themes
-- [ ] Keyboard shortcuts
-
-## Contributing
-
-Contributions welcome! Please feel free to submit a Pull Request.
+Installable as a PWA and works at phone width.
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT — see LICENSE.

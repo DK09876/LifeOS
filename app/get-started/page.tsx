@@ -19,8 +19,8 @@ const steps = [
   },
   {
     number: 3,
-    title: 'Set Action Points',
-    description: 'Action points (1-5) indicate effort level. Tasks start as "Needs Details" and auto-promote to "Backlog" once domain and action points are set. Adding a planned date promotes them to "Planned".',
+    title: 'Fill in the details',
+    description: 'A task is ready to work on once it has a priority, an urgency, a domain and an action-point estimate (1-5, how much effort it will take). Until then it sits in "Needs Details" rather than cluttering your planning board. Fill all four and it promotes itself to "Backlog", or to "Planned" if it also has a planned date.',
     href: '/tasks',
     cta: 'Go to Tasks',
   },

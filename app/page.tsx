@@ -8,10 +8,17 @@ import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import HabitForm, { HabitFormData } from '@/components/HabitForm';
 import EventForm, { EventFormData } from '@/components/EventForm';
 import HabitCard from '@/components/HabitCard';
+import DayCapacity from '@/components/DayCapacity';
+import MissedStrip from '@/components/MissedStrip';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
 import { getTodayString, parseLocalDateTime } from '@/lib/dates';
+import { useLiveQuery } from '@/lib/live-query';
+import { getPreference, savePreference } from '@/lib/store';
+import { CAPACITY_PREF, capacityFor, dayLoad, parseCapacityMap, pruneCapacityMap } from '@/lib/capacity';
+import { DEFAULT_SUGGEST_CONTROLS, SuggestControls } from '@/lib/suggest';
+import { useEvents } from '@/lib/hooks';
 import { getTaskPriorityBorder, levelRank } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
 
@@ -38,6 +45,49 @@ export default function TodayPage() {
   // Event CRUD modals
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+
+  // Effort budget for today. The suggester's settings supply the default; a
+  // per-date override lets a low-energy day say so without changing the norm.
+  const allEvents = useEvents();
+  const storedSuggest = useLiveQuery(() => getPreference('suggest.settings'), []);
+  const storedCapacity = useLiveQuery(() => getPreference(CAPACITY_PREF), []);
+  const suggestControls: SuggestControls = useMemo(() => {
+    try {
+      return storedSuggest
+        ? { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(storedSuggest) }
+        : DEFAULT_SUGGEST_CONTROLS;
+    } catch { return DEFAULT_SUGGEST_CONTROLS; }
+  }, [storedSuggest]);
+
+  const capacityMap = useMemo(() => parseCapacityMap(storedCapacity), [storedCapacity]);
+  const todayStr = getTodayString();
+  const capacity = capacityFor(capacityMap, todayStr, suggestControls.dailyAPBudget);
+  const load = useMemo(
+    () => dayLoad(tasks, allEvents, suggestControls.defaultAP, todayStr),
+    [tasks, allEvents, suggestControls.defaultAP, todayStr],
+  );
+
+  const setCapacity = async (next: number) => {
+    const updated = pruneCapacityMap({ ...capacityMap, [todayStr]: next }, todayStr);
+    await savePreference(CAPACITY_PREF, JSON.stringify(updated));
+  };
+
+  // Plans whose day has passed. Not overdue deadlines - those stay in Plan.
+  const missedPlans = useMemo(() => {
+    return tasks.filter(t =>
+      t.status !== 'Done' && t.status !== 'Archived' && !t.deletedAt &&
+      !!t.plannedDate && t.plannedDate < todayStr
+    ).sort((a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''));
+  }, [tasks, todayStr]);
+
+  async function rescheduleMissed(taskId: string, date: string | null) {
+    try { await updateTaskData(taskId, { plannedDate: date }); }
+    catch { showToast('Could not move that task', 'error'); }
+  }
+  async function moveAllMissed(date: string) {
+    try { for (const t of missedPlans) await updateTaskData(t.id, { plannedDate: date }); }
+    catch { showToast('Could not move those tasks', 'error'); }
+  }
 
   // Filter tasks for today
   const todayTasks = useMemo(() => {
@@ -188,20 +238,32 @@ export default function TodayPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <div className="bg-[var(--card-bg)] rounded-lg p-4">
-          <p className="text-2xl font-semibold text-white">{habitsDueToday.length + todayTasks.length}</p>
-          <p className="text-[var(--muted)] text-sm">To do ({habitsDueToday.length} habits + {todayTasks.length} tasks)</p>
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6 sm:mb-8">
+        <div className="bg-[var(--card-bg)] rounded-lg p-3 sm:p-4">
+          <p className="text-xl sm:text-2xl font-semibold text-white">{habitsDueToday.length + todayTasks.length}</p>
+          <p className="text-[var(--muted)] text-xs sm:text-sm">To do <span className="hidden sm:inline">({habitsDueToday.length} habits + {todayTasks.length} tasks)</span></p>
         </div>
-        <div className="bg-[var(--card-bg)] rounded-lg p-4">
-          <p className="text-2xl font-semibold text-green-400">{habitsCompletedToday.length + completedToday.length}</p>
-          <p className="text-[var(--muted)] text-sm">Completed ({habitsCompletedToday.length} habits + {completedToday.length} tasks)</p>
+        <div className="bg-[var(--card-bg)] rounded-lg p-3 sm:p-4">
+          <p className="text-xl sm:text-2xl font-semibold text-green-400">{habitsCompletedToday.length + completedToday.length}</p>
+          <p className="text-[var(--muted)] text-xs sm:text-sm">Done <span className="hidden sm:inline">({habitsCompletedToday.length} habits + {completedToday.length} tasks)</span></p>
         </div>
-        <div className="bg-[var(--card-bg)] rounded-lg p-4">
-          <p className="text-2xl font-semibold text-white">{todayTasks.filter(t => levelRank(t.taskPriority) <= 2).length}</p>
-          <p className="text-[var(--muted)] text-sm">High priority</p>
+        <div className="bg-[var(--card-bg)] rounded-lg p-3 sm:p-4">
+          <p className="text-xl sm:text-2xl font-semibold text-white">{todayTasks.filter(t => levelRank(t.taskPriority) <= 2).length}</p>
+          <p className="text-[var(--muted)] text-xs sm:text-sm">High priority</p>
         </div>
       </div>
+
+      <div className="mb-6">
+        <DayCapacity capacity={capacity} load={load} onChange={setCapacity} />
+      </div>
+
+      <MissedStrip
+        tasks={missedPlans}
+        onReschedule={rescheduleMissed}
+        onDone={handleMarkDone}
+        onEdit={handleEditTask}
+        onMoveAll={moveAllMissed}
+      />
 
       {/* Habits Section (only shows if habits are due) */}
       {habitsDueToday.length > 0 && (
@@ -246,7 +308,7 @@ export default function TodayPage() {
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-indigo-300 font-medium">{event.eventName}</p>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-[var(--muted)]">
                     {event.time && (
                       <span className="flex items-center gap-1">
                         <span>Time:</span>
@@ -316,7 +378,7 @@ export default function TodayPage() {
                 </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-medium">{task.taskName}</p>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-[var(--muted)]">
                     {task.domain && (
                       <span className="flex items-center gap-1">
                         <span>{task.domain.icon || '📁'}</span>

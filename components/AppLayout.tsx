@@ -8,6 +8,7 @@ import { getDailyQuote, fetchDailyQuote, Quote } from '@/lib/quotes';
 import { useRecurrenceCheck } from '@/lib/hooks';
 import { ProfileGate } from './ProfileGate';
 import { ProfileSwitcher } from './ProfileSwitcher';
+import QuickAdd from './QuickAdd';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -84,6 +85,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
               &ldquo;{quote.text}&rdquo; — {quote.author}
             </p>
           </div>
+          <QuickAdd />
           <ProfileSwitcher />
         </header>
 

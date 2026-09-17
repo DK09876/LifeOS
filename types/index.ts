@@ -64,6 +64,9 @@ export interface Habit {
   lastCompleted: string | null;  // ISO timestamp of last completion
   targetPerWeek: number | null;  // If set, habit is due until completed this many times per week
   completionDates: string[];     // Array of ISO date strings (YYYY-MM-DD) for tracking weekly progress
+  // High water mark, carried forward. completionDates prune at 90 days, so a
+  // best streak derived from them alone would quietly shrink over time.
+  bestStreak: number | null;
   notes: string;
   icon: string | null;           // Optional emoji for quick identification
   isActive: boolean;             // Pause without deleting
