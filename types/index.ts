@@ -24,6 +24,9 @@ export interface Task {
   // period with a fixed deadline - a fortnightly return, rent - keeps its
   // dates however early or late you actually get to it.
   recurrenceAnchor: 'completion' | 'schedule' | null;
+  // Which days a Weekly task lands on, 0=Sunday. Empty or null means "a week
+  // after the last one", the original behaviour. [1,2,3,4,5] is weekdays.
+  recurrenceWeekdays: number[] | null;
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;

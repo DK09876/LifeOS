@@ -143,3 +143,47 @@ describe('a scheduled period keeps its own cadence', () => {
       .toBe('2026-09-21');
   });
 });
+
+describe('weekly on named days', () => {
+  const WEEKDAYS = [1, 2, 3, 4, 5];
+  const MON_WED_FRI = [1, 3, 5];
+  // 2026-09-17 is a Thursday.
+  const on = (date: string, days: number[]) =>
+    toDateString(advanceDate(parseLocalDate(date), 'Weekly', days)!);
+
+  // "Every weekday" used to be approximated as a plain weekly cycle, which
+  // drifted to whichever day you last happened to do it.
+  it('steps to the next named day, not seven days on', () => {
+    expect(on('2026-09-17', WEEKDAYS)).toBe('2026-09-18');   // Thu -> Fri
+    expect(on('2026-09-18', WEEKDAYS)).toBe('2026-09-21');   // Fri -> Mon
+    expect(on('2026-09-19', WEEKDAYS)).toBe('2026-09-21');   // Sat -> Mon
+  });
+
+  it('handles a sparse pattern', () => {
+    expect(on('2026-09-14', MON_WED_FRI)).toBe('2026-09-16'); // Mon -> Wed
+    expect(on('2026-09-16', MON_WED_FRI)).toBe('2026-09-18'); // Wed -> Fri
+    expect(on('2026-09-18', MON_WED_FRI)).toBe('2026-09-21'); // Fri -> Mon
+  });
+
+  it('wraps a single named day to the same day next week', () => {
+    expect(on('2026-09-15', [2])).toBe('2026-09-22');         // Tue -> Tue
+  });
+
+  it('falls back to a plain week when no days are named', () => {
+    expect(on('2026-09-17', [])).toBe('2026-09-24');
+    expect(toDateString(advanceDate(parseLocalDate('2026-09-17'), 'Weekly', null)!)).toBe('2026-09-24');
+  });
+
+  it('only applies to Weekly', () => {
+    expect(toDateString(advanceDate(parseLocalDate('2026-09-17'), 'Monthly', WEEKDAYS)!))
+      .toBe('2026-10-17');
+  });
+
+  it('carries through to the next occurrence dates', () => {
+    const next = nextRecurrenceDates({
+      recurrence: 'Weekly', recurrenceAnchor: null, recurrenceWeekdays: MON_WED_FRI,
+      dueDate: '2026-09-16', plannedDate: null, lastCompleted: '2026-09-16T12:00:00.000Z',
+    } as never);
+    expect(next.dueDate).toBe('2026-09-18');
+  });
+});

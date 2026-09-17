@@ -25,6 +25,9 @@ export interface Task {
   // period with a fixed deadline - a fortnightly return, rent - keeps its
   // dates however early or late you actually get to it.
   recurrenceAnchor: 'completion' | 'schedule' | null;
+  // Which days a Weekly task lands on, 0=Sunday. Empty or null means "a week
+  // after the last one", the original behaviour. [1,2,3,4,5] is weekdays.
+  recurrenceWeekdays: number[] | null;
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;
@@ -353,12 +356,12 @@ export function calculateTaskScore(task: Partial<Task>, domainPriority?: string)
  * date, so anything with a real deadline keeps it.
  */
 function cycleDueDate(
-  task: Partial<Pick<Task, 'recurrence' | 'lastCompleted' | 'createdAt'>>,
+  task: Partial<Pick<Task, 'recurrence' | 'lastCompleted' | 'createdAt' | 'recurrenceWeekdays'>>,
 ): string | null {
   if (!task.recurrence || task.recurrence === 'None') return null;
   const since = task.lastCompleted || task.createdAt;
   if (!since) return null;
-  const next = advanceDate(new Date(since), task.recurrence);
+  const next = advanceDate(new Date(since), task.recurrence, task.recurrenceWeekdays);
   return next ? toDateString(next) : null;
 }
 
@@ -370,7 +373,24 @@ function cycleDueDate(
  * finish, not a week from a date already in the past. Without this the reset
  * left the old dates untouched and the task came back permanently overdue.
  */
-export function advanceDate(from: Date, recurrence: Task['recurrence']): Date | null {
+export function advanceDate(
+  from: Date,
+  recurrence: Task['recurrence'],
+  weekdays?: number[] | null,
+): Date | null {
+  // A weekly task can land on named days instead of "seven days later", which
+  // is what "every weekday" or "Mon, Wed and Fri" actually mean. Without it
+  // those had to be approximated as a plain weekly cycle that drifted to
+  // whichever day you last happened to do it.
+  if (recurrence === 'Weekly' && weekdays && weekdays.length) {
+    const wanted = new Set(weekdays);
+    for (let i = 1; i <= 7; i++) {
+      const candidate = addDays(from, i);
+      if (wanted.has(candidate.getDay())) return candidate;
+    }
+    return null;
+  }
+
   switch (recurrence) {
     case 'Daily': return addDays(from, 1);
     case 'Weekly': return addDays(from, 7);
@@ -392,7 +412,7 @@ export function advanceDate(from: Date, recurrence: Task['recurrence']): Date | 
  * rather than collapsing onto the same day.
  */
 export function nextRecurrenceDates(
-  task: Pick<Task, 'recurrence' | 'recurrenceAnchor' | 'dueDate' | 'plannedDate' | 'lastCompleted'>,
+  task: Pick<Task, 'recurrence' | 'recurrenceAnchor' | 'recurrenceWeekdays' | 'dueDate' | 'plannedDate' | 'lastCompleted'>,
 ): { dueDate: string | null; plannedDate: string | null } {
   // A scheduled period keeps its own cadence: the fortnight after the one
   // that just ended, not a fortnight after you got round to it. Doing it four
@@ -400,7 +420,7 @@ export function nextRecurrenceDates(
   const anchor = task.recurrenceAnchor === 'schedule' && task.dueDate
     ? parseLocalDate(task.dueDate)
     : task.lastCompleted ? new Date(task.lastCompleted) : new Date();
-  const next = advanceDate(anchor, task.recurrence);
+  const next = advanceDate(anchor, task.recurrence, task.recurrenceWeekdays);
   if (!next) return { dueDate: task.dueDate, plannedDate: task.plannedDate };
 
   const nextStr = toDateString(next);
@@ -429,6 +449,12 @@ export function checkNeedsReset(task: Task): boolean {
   // waiting a fortnight from Tuesday before the next one exists.
   if (task.recurrenceAnchor === 'schedule' && task.dueDate) {
     return getTodayString() > task.dueDate;
+  }
+
+  // Named days reopen on the next named day, not seven days on.
+  if (task.recurrence === 'Weekly' && task.recurrenceWeekdays?.length) {
+    const next = advanceDate(new Date(task.lastCompleted), 'Weekly', task.recurrenceWeekdays);
+    return !!next && getTodayString() >= toDateString(next);
   }
 
   const lastCompleted = new Date(task.lastCompleted);

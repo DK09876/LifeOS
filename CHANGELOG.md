@@ -19,6 +19,7 @@ All notable changes to LifeOS will be documented in this file.
 - Urgency now ranges 10–120. The Eisenhower Matrix thresholds moved with it (importance 60, urgency 65); previously nine of fifteen priority/domain combinations cleared the importance line and no undated task could ever cross the urgency one, leaving "Fit In" structurally empty
 
 ### Recurrence
+- A Weekly task can name the days it lands on — weekdays only, or Mon/Wed/Fri. It then comes back on the next of those days rather than seven days after you last happened to do it, which is what "every weekday" actually means
 - Recurring tasks can now keep a fixed period instead of counting from completion. "When I finish it" suits anything you do every so often; "the due date" suits a fortnightly return or a monthly bill, where doing it early must not drag every future deadline earlier, and where the next period should open as soon as the last one closes
 
 ### Tasks
@@ -64,6 +65,7 @@ All notable changes to LifeOS will be documented in this file.
 - Fixed the same double-encoded characters in pantry's README and architecture doc
 
 ### Other
+- The task form now shows five fields and hides the rest behind "More options". A task is usually a name, how much it matters, where it belongs and what it costs; putting eleven fields in front of that made writing one down feel like filing a form. The section opens by itself when editing a task that already uses it, and the toggle shows how many optional fields are in play
 - Added a global quick-add: the + button in the top bar, or pressing `n` from any page
 - The daily AP budget and suggester settings now live on the server against your profile instead of in browser storage, so they follow you between devices and are included in backups
 - Fixed the "+ Add" buttons on both calendars being invisible until hovered exactly

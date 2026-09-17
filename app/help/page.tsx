@@ -286,6 +286,9 @@ export default function HelpPage() {
               <span className="text-white">When I finish it</span> restarts the clock on completion — right for anything you simply want to do every so often. Water the plants a few days late and the next one is a fortnight from then, not a fortnight from a date you already missed.
             </p>
             <p>
+              A <span className="text-white">weekly</span> task can also name the days it lands on. Pick Mon, Wed and Fri and it comes back on the next of those, rather than a week after you last got to it — which is what &ldquo;every weekday&rdquo; means and what a plain weekly cycle could only approximate.
+            </p>
+            <p>
               <span className="text-white">The due date</span> keeps a fixed period — right for anything with a real deadline inside a window, like a fortnightly return or a monthly bill. Doing it four days early does not drag every future deadline four days earlier, and the next period opens as soon as the last one closes rather than an interval after you got to it.
             </p>
           </div>
@@ -522,6 +525,9 @@ export default function HelpPage() {
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>
               The <span className="text-white">+</span> button in the top bar opens a new task from any page, and pressing <span className="font-mono text-white">n</span> does the same without reaching for the mouse. It will not fire while you are typing in a field.
+            </p>
+            <p>
+              The form asks for five things: what it is, how much it matters, how soon, where it belongs and what it costs. Everything else — planned date, project, recurrence, blockers, notes — sits behind <span className="text-white">More options</span>, and opens by itself when you edit a task that already uses it.
             </p>
             <p>
               It is the same form as everywhere else, so a task captured in a hurry follows the same rules — a name on its own lands in Needs Details, waiting for you to triage it rather than pretending it has been thought about.

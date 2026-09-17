@@ -23,6 +23,7 @@ export interface TaskFormData {
   plannedDate: string | null;
   recurrence: Task['recurrence'];
   recurrenceAnchor: Task['recurrenceAnchor'];
+  recurrenceWeekdays: Task['recurrenceWeekdays'];
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
@@ -34,6 +35,9 @@ export interface TaskFormData {
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
 const PRIORITY_OPTIONS: NonNullable<Task['taskPriority']>[] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
 const URGENCY_OPTIONS: NonNullable<Task['urgency']>[] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
+/** Sunday first, matching Date.getDay(). */
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
 const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
 
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
@@ -49,6 +53,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     plannedDate: null,
     recurrence: 'None',
     recurrenceAnchor: null,
+    recurrenceWeekdays: null,
     actionPoints: null,
     notes: '',
     domainId: null,
@@ -57,7 +62,34 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     followUpDate: null,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+
+  // How many of the optional fields this task actually uses. Shown on the
+  // collapsed toggle so nothing set earlier can hide behind it unnoticed.
+  const extrasInUse = [
+    formData.plannedDate,
+    formData.projectId,
+    formData.recurrence !== 'None' ? formData.recurrence : null,
+    formData.blockedBy.length ? 'blocked' : null,
+    formData.notes?.trim() ? 'notes' : null,
+  ].filter(Boolean).length;
   const [noteBlockerText, setNoteBlockerText] = useState('');
+
+  // Open the section when editing something that already uses it, so an
+  // existing recurrence or blocker is never hidden behind a collapsed toggle.
+  // Read from the task rather than formData: this runs alongside the effect
+  // that populates the form, so formData is still empty at this point.
+  useEffect(() => {
+    const usesExtras = !!task && (
+      !!task.plannedDate || !!task.projectId ||
+      task.recurrence !== 'None' || (task.blockedBy?.length ?? 0) > 0 ||
+      !!task.notes?.trim()
+    );
+    setShowMore(usesExtras);
+    // Only when switching task: reopening on every keystroke would stop the
+    // user closing it again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
 
   useEffect(() => {
     if (task) {
@@ -70,6 +102,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         plannedDate: task.plannedDate,
         recurrence: task.recurrence,
         recurrenceAnchor: task.recurrenceAnchor,
+        recurrenceWeekdays: task.recurrenceWeekdays,
         actionPoints: task.actionPoints,
         notes: task.notes,
         domainId: task.domainId,
@@ -166,26 +199,8 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         />
       </div>
 
-      {/* Status, Priority, and Urgency */}
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label htmlFor="status" className={labelClass}>
-            Status
-          </label>
-          <select
-            id="status"
-            name="status"
-            value={formData.status}
-            onChange={handleChange}
-            className={inputClass}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Priority and Urgency */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="taskPriority" className={labelClass}>
             Priority
@@ -226,8 +241,8 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         </div>
       </div>
 
-      {/* Domain and Project */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Domain */}
+      <div>
         <div>
           <label htmlFor="domainId" className={labelClass}>
             Domain
@@ -247,29 +262,10 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="projectId" className={labelClass}>
-            Project
-          </label>
-          <select
-            id="projectId"
-            name="projectId"
-            value={formData.projectId || ''}
-            onChange={handleChange}
-            className={inputClass}
-          >
-            <option value="">No project</option>
-            {activeProjects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.icon ? `${project.icon} ` : ''}{project.name}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
-      {/* Dates */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Due date */}
+      <div>
         <div>
           <label htmlFor="dueDate" className={labelClass}>
             Due Date
@@ -283,62 +279,6 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             className={inputClass}
           />
         </div>
-        <div>
-          <label htmlFor="plannedDate" className={labelClass}>
-            Planned Date
-          </label>
-          <input
-            type="date"
-            id="plannedDate"
-            name="plannedDate"
-            value={formData.plannedDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
-      </div>
-
-      {/* Recurrence */}
-      <div>
-        <label htmlFor="recurrence" className={labelClass}>
-          Recurrence
-        </label>
-        <select
-          id="recurrence"
-          name="recurrence"
-          value={formData.recurrence}
-          onChange={handleChange}
-          className={inputClass}
-        >
-          {RECURRENCE_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-
-        {formData.recurrence !== 'None' && (
-          <div className="mt-2">
-            <label htmlFor="recurrenceAnchor" className={labelClass}>
-              Next one is counted from
-            </label>
-            <select
-              id="recurrenceAnchor"
-              name="recurrenceAnchor"
-              value={formData.recurrenceAnchor ?? 'completion'}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="completion">When I finish it</option>
-              <option value="schedule">The due date (fixed period)</option>
-            </select>
-            <p className="text-xs text-[var(--muted)] mt-1">
-              {formData.recurrenceAnchor === 'schedule'
-                ? 'Deadlines stay put whether you are early or late — for things with a real period, like a fortnightly return.'
-                : 'The clock restarts when you finish — for things you just want to do every so often.'}
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Action Points */}
@@ -382,6 +322,164 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         <p className="text-xs text-[var(--muted)] mt-1 min-h-[1rem]">
           {effortLevel(formData.actionPoints)?.hint ?? 'How much of a day does this cost?'}
         </p>
+      </div>
+
+      {/* Everything below is optional. Most tasks are a name, how much they
+          matter, where they belong and what they cost - putting eleven fields
+          in front of that made writing one down feel like filing a form. */}
+      <div className="border-t border-[var(--border-color)] pt-3">
+        <button
+          type="button"
+          onClick={() => setShowMore((open) => !open)}
+          className="text-sm text-[var(--muted)] hover:text-white flex items-center gap-1"
+          aria-expanded={showMore}
+        >
+          <span className={`transition-transform ${showMore ? 'rotate-90' : ''}`}>›</span>
+          {showMore ? 'Fewer options' : 'More options'}
+          {!showMore && extrasInUse > 0 && (
+            <span className="ml-1 text-xs px-1.5 rounded-full bg-[var(--card-hover)]">{extrasInUse}</span>
+          )}
+        </button>
+      </div>
+
+      {showMore && (
+        <div className="space-y-4">
+        {/* Status */}
+        <div>
+
+          <label htmlFor="status" className={labelClass}>
+            Status
+          </label>
+          <select
+            id="status"
+            name="status"
+            value={formData.status}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Planned date */}
+        <div>
+
+          <label htmlFor="plannedDate" className={labelClass}>
+            Planned Date
+          </label>
+          <input
+            type="date"
+            id="plannedDate"
+            name="plannedDate"
+            value={formData.plannedDate || ''}
+            onChange={handleChange}
+            className={inputClass}
+          />
+        </div>
+
+        {/* Project */}
+        <div>
+
+          <label htmlFor="projectId" className={labelClass}>
+            Project
+          </label>
+          <select
+            id="projectId"
+            name="projectId"
+            value={formData.projectId || ''}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            <option value="">No project</option>
+            {activeProjects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.icon ? `${project.icon} ` : ''}{project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+      {/* Recurrence */}
+      <div>
+        <label htmlFor="recurrence" className={labelClass}>
+          Recurrence
+        </label>
+        <select
+          id="recurrence"
+          name="recurrence"
+          value={formData.recurrence}
+          onChange={handleChange}
+          className={inputClass}
+        >
+          {RECURRENCE_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+
+        {formData.recurrence === 'Weekly' && (
+          <div className="mt-2">
+            <label className={labelClass}>On which days</label>
+            <div className="flex gap-1">
+              {WEEKDAY_LABELS.map((label, day) => {
+                const picked = (formData.recurrenceWeekdays || []).includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setFormData((prev) => {
+                      const current = prev.recurrenceWeekdays || [];
+                      const next = current.includes(day)
+                        ? current.filter((d) => d !== day)
+                        : [...current, day].sort((a, b) => a - b);
+                      return { ...prev, recurrenceWeekdays: next.length ? next : null };
+                    })}
+                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                      picked
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceWeekdays?.length
+                ? 'It comes back on the next of these days.'
+                : 'Leave blank for a plain week after each time you do it.'}
+            </p>
+          </div>
+        )}
+
+        {formData.recurrence !== 'None' && (
+          <div className="mt-2">
+            <label htmlFor="recurrenceAnchor" className={labelClass}>
+              Next one is counted from
+            </label>
+            <select
+              id="recurrenceAnchor"
+              name="recurrenceAnchor"
+              value={formData.recurrenceAnchor ?? 'completion'}
+              onChange={handleChange}
+              className={inputClass}
+            >
+              <option value="completion">When I finish it</option>
+              <option value="schedule">The due date (fixed period)</option>
+            </select>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceAnchor === 'schedule'
+                ? 'Deadlines stay put whether you are early or late — for things with a real period, like a fortnightly return.'
+                : 'The clock restarts when you finish — for things you just want to do every so often.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Blocked By */}
@@ -480,6 +578,9 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           placeholder="Additional notes..."
         />
       </div>
+
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 justify-end pt-4 border-t border-[var(--border-color)]">
