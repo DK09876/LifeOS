@@ -290,11 +290,13 @@ export function isFilterActive(values: string[]): boolean {
 }
 
 // Helper to check if a value matches the filter
-export function matchesFilter(filterValues: string[], itemValue: string): boolean {
+export function matchesFilter(filterValues: string[], itemValue: string | null): boolean {
   // No filter or 'all' selected = matches everything
   if (filterValues.length === 0 || (filterValues.length === 1 && filterValues[0] === 'all')) {
     return true;
   }
+  // An unset priority/urgency matches no explicit filter value.
+  if (itemValue === null) return false;
   return filterValues.includes(itemValue);
 }
 

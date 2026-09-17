@@ -11,8 +11,8 @@ import HabitCard from '@/components/HabitCard';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
-import { getTodayString } from '@/lib/dates';
-import { getTaskPriorityBorder } from '@/lib/colors';
+import { getTodayString, parseLocalDateTime } from '@/lib/dates';
+import { getTaskPriorityBorder, levelRank } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
 
 export default function TodayPage() {
@@ -50,8 +50,8 @@ export default function TodayPage() {
       return false;
     }).sort((a, b) => {
       // Sort by priority (1 = highest)
-      const priorityA = parseInt(a.taskPriority[0]) || 3;
-      const priorityB = parseInt(b.taskPriority[0]) || 3;
+      const priorityA = levelRank(a.taskPriority);
+      const priorityB = levelRank(b.taskPriority);
       return priorityA - priorityB;
     });
   }, [tasks]);
@@ -60,7 +60,7 @@ export default function TodayPage() {
   const completedToday = useMemo(() => {
     return tasks.filter(t => {
       if (t.status !== 'Done' || !t.doneDate) return false;
-      return isToday(new Date(t.doneDate));
+      return isToday(parseLocalDateTime(t.doneDate));
     });
   }, [tasks]);
 
@@ -198,7 +198,7 @@ export default function TodayPage() {
           <p className="text-[var(--muted)] text-sm">Completed ({habitsCompletedToday.length} habits + {completedToday.length} tasks)</p>
         </div>
         <div className="bg-[var(--card-bg)] rounded-lg p-4">
-          <p className="text-2xl font-semibold text-white">{todayTasks.filter(t => t.taskPriority.startsWith('1') || t.taskPriority.startsWith('2')).length}</p>
+          <p className="text-2xl font-semibold text-white">{todayTasks.filter(t => levelRank(t.taskPriority) <= 2).length}</p>
           <p className="text-[var(--muted)] text-sm">High priority</p>
         </div>
       </div>

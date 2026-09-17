@@ -8,8 +8,10 @@ export interface Task {
   id: string;
   taskName: string;
   status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
-  taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
-  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
+  // null means "not yet decided" - a task is only promoted out of Needs
+  // Details once these are set. See isTaskComplete in lib/hooks.ts.
+  taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional' | null;
+  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday' | null;
   taskScore: number;
   importanceScore: number;
   urgencyScore: number;

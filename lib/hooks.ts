@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from './live-query';
-import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
+import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, nextEventDate } from './db';
 import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
 
@@ -18,9 +18,15 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   for (const task of allTasks) {
     if (task.deletedAt) continue;
     if (checkNeedsReset(task)) {
-      const newStatus = task.plannedDate ? 'Planned' : 'Backlog';
+      // Roll the dates forward as well as the status. Leaving them on the
+      // previous occurrence brought the task back already overdue, planned
+      // for a day that had passed, where it sat in Triage for good.
+      const { dueDate, plannedDate } = nextRecurrenceDates(task);
+      const newStatus = plannedDate ? 'Planned' : 'Backlog';
       await db.tasks.update(task.id, {
         status: newStatus,
+        dueDate,
+        plannedDate,
         lastCompleted: null,
         doneDate: null,
         updatedAt: new Date().toISOString(),
@@ -71,7 +77,11 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   for (const event of allEvents) {
     if (event.deletedAt) continue;
     if (checkEventNeedsReset(event)) {
-      await db.events.update(event.id, { lastCompleted: null, updatedAt: new Date().toISOString() });
+      // Move the occurrence forward as well as clearing lastCompleted.
+      // Clearing alone left a recurring event pinned to its first date, so it
+      // sat in Triage as permanently missed and never reached a future week.
+      const date = nextEventDate(event) ?? event.date;
+      await db.events.update(event.id, { date, lastCompleted: null, updatedAt: new Date().toISOString() });
     }
   }
 
@@ -318,6 +328,7 @@ function isTaskComplete(task: Partial<Task>): boolean {
   return !!(
     task.taskName?.trim() &&
     task.taskPriority &&
+    task.urgency &&
     task.domainId &&
     task.actionPoints
   );
@@ -402,8 +413,8 @@ export async function createTask(taskData: {
     id,
     taskName: taskData.taskName,
     status: taskData.status || 'Needs Details',
-    taskPriority: taskData.taskPriority || '3 - Normal',
-    urgency: taskData.urgency || '3 - Normal',
+    taskPriority: taskData.taskPriority ?? null,
+    urgency: taskData.urgency ?? null,
     taskScore: 0,
     importanceScore: 0,
     urgencyScore: 0,
@@ -441,7 +452,10 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
 
   // Recalculate scores if relevant fields changed
   let { importanceScore, urgencyScore, taskScore } = { importanceScore: task.importanceScore, urgencyScore: task.urgencyScore, taskScore: task.taskScore };
-  if (updates.taskPriority || updates.urgency || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
+  // Compare against undefined, not truthiness: priority and urgency can now
+  // be cleared back to null, and a truthiness test would skip the rescore
+  // and leave the task carrying a score it no longer earns.
+  if (updates.taskPriority !== undefined || updates.urgency !== undefined || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
     const domainId = updates.domainId !== undefined ? updates.domainId : task.domainId;
     let domainPriority: string | undefined;
     if (domainId) {

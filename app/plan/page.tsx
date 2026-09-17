@@ -11,9 +11,10 @@ import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLe
 import { useTasks, useDomains, useVisibleFilterPresets, useEvents, useProjects, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
-import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder, getDueSoonLabel } from '@/lib/colors';
+import { getDueDateColor, getDueSoonLabel, getPriorityDotColor, getTaskPriorityBorder, getTaskPriorityColor, levelLabel, levelRank } from '@/lib/colors';
 import { parseLocalDate, toDateString } from '@/lib/dates';
 import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeekSchedule, WeekDayInfo } from '@/lib/suggest';
+import { tasksForDay } from '@/lib/schedule';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -163,8 +164,8 @@ export default function PlanPage() {
   // Comparators for sorting
   const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
     taskName: (a, b) => a.taskName.localeCompare(b.taskName),
-    taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
-    urgency: (a, b) => a.urgency.localeCompare(b.urgency),
+    taskPriority: (a, b) => levelRank(a.taskPriority) - levelRank(b.taskPriority),
+    urgency: (a, b) => levelRank(a.urgency) - levelRank(b.urgency),
     dueDate: (a, b) => (a.dueDate || 'z').localeCompare(b.dueDate || 'z'),
     domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
     actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
@@ -248,6 +249,14 @@ export default function PlanPage() {
       archived: tasks.filter(t => t.status === 'Archived'),
     };
   }, [tasks, events]);
+
+  // Everything still open, whatever its status. The Unscheduled column and
+  // the suggester want the narrower activeTasks below; the calendar wants
+  // this, so that a planned task is drawn even while it needs details.
+  const liveTasks = useMemo(
+    () => tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived'),
+    [tasks],
+  );
 
   // Active tasks (not done/archived/needs details/blocked)
   const activeTasks = useMemo(() => {
@@ -339,19 +348,20 @@ export default function PlanPage() {
   const tasksByDay = useMemo(() => {
     return calendarDays.map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
+      // Same rule as the Week view: planned work on its planned day, an
+      // unplanned deadline on its due day. Built from every live task rather
+      // than activeTasks - a task still needing details can be planned for a
+      // day, and hiding it here while the Week view showed it meant the two
+      // calendars disagreed about the same week.
       return {
         date: day,
-        tasks: activeTasks.filter(t => {
-          if (!t.plannedDate) return false;
-          return t.plannedDate === dayStr;
-        }).sort((a, b) => {
-          const priorityA = parseInt(a.taskPriority[0]) || 3;
-          const priorityB = parseInt(b.taskPriority[0]) || 3;
-          return priorityA - priorityB;
+        tasks: tasksForDay(liveTasks, dayStr).sort((a, b) => {
+          if (a.kind !== b.kind) return a.kind === 'planned' ? -1 : 1;
+          return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
         })
       };
     });
-  }, [activeTasks, calendarDays]);
+  }, [liveTasks, calendarDays]);
 
   // Events by day for the calendar
   const eventsByDay = useMemo(() => {
@@ -697,7 +707,7 @@ export default function PlanPage() {
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-white font-medium">{task.taskName}</h3>
             <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-              {task.taskPriority.split(' - ')[1]}
+              {levelLabel(task.taskPriority)}
             </span>
           </div>
 
@@ -731,15 +741,17 @@ export default function PlanPage() {
   );
 
   // Render a task in the calendar
-  const renderCalendarTask = (task: Task) => (
+  const renderCalendarTask = (task: Task, kind: 'planned' | 'due' = 'planned') => (
     <div
       key={task.id}
       draggable
       onDragStart={(e) => handleDragStart(e, task.id)}
       onDragEnd={handleDragEnd}
-      className={`bg-[var(--background)] rounded p-1.5 group hover:bg-[var(--card-hover)] cursor-grab active:cursor-grabbing transition-colors ${
-        draggedTaskId === task.id ? 'opacity-50' : ''
-      }`}
+      // Dashed amber marks a deadline that has not been planned onto a day;
+      // dragging it onto one turns it into a commitment and a solid card.
+      className={`rounded p-1.5 group hover:bg-[var(--card-hover)] cursor-grab active:cursor-grabbing transition-colors ${
+        kind === 'due' ? 'bg-transparent border border-dashed border-amber-500/50' : 'bg-[var(--background)]'
+      } ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
       onClick={() => handleEditTask(task)}
     >
       <div className="flex items-start gap-1.5">
@@ -753,6 +765,9 @@ export default function PlanPage() {
           <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
           <div className="flex items-center gap-1 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
+            {kind === 'due' && (
+              <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400">due</span>
+            )}
             {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
           </div>
         </div>
@@ -907,7 +922,7 @@ export default function PlanPage() {
                           </span>
                         )}
                         <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-                          {task.taskPriority.split(' - ')[1]}
+                          {levelLabel(task.taskPriority)}
                         </span>
                       </div>
                     </div>
@@ -1234,7 +1249,7 @@ export default function PlanPage() {
                     </div>
                   ) : (
                     <>
-                      {tasksByDay[0]?.tasks.map(task => renderDetailedTask(task))}
+                      {tasksByDay[0]?.tasks.map(({ task }) => renderDetailedTask(task))}
                     </>
                   )}
                   <div className="flex gap-2">
@@ -1272,7 +1287,7 @@ export default function PlanPage() {
                     .filter(Boolean) as Task[];
 
                   // Calculate AP for footer
-                  const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
+                  const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t.task), 0);
                   const eventAP = dayEvents.reduce((sum, e) => sum + (parseInt(e.actionPoints || '0') || suggestControls.defaultAP), 0);
                   const suggestedAP = suggestedTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
                   const totalAP = taskAP + eventAP + suggestedAP;
@@ -1296,9 +1311,9 @@ export default function PlanPage() {
                           {format(date, 'd')}
                         </p>
                       </button>
-                      <div className="bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
+                      <div className="group bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
                         {dayEvents.map(event => renderCalendarEvent(event))}
-                        {dayTasks.map(task => renderCalendarTask(task))}
+                        {dayTasks.map(({ task, kind }) => renderCalendarTask(task, kind))}
 
                         {/* Suggested tasks (inline with dashed green border) */}
                         {suggestedTasks.map(task => {
@@ -1352,7 +1367,7 @@ export default function PlanPage() {
                         )}
                         <button
                           onClick={() => handleOpenCreateTask(date)}
-                          className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 hover:opacity-100 transition-opacity"
+                          className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                         >
                           + Add
                         </button>
@@ -1410,14 +1425,14 @@ export default function PlanPage() {
                             const dayStr = format(date, 'yyyy-MM-dd');
                             const dayEvents = events.filter(e => e.date === dayStr);
                             const allItems = [
-                              ...dayEvents.map(e => ({ type: 'event' as const, item: e })),
-                              ...dayTasks.map(t => ({ type: 'task' as const, item: t })),
+                              ...dayEvents.map(e => ({ type: 'event' as const, item: e, kind: 'planned' as const })),
+                              ...dayTasks.map(({ task, kind }) => ({ type: 'task' as const, item: task, kind })),
                             ];
                             const visibleItems = allItems.slice(0, 3);
                             const overflowCount = allItems.length - 3;
                             return (
                               <>
-                                {visibleItems.map(({ type, item }) =>
+                                {visibleItems.map(({ type, item, kind }) =>
                                   type === 'event' ? (
                                     <div
                                       key={item.id}
@@ -1435,7 +1450,7 @@ export default function PlanPage() {
                                       onClick={() => handleEditTask(item as Task)}
                                       className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
                                         getTaskPriorityColor((item as Task).taskPriority)
-                                      } hover:opacity-80 ${draggedTaskId === item.id ? 'opacity-50' : ''}`}
+                                      } ${kind === 'due' ? 'border border-dashed border-amber-500/60' : ''} hover:opacity-80 ${draggedTaskId === item.id ? 'opacity-50' : ''}`}
                                     >
                                       {(item as Task).taskName}
                                     </div>

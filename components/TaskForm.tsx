@@ -29,8 +29,8 @@ export interface TaskFormData {
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
-const PRIORITY_OPTIONS: Task['taskPriority'][] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
-const URGENCY_OPTIONS: Task['urgency'][] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
+const PRIORITY_OPTIONS: NonNullable<Task['taskPriority']>[] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
+const URGENCY_OPTIONS: NonNullable<Task['urgency']>[] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
 const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
 
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
@@ -40,8 +40,8 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
   const [formData, setFormData] = useState<TaskFormData>({
     taskName: '',
     status: 'Needs Details',
-    taskPriority: '3 - Normal',
-    urgency: '3 - Normal',
+    taskPriority: null,
+    urgency: null,
     dueDate: null,
     plannedDate: null,
     recurrence: 'None',
@@ -186,10 +186,11 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           <select
             id="taskPriority"
             name="taskPriority"
-            value={formData.taskPriority}
+            value={formData.taskPriority ?? ''}
             onChange={handleChange}
             className={inputClass}
           >
+            <option value="">Not set</option>
             {PRIORITY_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
@@ -204,10 +205,11 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           <select
             id="urgency"
             name="urgency"
-            value={formData.urgency}
+            value={formData.urgency ?? ''}
             onChange={handleChange}
             className={inputClass}
           >
+            <option value="">Not set</option>
             {URGENCY_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}

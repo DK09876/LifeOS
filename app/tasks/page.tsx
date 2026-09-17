@@ -9,8 +9,8 @@ import { ColumnsButton, SortButton, FilterButton, SortLevel, ColumnDef, FilterDe
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
-import { getStatusColor, getTaskPriorityColor, getUrgencyColor, getDueDateColor } from '@/lib/colors';
-import { parseLocalDate } from '@/lib/dates';
+import { getDueDateColor, getStatusColor, getTaskPriorityColor, getUrgencyColor, levelLabel, levelRank } from '@/lib/colors';
+import { parseLocalDate, parseLocalDateTime } from '@/lib/dates';
 
 const TASK_FILTERS: FilterDef[] = [
   {
@@ -138,8 +138,8 @@ export default function TasksPage() {
   const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
     taskName: (a, b) => a.taskName.localeCompare(b.taskName),
     status: (a, b) => a.status.localeCompare(b.status),
-    taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
-    urgency: (a, b) => a.urgency.localeCompare(b.urgency),
+    taskPriority: (a, b) => levelRank(a.taskPriority) - levelRank(b.taskPriority),
+    urgency: (a, b) => levelRank(a.urgency) - levelRank(b.urgency),
     dueDate: (a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''),
     plannedDate: (a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''),
     doneDate: (a, b) => (a.doneDate || '').localeCompare(b.doneDate || ''),
@@ -346,14 +346,14 @@ export default function TasksPage() {
                   {show('taskPriority') && (
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-                        {task.taskPriority.split(' - ')[1]}
+                        {levelLabel(task.taskPriority)}
                       </span>
                     </td>
                   )}
                   {show('urgency') && (
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs ${getUrgencyColor(task.urgency)}`}>
-                        {task.urgency.split(' - ')[1]}
+                        {levelLabel(task.urgency)}
                       </span>
                     </td>
                   )}
@@ -369,7 +369,7 @@ export default function TasksPage() {
                   )}
                   {show('doneDate') && (
                     <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                      {task.doneDate ? format(new Date(task.doneDate), 'MMM d') : '—'}
+                      {task.doneDate ? format(parseLocalDateTime(task.doneDate), 'MMM d') : '—'}
                     </td>
                   )}
                   {show('domain') && (

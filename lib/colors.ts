@@ -2,7 +2,8 @@ import { startOfDay } from 'date-fns';
 import { parseLocalDate } from './dates';
 
 // Task priority → badge color (bg + text)
-export function getTaskPriorityColor(priority: string): string {
+export function getTaskPriorityColor(priority: string | null): string {
+  if (!priority) return 'bg-yellow-500/20 text-yellow-400';
   switch (priority) {
     case '1 - Urgent': return 'bg-red-500/20 text-red-400';
     case '2 - High': return 'bg-orange-500/20 text-orange-400';
@@ -14,7 +15,8 @@ export function getTaskPriorityColor(priority: string): string {
 }
 
 // Task priority → border-l color (for Today page cards)
-export function getTaskPriorityBorder(priority: string): string {
+export function getTaskPriorityBorder(priority: string | null): string {
+  if (!priority) return 'border-l-yellow-500 bg-yellow-500/5';
   switch (priority) {
     case '1 - Urgent': return 'border-l-red-500 bg-red-500/5';
     case '2 - High': return 'border-l-orange-500 bg-orange-500/5';
@@ -26,7 +28,8 @@ export function getTaskPriorityBorder(priority: string): string {
 }
 
 // Task priority → small dot color
-export function getPriorityDotColor(priority: string): string {
+export function getPriorityDotColor(priority: string | null): string {
+  if (!priority) return 'bg-yellow-500';
   switch (priority) {
     case '1 - Urgent': return 'bg-red-500';
     case '2 - High': return 'bg-orange-500';
@@ -61,7 +64,8 @@ export function getStatusColor(status: string): string {
 }
 
 // Urgency level → badge color (bg + text)
-export function getUrgencyColor(urgency: string): string {
+export function getUrgencyColor(urgency: string | null): string {
+  if (!urgency) return 'bg-yellow-500/20 text-yellow-400';
   switch (urgency) {
     case '1 - Critical': return 'bg-red-500/20 text-red-400';
     case '2 - High': return 'bg-orange-500/20 text-orange-400';
@@ -73,7 +77,8 @@ export function getUrgencyColor(urgency: string): string {
 }
 
 // Urgency level → small dot color
-export function getUrgencyDotColor(urgency: string): string {
+export function getUrgencyDotColor(urgency: string | null): string {
+  if (!urgency) return 'bg-yellow-500';
   switch (urgency) {
     case '1 - Critical': return 'bg-red-500';
     case '2 - High': return 'bg-orange-500';
@@ -109,4 +114,25 @@ export function getDueDateColor(dueDate: string | null): string {
   if (daysUntil <= 2) return 'text-yellow-400';
   if (daysUntil <= 7) return 'text-blue-400';
   return 'text-[var(--muted)]';
+}
+
+/**
+ * Display text for a priority/urgency level: '2 - High' reads as 'High'.
+ *
+ * These fields are null until the user sets them, which is what keeps a task
+ * in Needs Details, so an unset value has to render as something rather than
+ * silently collapsing to an empty badge.
+ */
+export function levelLabel(level: string | null): string {
+  return level ? level.split(' - ')[1] : 'Not set';
+}
+
+/**
+ * Sort rank for a priority/urgency level - the leading digit, so '1 - Urgent'
+ * sorts before '2 - High'. Unset sorts last: an unrated task is not urgent,
+ * it is undecided, and it belongs below the ones that have been judged.
+ */
+export function levelRank(level: string | null): number {
+  if (!level) return 9;
+  return parseInt(level[0], 10) || 3;
 }

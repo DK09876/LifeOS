@@ -1,5 +1,7 @@
+import { addDays, addMonths, addYears } from 'date-fns';
+
 import { clearAllOnServer, makeTable } from './store';
-import { toDateString } from './dates';
+import { getTodayString, parseLocalDate, toDateString } from './dates';
 import { BlockedByEntry } from '@/types';
 
 // Database types - independent of external services
@@ -7,8 +9,10 @@ export interface Task {
   id: string;
   taskName: string;
   status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
-  taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
-  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
+  // null means "not yet decided" - a task is only promoted out of Needs
+  // Details once these are set. See isTaskComplete in lib/hooks.ts.
+  taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional' | null;
+  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday' | null;
   taskScore: number;
   importanceScore: number;
   urgencyScore: number;
@@ -255,6 +259,57 @@ export function calculateTaskScore(task: Partial<Task>, domainPriority?: string)
   return calculateTaskScores(task, domainPriority).combinedScore;
 }
 
+/**
+ * Move a date one recurrence interval past `from`.
+ *
+ * Anchored on when the task was actually completed rather than on its old
+ * due date: a weekly task finished three days late recurs a week from the
+ * finish, not a week from a date already in the past. Without this the reset
+ * left the old dates untouched and the task came back permanently overdue.
+ */
+export function advanceDate(from: Date, recurrence: Task['recurrence']): Date | null {
+  switch (recurrence) {
+    case 'Daily': return addDays(from, 1);
+    case 'Weekly': return addDays(from, 7);
+    case 'Biweekly': return addDays(from, 14);
+    case 'Monthly': return addMonths(from, 1);
+    case 'Bimonthly': return addMonths(from, 2);
+    case 'Quarterly': return addMonths(from, 3);
+    case 'Half-Yearly': return addMonths(from, 6);
+    case 'Yearly': return addYears(from, 1);
+    default: return null;
+  }
+}
+
+/**
+ * The due/planned dates a recurring task should carry after it is completed.
+ *
+ * The gap between planning and deadline is part of how the task is set up -
+ * "plan it Wednesday, it is due Friday" - so the two dates move together
+ * rather than collapsing onto the same day.
+ */
+export function nextRecurrenceDates(
+  task: Pick<Task, 'recurrence' | 'dueDate' | 'plannedDate' | 'lastCompleted'>,
+): { dueDate: string | null; plannedDate: string | null } {
+  const completedAt = task.lastCompleted ? new Date(task.lastCompleted) : new Date();
+  const next = advanceDate(completedAt, task.recurrence);
+  if (!next) return { dueDate: task.dueDate, plannedDate: task.plannedDate };
+
+  const nextStr = toDateString(next);
+  // Anchor on whichever date the task actually had; if it had both, keep the
+  // number of days between them.
+  if (task.dueDate && task.plannedDate) {
+    const gap = Math.round(
+      (parseLocalDate(task.dueDate).getTime() - parseLocalDate(task.plannedDate).getTime()) / 86400000,
+    );
+    return { dueDate: nextStr, plannedDate: toDateString(addDays(next, -gap)) };
+  }
+  return {
+    dueDate: task.dueDate ? nextStr : null,
+    plannedDate: task.plannedDate ? nextStr : null,
+  };
+}
+
 // Check if a recurring task needs reset
 export function checkNeedsReset(task: Task): boolean {
   if (task.recurrence === 'None' || task.status !== 'Done' || !task.lastCompleted) {
@@ -378,10 +433,18 @@ export function isHabitDueToday(habit: Habit): boolean {
     return false;
   }
 
-  // If targetPerWeek is set, check if weekly goal is met
+  // Asked for at most once a day, whatever the cadence or quota. This used to
+  // sit below the targetPerWeek branch, which returned purely on the weekly
+  // count - so a habit completed today stayed in the due list and showed up
+  // under "completed today" at the same time.
+  if ((habit.completionDates || []).includes(getTodayString())) {
+    return false;
+  }
+
+  // A weekly quota - "three times a week" - governs how often it is asked for
+  // within the week, in place of the recurrence interval.
   if (habit.targetPerWeek && habit.targetPerWeek > 0) {
-    const completionsThisWeek = getCompletionsThisWeek(habit);
-    return completionsThisWeek < habit.targetPerWeek;
+    return getCompletionsThisWeek(habit) < habit.targetPerWeek;
   }
 
   // If never completed, it's due
@@ -535,6 +598,19 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 // Check if a recurring event needs reset (same logic as checkNeedsReset but for Event type)
+/**
+ * The date a recurring event should move to once its occurrence is done.
+ *
+ * Anchored on the event's own date rather than on when it was ticked off:
+ * an event is an appointment, and a standing Monday meeting marked done on
+ * Tuesday should still be next Monday, not drift a day each week. (Tasks use
+ * the completion date instead - see nextRecurrenceDates.)
+ */
+export function nextEventDate(event: Pick<Event, 'date' | 'recurrence'>): string | null {
+  const next = advanceDate(parseLocalDate(event.date), event.recurrence);
+  return next ? toDateString(next) : null;
+}
+
 export function checkEventNeedsReset(event: Event): boolean {
   if (event.recurrence === 'None' || !event.lastCompleted) {
     return false;

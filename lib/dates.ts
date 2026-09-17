@@ -40,3 +40,17 @@ export function isDateToday(dateStr: string): boolean {
 export function getStartOfToday(): Date {
   return startOfDay(new Date());
 }
+
+/**
+ * Parse a stored moment that may be either a full ISO timestamp or a
+ * date-only string.
+ *
+ * doneDate has two writers: the web app records an exact timestamp, while
+ * the voice assistant records a plain YYYY-MM-DD. Passing the date-only form
+ * to `new Date()` parses it as UTC midnight, which is the previous evening
+ * in any western timezone - so a task completed today was reported as
+ * completed yesterday. Date-only values are read as local midnight instead.
+ */
+export function parseLocalDateTime(value: string): Date {
+  return value.length === 10 ? parseLocalDate(value) : new Date(value);
+}

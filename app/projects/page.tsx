@@ -8,7 +8,7 @@ import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, createProject, updateProjectData, deleteProject, createTask, updateTaskData } from '@/lib/hooks';
 import { Project, Task } from '@/types';
-import { getTaskPriorityColor, getStatusColor } from '@/lib/colors';
+import { getStatusColor, getTaskPriorityColor, levelLabel } from '@/lib/colors';
 
 type StatusFilter = 'all' | 'Active' | 'Completed' | 'Archived';
 
@@ -239,7 +239,7 @@ export default function ProjectsPage() {
                             <div className="flex items-center gap-2">
                               <span className={`text-xs ${getStatusColor(task.status)}`}>{task.status}</span>
                               <span className={`px-1.5 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-                                {task.taskPriority.split(' - ')[1]}
+                                {levelLabel(task.taskPriority)}
                               </span>
                               {task.actionPoints && (
                                 <span className="text-xs text-[var(--muted)]">{task.actionPoints} AP</span>
