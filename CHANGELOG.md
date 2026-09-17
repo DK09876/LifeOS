@@ -10,6 +10,7 @@ All notable changes to LifeOS will be documented in this file.
 - Recurring events roll forward too, anchored on the event's own date so a standing Monday meeting marked done late does not drift a day each week
 
 ### Scoring
+- A repeating task with no due date is now due by the end of its own cycle. "Every two weeks" already says when it is due, but the interval only decided when the task came back, never whether it was late — so plants a fortnight past their watering registered no pressure at all. An explicit due date still wins, since that is a statement rather than an inference
 - Domain priority now contributes 5/10/15 instead of 10/20/30. It used to swing 20 points across a priority range of only 40 — half the signal — so booking a dentist appointment came out as important as filing a tax return, and anything in a Maintenance domain was capped below both. Aspirational work lives in exactly those domains, because people mark them Maintenance for not being urgent day to day, so the thing that mattered most could never rise. Importance now ranges 15–65 and the matrix threshold moves to 45
 - Overdue now escalates instead of flattening: +50 the first day late rising to +70 beyond a month. A task one day late and one three months late used to score identically
 - Tasks accrue pressure from neglect (+5 after two weeks untouched, up to +20 after three months) whether or not they have a due date — a deadline three months out does not make a task ignored for three months calm

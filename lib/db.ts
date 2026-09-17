@@ -295,9 +295,15 @@ export function calculateTaskScores(
     else if (age >= 14) neglect = 5;
   }
 
+  // "Every two weeks" already says when it is due. A repeating task with no
+  // explicit deadline used to float free - the interval decided only when it
+  // came back, never whether it was late - so plants a fortnight past their
+  // watering registered nothing. The cycle is the deadline.
+  const effectiveDue = task.dueDate ?? cycleDueDate(task);
+
   let deadline = 0;
-  if (task.dueDate) {
-    const days = Math.ceil((new Date(task.dueDate + 'T00:00:00').getTime() - new Date().getTime()) / 86400000);
+  if (effectiveDue) {
+    const days = Math.ceil((new Date(effectiveDue + 'T00:00:00').getTime() - new Date().getTime()) / 86400000);
     if (days < 0) {
       // Overdue escalates instead of saturating. A flat value meant a task a
       // day late and one three months late were indistinguishable, so nothing
@@ -337,6 +343,23 @@ export function calculateTaskScores(
 // Backward-compat wrapper
 export function calculateTaskScore(task: Partial<Task>, domainPriority?: string): number {
   return calculateTaskScores(task, domainPriority).combinedScore;
+}
+
+/**
+ * The deadline a repeating task carries by virtue of repeating.
+ *
+ * One interval on from the last time it was done - or from when it was
+ * written, if it never has been. Only used when there is no explicit due
+ * date, so anything with a real deadline keeps it.
+ */
+function cycleDueDate(
+  task: Partial<Pick<Task, 'recurrence' | 'lastCompleted' | 'createdAt'>>,
+): string | null {
+  if (!task.recurrence || task.recurrence === 'None') return null;
+  const since = task.lastCompleted || task.createdAt;
+  if (!since) return null;
+  const next = advanceDate(new Date(since), task.recurrence);
+  return next ? toDateString(next) : null;
 }
 
 /**

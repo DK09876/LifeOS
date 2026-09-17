@@ -256,3 +256,38 @@ describe('rot: overdue escalates and neglect accrues', () => {
     expect(pressure({ dueDate: dueIn(0) })).toBeGreaterThan(pressure({ updatedAt: daysAgo(120) }));
   });
 });
+
+describe('a repeating task is due by the end of its cycle', () => {
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86400000).toISOString();
+  const pressure = (extra: Record<string, unknown>) =>
+    calculateTaskScores({ urgency: '3 - Normal', ...extra }).urgencyScore - 30;
+
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  // "Every two weeks" already says when it is due. Without this the interval
+  // decided only when the task came back, never whether it was late, so
+  // plants a fortnight past their watering registered nothing at all.
+  it('treats one interval past the last completion as the deadline', () => {
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(14) })).toBe(45); // due today
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(15) })).toBe(50); // a day late
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(21) })).toBe(65); // a week late
+  });
+
+  it('counts from when it was written if it has never been done', () => {
+    expect(pressure({ recurrence: 'Weekly', createdAt: daysAgo(8) })).toBe(50);
+  });
+
+  it('is calm in the middle of its cycle', () => {
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(2) })).toBe(20);
+  });
+
+  // An explicit deadline is a statement; the cycle is only an inference.
+  it('never overrides a real due date', () => {
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(30), dueDate: dueIn(10) })).toBe(20);
+  });
+
+  it('does nothing for a one-off task', () => {
+    expect(pressure({ recurrence: 'None', createdAt: daysAgo(400) })).toBe(20); // neglect only
+  });
+});
