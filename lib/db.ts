@@ -236,15 +236,24 @@ export async function deleteDomain(id: string): Promise<void> {
 export function calculateTaskScores(
   task: Partial<Task>, domainPriority?: string
 ): { importanceScore: number; urgencyScore: number; combinedScore: number } {
-  // Importance = task priority (10-50) + domain priority (10-30) → range 20-80
+  // Importance = task priority (10-50) + domain priority (5-15) → range 15-65.
+  //
+  // The domain used to swing 20 points across a priority range of only 40, so
+  // it was half the signal: booking a dentist appointment came out as
+  // important as filing a tax return because Health was marked Critical, and
+  // anything filed under a Maintenance domain was capped below it however
+  // much it mattered. Aspirational work lives in exactly those domains -
+  // people mark them Maintenance because they are not urgent day to day - so
+  // the thing that mattered most could never rise. Domain is now a
+  // tiebreaker; what the task is worth is mostly what you said it is worth.
   const priorityScores: Record<string, number> = {
     '1 - Urgent': 50, '2 - High': 40, '3 - Normal': 30, '4 - Low': 20, '5 - Optional': 10,
   };
   const domainScores: Record<string, number> = {
-    '1 - Critical': 30, '2 - Important': 20, '3 - Maintenance': 10,
+    '1 - Critical': 15, '2 - Important': 10, '3 - Maintenance': 5,
   };
   const importanceScore = (priorityScores[task.taskPriority || '3 - Normal'] || 30)
-    + (domainScores[domainPriority || '3 - Maintenance'] || 10);
+    + (domainScores[domainPriority || '3 - Maintenance'] || 5);
 
   // Urgency = urgency field (10-50) + time pressure (0-70) → range 10-120.
   //

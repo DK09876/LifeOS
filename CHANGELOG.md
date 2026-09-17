@@ -10,6 +10,7 @@ All notable changes to LifeOS will be documented in this file.
 - Recurring events roll forward too, anchored on the event's own date so a standing Monday meeting marked done late does not drift a day each week
 
 ### Scoring
+- Domain priority now contributes 5/10/15 instead of 10/20/30. It used to swing 20 points across a priority range of only 40 — half the signal — so booking a dentist appointment came out as important as filing a tax return, and anything in a Maintenance domain was capped below both. Aspirational work lives in exactly those domains, because people mark them Maintenance for not being urgent day to day, so the thing that mattered most could never rise. Importance now ranges 15–65 and the matrix threshold moves to 45
 - Overdue now escalates instead of flattening: +50 the first day late rising to +70 beyond a month. A task one day late and one three months late used to score identically
 - Tasks accrue pressure from neglect (+5 after two weeks untouched, up to +20 after three months) whether or not they have a due date — a deadline three months out does not make a task ignored for three months calm
 - A planned date that has not passed stops neglect accruing: committing to a day is the answer to "when", and the pressure was only ever about not having one. Miss the day and it resumes
@@ -29,8 +30,14 @@ All notable changes to LifeOS will be documented in this file.
 - Expect to re-baseline your daily budget once habits are counted — on the review data it went from 7 AP of tasks to 17 AP once three habits were included
 
 ### Blocked work
-- A blocked task no longer accrues neglect. Waiting on someone else is not neglect, and scoring it as rot pushed work nobody could act on up a list it was invisible on
-- Blocked tasks take a follow-up date. Until then they stay quiet; on the day, Today asks whether to chase, defer or unblock them
+- Blocked tasks are now parked: they stop accruing neglect and come off every calendar. Waiting on someone else is not neglect, and scoring it as rot pushed work nobody could act on up a list it was invisible on
+- They take a follow-up date instead. Until then they stay quiet; on the day, Today asks whether to chase, defer or unblock
+
+### Retrospect
+- New page. The day meter was a snapshot that evaporated at midnight, so the app could tell you today was full but never that you are always full
+- Shows the last four weeks as bars against the budget you had set each day, what you average versus what you allow yourself, how many days ran over, and what you finished
+- Habit streaks and the 30-day strips live here too
+- Days are written up on the first visit of the following morning, which is the first moment a day is finished and safe to total
 
 ### Today
 - Added a day effort meter: capacity, what you have used, and what is still planned. Capacity starts from your Plan budget and can be adjusted for a single day

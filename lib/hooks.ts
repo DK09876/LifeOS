@@ -6,6 +6,9 @@ import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset,
 import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
 import { bestStreakSoFar, currentStreak } from './streaks';
+import { CAPACITY_PREF, capacityFor, parseCapacityMap } from './capacity';
+import { HISTORY_PREF, parseHistory, pruneHistory, recentDays, spentOn } from './history';
+import { DEFAULT_SUGGEST_CONTROLS } from './suggest';
 
 /** Per-profile marker for the last daily maintenance run. */
 const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
@@ -86,11 +89,51 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
     }
   }
 
+  // Close yesterday's books. The first run of a new day is the first moment
+  // the previous one is finished and safe to total up, and this check already
+  // runs exactly once a day.
+  await recordYesterday();
+
   // Record when this ran, per profile, so it happens once a day rather than
   // on every page load.
   await savePreference(RECURRENCE_LAST_RUN, getTodayString());
 
   return { tasksReset, tasksRescored };
+}
+
+/**
+ * Write what yesterday cost into the history.
+ *
+ * Only completions are recorded; what was planned for a past day cannot be
+ * recovered afterwards, and a guess would make the record less trustworthy
+ * than no record.
+ */
+async function recordYesterday(): Promise<void> {
+  const yesterday = recentDays(1)[0];
+  const history = pruneHistory(parseHistory(getPreference(HISTORY_PREF)));
+  if (history[yesterday]) return;
+
+  let controls = DEFAULT_SUGGEST_CONTROLS;
+  try {
+    const stored = getPreference('suggest.settings');
+    if (stored) controls = { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
+  } catch { /* fall back to the defaults */ }
+
+  const capacityMap = parseCapacityMap(getPreference(CAPACITY_PREF));
+  const [tasks, events, habits] = await Promise.all([
+    db.tasks.toArray(), db.events.toArray(), db.habits.toArray(),
+  ]);
+  const { spent, finished } = spentOn(yesterday, tasks, events, habits, controls.defaultAP);
+
+  // A day nobody touched is not evidence of anything, so it is not recorded.
+  if (spent === 0 && finished === 0) return;
+
+  history[yesterday] = {
+    capacity: capacityFor(capacityMap, yesterday, controls.dailyAPBudget),
+    spent,
+    finished,
+  };
+  await savePreference(HISTORY_PREF, JSON.stringify(history));
 }
 
 // Hook to run daily auto-reset check for recurring tasks (runs once on app load)

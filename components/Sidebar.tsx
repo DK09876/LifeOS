@@ -33,6 +33,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     { href: '/events', icon: '🕐', label: 'Events' },
     { href: '/habits', icon: '🔄', label: 'Habits' },
     { href: '/domains', icon: '🗂️', label: 'Domains' },
+    { href: '/retrospect', icon: '📈', label: 'Retrospect' },
     { type: 'divider' as const },
     ...(!hideGetStarted ? [{ href: '/get-started', icon: '🚀', label: 'Get Started' }] : []),
     { href: '/settings', icon: '⚙️', label: 'Settings' },

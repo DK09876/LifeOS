@@ -390,10 +390,11 @@ export default function HelpPage() {
             <Collapsible title="How task scoring works">
               <div className="space-y-3 text-sm text-[var(--muted)] pt-3">
                 <div className="bg-[var(--background)] rounded-lg p-3">
-                  <p className="text-white font-medium mb-1">Importance Score <span className="font-normal text-[var(--muted)]">(20–80)</span></p>
+                  <p className="text-white font-medium mb-1">Importance Score <span className="font-normal text-[var(--muted)]">(15–65)</span></p>
                   <p className="font-mono text-white text-xs">Importance = Task Priority + Domain Priority</p>
                   <p className="mt-1">Task Priority: Urgent (50), High (40), Normal (30), Low (20), Optional (10)</p>
-                  <p>Domain Priority: Critical (30), Important (20), Maintenance (10)</p>
+                  <p>Domain Priority: Critical (15), Important (10), Maintenance (5)</p>
+                  <p className="mt-1">The domain is a tiebreaker, not the verdict. What a task is worth is mostly what you said it is worth — otherwise anything filed under a quiet domain is capped below a trivial job in a loud one, and the things that matter most tend to live in the quiet ones.</p>
                 </div>
                 <div className="bg-[var(--background)] rounded-lg p-3">
                   <p className="text-white font-medium mb-1">Urgency Score <span className="font-normal text-[var(--muted)]">(10–120)</span></p>
@@ -441,7 +442,7 @@ export default function HelpPage() {
             </div>
           </div>
           <p className="text-[var(--muted)] text-sm mt-3">
-            The lines sit at an importance of 60 and an urgency of 65. Because urgency now grows both from a deadline approaching and from a task being left alone, something undated can drift rightwards into &ldquo;Do Now&rdquo; if you ignore it long enough — which is usually the moment you should look at it.
+            The lines sit at an importance of 45 and an urgency of 65. Because urgency now grows both from a deadline approaching and from a task being left alone, something undated can drift rightwards into &ldquo;Do Now&rdquo; if you ignore it long enough — which is usually the moment you should look at it.
           </p>
           <p className="text-[var(--muted)] text-sm mt-3">
             Click dots to see task names, then click a task to edit it. Filters from the Planning view apply here too.
@@ -523,6 +524,25 @@ export default function HelpPage() {
             </p>
             <p>
               It is the same form as everywhere else, so a task captured in a hurry follows the same rules — a name on its own lands in Needs Details, waiting for you to triage it rather than pretending it has been thought about.
+            </p>
+          </div>
+        </section>
+
+        {/* Retrospect */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Retrospect</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              Every other page is about what to do next. This one is the only place the app says something about you rather than about your list.
+            </p>
+            <p>
+              <span className="text-white">Your days</span> draws the last four weeks as bars, each against the budget you had set for that day, so you can see whether the number you chose has any relationship to the days you actually have. A budget you blow every week is not a budget.
+            </p>
+            <p>
+              <span className="text-white">Habits</span> shows every streak and its 30-day strip in one place, which is easier to read than one card at a time.
+            </p>
+            <p>
+              A day is written up the first time you open the app the following morning — the first moment it is finished and safe to total. Only completions are recorded; what you had <em>planned</em> for a past day cannot be recovered afterwards, and a guess would make the record less trustworthy than none.
             </p>
           </div>
         </section>

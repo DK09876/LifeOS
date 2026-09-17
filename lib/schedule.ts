@@ -22,6 +22,11 @@ export function taskPlacement(task: Placeable, includeDone = false): Placement |
   // Archived work is put away deliberately and never belongs on a calendar.
   if (task.status === 'Archived') return null;
 
+  // Blocked work is parked. It is not yours to act on, so it stays off every
+  // calendar; its follow-up date is what brings it back, and nothing else
+  // should be nagging about it in the meantime.
+  if (task.status === 'Blocked') return null;
+
   if (task.status === 'Done') {
     if (!includeDone) return null;
     // A finished task stays on the day it was meant for, so the week reads as

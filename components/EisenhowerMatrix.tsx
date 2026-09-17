@@ -13,11 +13,11 @@ import {
 } from 'recharts';
 import { Task } from '@/types';
 
-const IMPORTANCE_CUT = 60;
+const IMPORTANCE_CUT = 45;
 const URGENCY_CUT = 65;
 const URGENCY_MAX = 120;
-const IMPORTANCE_MIN = 20;
-const IMPORTANCE_MAX = 80;
+const IMPORTANCE_MIN = 15;
+const IMPORTANCE_MAX = 65;
 const URGENCY_MIN = 10;
 
 interface EisenhowerMatrixProps {

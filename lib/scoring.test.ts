@@ -32,20 +32,36 @@ describe('calculateTaskScores', () => {
 
   describe('importance', () => {
     it('adds task priority to domain priority', () => {
-      expect(calculateTaskScores({ taskPriority: '1 - Urgent' }, '1 - Critical').importanceScore).toBe(80);
-      expect(calculateTaskScores({ taskPriority: '5 - Optional' }, '3 - Maintenance').importanceScore).toBe(20);
+      expect(calculateTaskScores({ taskPriority: '1 - Urgent' }, '1 - Critical').importanceScore).toBe(65);
+      expect(calculateTaskScores({ taskPriority: '5 - Optional' }, '3 - Maintenance').importanceScore).toBe(15);
     });
 
     it('defaults to Normal task and Maintenance domain', () => {
-      expect(calculateTaskScores({}).importanceScore).toBe(40);
+      expect(calculateTaskScores({}).importanceScore).toBe(35);
     });
 
     it('degrades predictably on an unrecognised value rather than producing NaN', () => {
       // The lookups fail soft by design. Pinning that so a typo stays
       // harmless instead of poisoning the sort with NaN.
       const scores = calculateTaskScores({ taskPriority: 'nonsense' as never }, 'nonsense');
-      expect(scores.importanceScore).toBe(40);
+      expect(scores.importanceScore).toBe(35);
       expect(Number.isFinite(scores.combinedScore)).toBe(true);
+    });
+
+    // The domain is a tiebreaker, not the verdict. It used to swing 20 points
+    // across a priority range of 40, so a trivial task in a Critical domain
+    // outranked an urgent one in a Maintenance domain - and aspirational work
+    // lives in exactly the domains people mark Maintenance.
+    it('lets what the task is worth beat where it was filed', () => {
+      const trivialButCritical = calculateTaskScores({ taskPriority: '4 - Low' }, '1 - Critical');
+      const urgentButMaintenance = calculateTaskScores({ taskPriority: '1 - Urgent' }, '3 - Maintenance');
+      expect(urgentButMaintenance.importanceScore).toBeGreaterThan(trivialButCritical.importanceScore);
+    });
+
+    it('still lets the domain break a tie between equals', () => {
+      const critical = calculateTaskScores({ taskPriority: '3 - Normal' }, '1 - Critical');
+      const maintenance = calculateTaskScores({ taskPriority: '3 - Normal' }, '3 - Maintenance');
+      expect(critical.importanceScore).toBeGreaterThan(maintenance.importanceScore);
     });
   });
 
