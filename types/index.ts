@@ -18,6 +18,12 @@ export interface Task {
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  // How the next occurrence is dated. 'completion' (the default) counts the
+  // interval from when you finished, which suits anything you just want to do
+  // every so often. 'schedule' counts it from the previous due date, so a
+  // period with a fixed deadline - a fortnightly return, rent - keeps its
+  // dates however early or late you actually get to it.
+  recurrenceAnchor: 'completion' | 'schedule' | null;
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;

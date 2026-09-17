@@ -11,8 +11,13 @@ All notable changes to LifeOS will be documented in this file.
 
 ### Scoring
 - Overdue now escalates instead of flattening: +50 the first day late rising to +70 beyond a month. A task one day late and one three months late used to score identically
-- Undated tasks accrue pressure from neglect (+5 after two weeks, up to +20 after three months), so important work with no deadline can rise instead of sinking forever
+- Tasks accrue pressure from neglect (+5 after two weeks untouched, up to +20 after three months) whether or not they have a due date — a deadline three months out does not make a task ignored for three months calm
+- A planned date that has not passed stops neglect accruing: committing to a day is the answer to "when", and the pressure was only ever about not having one. Miss the day and it resumes
+- Deadline pressure and neglect are never added — a task takes whichever is louder, so a plan cannot mask a deadline and lateness always wins
 - Urgency now ranges 10–120. The Eisenhower Matrix thresholds moved with it (importance 60, urgency 65); previously nine of fifteen priority/domain combinations cleared the importance line and no undated task could ever cross the urgency one, leaving "Fit In" structurally empty
+
+### Recurrence
+- Recurring tasks can now keep a fixed period instead of counting from completion. "When I finish it" suits anything you do every so often; "the due date" suits a fortnightly return or a monthly bill, where doing it early must not drag every future deadline earlier, and where the next period should open as soon as the last one closes
 
 ### Tasks
 - Priority and urgency can now be left unset, and both are required before a task promotes out of Needs Details. Previously priority was checked but defaulted to Normal so could never be empty, and urgency was not checked at all — in practice only domain and action points gated promotion
@@ -23,18 +28,23 @@ All notable changes to LifeOS will be documented in this file.
 - Added a strip for plans whose day has passed, with per-item actions (today, tomorrow, unplan, done) rather than dumping them into today's list. Overdue deadlines stay in Plan
 
 ### Calendars
+- Plan's calendar shows commitments and anything past its date; a future deadline you have not scheduled stays in Unscheduled rather than making the week look booked. The Week view, which is a record rather than a plan, still shows everything
 - A task now appears on exactly one day: its planned date, or its due date when unplanned. Unplanned deadlines are drawn dashed and chipped so a deadline reads differently from a commitment. Previously a planned task was drawn twice and the Week and Plan calendars disagreed about the same week
 - Finished tasks stay on the Week view, greyed out, instead of disappearing
 - The Week counter no longer calls due-dated tasks "planned"
 
 ### Habits
 - Fixed habits appearing as due and completed at the same time. A weekly target made the already-done-today check unreachable
-- Added streaks and a 30-day history strip. The streak unit follows the habit — days for a plain habit, target-hitting weeks for one with a weekly target
+- Added streaks and a 30-day history strip. The streak unit follows the habit — days for a plain habit, target-hitting weeks for one with a weekly target, which also shows its consecutive-day run alongside
 - Best streak is stored rather than derived, so it does not shrink as completion history ages out
 
 ### Data
 - Added backup download and restore in Settings. The app had been asking people to copy data off the Pi while offering no way to do it
 - The backup reminder no longer fires on an empty profile
+
+### Docs
+- Pulled `docs/architecture.md` in from the feature branch where it was stranded, repaired its mangled em dashes, and brought its backup section up to date
+- Fixed the same double-encoded characters in pantry's README and architecture doc
 
 ### Other
 - Added a global quick-add: the + button in the top bar, or pressing `n` from any page

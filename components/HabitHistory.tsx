@@ -12,7 +12,7 @@ import { Habit } from '@/types';
 import { currentStreak, recentHistory } from '@/lib/streaks';
 
 export default function HabitHistory({ habit }: { habit: Habit }) {
-  const { current, unit } = currentStreak(habit.completionDates || [], habit.targetPerWeek);
+  const { current, unit, days } = currentStreak(habit.completionDates || [], habit.targetPerWeek);
   const history = recentHistory(habit.completionDates || [], 30);
   const best = habit.bestStreak ?? 0;
   const label = (n: number) => `${n} ${unit}${n === 1 ? '' : 's'}`;
@@ -20,9 +20,14 @@ export default function HabitHistory({ habit }: { habit: Habit }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex items-baseline gap-1.5">
-        <span className={`text-sm font-semibold ${current > 0 ? 'text-orange-400' : 'text-[var(--muted)]'}`}>
-          {current > 0 ? `🔥 ${label(current)}` : 'No streak'}
+        <span className={`text-sm font-semibold ${current > 0 || days > 0 ? 'text-orange-400' : 'text-[var(--muted)]'}`}>
+          {current > 0 ? `🔥 ${label(current)}` : days > 0 ? `🔥 ${days} day${days === 1 ? '' : 's'}` : 'No streak'}
         </span>
+        {/* On a targeted habit the weeks are the headline, but the day run is
+            what you feel day to day, so show both once they differ. */}
+        {unit === 'week' && current > 0 && days > 0 && (
+          <span className="text-xs text-[var(--muted)]">{days} day{days === 1 ? '' : 's'} running</span>
+        )}
         {best > 0 && (
           <span className="text-xs text-[var(--muted)]">best {label(best)}</span>
         )}

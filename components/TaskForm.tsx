@@ -21,6 +21,7 @@ export interface TaskFormData {
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: Task['recurrence'];
+  recurrenceAnchor: Task['recurrenceAnchor'];
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
@@ -45,6 +46,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     dueDate: null,
     plannedDate: null,
     recurrence: 'None',
+    recurrenceAnchor: null,
     actionPoints: null,
     notes: '',
     domainId: null,
@@ -64,6 +66,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         dueDate: task.dueDate,
         plannedDate: task.plannedDate,
         recurrence: task.recurrence,
+        recurrenceAnchor: task.recurrenceAnchor,
         actionPoints: task.actionPoints,
         notes: task.notes,
         domainId: task.domainId,
@@ -309,6 +312,29 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             </option>
           ))}
         </select>
+
+        {formData.recurrence !== 'None' && (
+          <div className="mt-2">
+            <label htmlFor="recurrenceAnchor" className={labelClass}>
+              Next one is counted from
+            </label>
+            <select
+              id="recurrenceAnchor"
+              name="recurrenceAnchor"
+              value={formData.recurrenceAnchor ?? 'completion'}
+              onChange={handleChange}
+              className={inputClass}
+            >
+              <option value="completion">When I finish it</option>
+              <option value="schedule">The due date (fixed period)</option>
+            </select>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceAnchor === 'schedule'
+                ? 'Deadlines stay put whether you are early or late — for things with a real period, like a fortnightly return.'
+                : 'The clock restarts when you finish — for things you just want to do every so often.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Action Points */}

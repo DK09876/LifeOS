@@ -86,6 +86,7 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  recurrenceAnchor: 'completion' | 'schedule' | null;  // null = completion
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;
@@ -157,6 +158,7 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   duration: number | null;   // minutes
   actionPoints: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  recurrenceAnchor: 'completion' | 'schedule' | null;  // null = completion
   lastCompleted: string | null;
   notes: string;
   domainId: string | null;
@@ -260,6 +262,12 @@ new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
   device that had not caught up
 - `taskPriority` and `urgency` are nullable on purpose: unset is what keeps a
   task in Needs Details, so never reintroduce a default on create
+- Urgency = urgency field + `max(deadline pressure, neglect)`. The two are
+  never summed; a current-or-future `plannedDate` suppresses neglect entirely
+- `recurrenceAnchor: 'schedule'` dates the next occurrence from the previous
+  `dueDate` rather than from completion, and reopens when that date passes
+- Plan's calendar deliberately shows less than Week's: commitments and overdue
+  work only. Week is a record and includes future deadlines and done tasks
 - Task scores (importance, urgency, combined) are recalculated when priority, urgency, due date, or domain changes
 - Recurring tasks have `needsReset` computed at runtime (not stored)
 - `completionDates` on habits are pruned to 90 days to prevent unbounded growth

@@ -63,7 +63,7 @@ export default function HelpPage() {
                 <p className="text-[var(--muted)]">Your planning hub with three views:</p>
                 <ul className="text-[var(--muted)] list-disc ml-4 mt-1 space-y-1">
                   <li><span className="text-white">Triage</span> — Review tasks that need attention: incomplete details, blocked tasks (with blocker info shown inline), missed planned dates, overdue due dates, and archived items.</li>
-                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. Filter and sort tasks. Use filter presets for quick views. Auto-suggest can recommend your next task or schedule your whole week.</li>
+                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill the week within your effort budget.</li>
                   <li><span className="text-white">Matrix</span> — Eisenhower scatter plot showing tasks by importance vs. urgency. Click dots to see task names, click a task to edit it.</li>
                 </ul>
               </div>
@@ -277,7 +277,18 @@ export default function HelpPage() {
 
         {/* Recurring Tasks */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
-          <h2 className="text-lg font-medium text-white mb-4">Recurring Tasks & Events</h2>
+          <h2 className="text-lg font-medium text-white mb-4">Recurring Tasks &amp; Events</h2>
+          <div className="mb-4 text-sm text-[var(--muted)] space-y-2">
+            <p>
+              A recurring task asks how the next one should be dated, and the answer depends on what kind of thing it is.
+            </p>
+            <p>
+              <span className="text-white">When I finish it</span> restarts the clock on completion — right for anything you simply want to do every so often. Water the plants a few days late and the next one is a fortnight from then, not a fortnight from a date you already missed.
+            </p>
+            <p>
+              <span className="text-white">The due date</span> keeps a fixed period — right for anything with a real deadline inside a window, like a fortnightly return or a monthly bill. Doing it four days early does not drag every future deadline four days earlier, and the next period opens as soon as the last one closes rather than an interval after you got to it.
+            </p>
+          </div>
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>Tasks and events can recur on a schedule. When a recurring task is marked Done, it stays done until the interval passes, then automatically resets to Backlog (or Planned if it has a planned date).</p>
             <p>This check runs automatically when you open the app each day. You can also trigger it manually from Settings.</p>
@@ -391,7 +402,9 @@ export default function HelpPage() {
                   <p className="mt-2 text-white">Time pressure comes from one of two places:</p>
                   <p className="mt-1"><span className="text-white">A deadline</span> — due today (+45), tomorrow (+40), this week (+25), a month out (+15), further (+5).</p>
                   <p><span className="text-white">Overdue</span> climbs rather than flattening: +50 the first day late, rising each day to +62 by day five, +65 within the week, +68 within the month, +70 beyond it. Something that has rotted for months outranks something merely late.</p>
-                  <p className="mt-1"><span className="text-white">Neglect</span> — a task with no due date gains pressure the longer it sits untouched: +5 after two weeks, +10 after a month, +15 after two, +20 after three. Without this an undated task could never rise however long you ignored it.</p>
+                  <p className="mt-1"><span className="text-white">Neglect</span> — pressure from nobody having said when this happens: +5 after two weeks untouched, +10 after a month, +15 after two, +20 after three. It applies whether or not there is a due date, because a deadline three months out does not make a task you have ignored for three months calm.</p>
+                  <p className="mt-1">A <span className="text-white">planned date that has not passed</span> stops neglect accruing — you have committed to a day, so the task is waiting rather than drifting. Miss that day and it starts rotting again.</p>
+                  <p className="mt-1">The two never add up: a task takes whichever reading is louder, so a plan can never mask a real deadline and lateness always wins.</p>
                 </div>
                 <div className="bg-[var(--background)] rounded-lg p-3">
                   <p className="text-white font-medium mb-1">Combined Score</p>
@@ -482,6 +495,9 @@ export default function HelpPage() {
             </p>
             <p>
               <span className="text-white">The unit follows the habit.</span> A plain daily habit streaks in days. A habit with a weekly target streaks in weeks that hit the target, because counting its days would show the chain breaking every single week.
+            </p>
+            <p>
+              A habit with a weekly target shows both: the run of target-hitting weeks as the headline, and the consecutive days alongside it. Three days running on a five-a-week habit is a real thing, and the weekly number on its own reports it as nothing.
             </p>
             <p>
               A streak does not break just because today is not done yet — the day is not over. It breaks when a day (or a target week) is genuinely missed.

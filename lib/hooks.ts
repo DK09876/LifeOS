@@ -394,6 +394,7 @@ export async function createTask(taskData: {
   dueDate?: string | null;
   plannedDate?: string | null;
   recurrence?: Task['recurrence'];
+  recurrenceAnchor?: Task['recurrenceAnchor'];
   actionPoints?: string | null;
   notes?: string;
   domainId?: string | null;
@@ -422,6 +423,7 @@ export async function createTask(taskData: {
     dueDate: taskData.dueDate || null,
     plannedDate: taskData.plannedDate || null,
     recurrence: taskData.recurrence || 'None',
+    recurrenceAnchor: taskData.recurrenceAnchor ?? null,
     lastCompleted: null,
     doneDate: null,
     actionPoints: taskData.actionPoints || null,

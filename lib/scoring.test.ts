@@ -160,6 +160,47 @@ describe('rot: overdue escalates and neglect accrues', () => {
     expect(lateness).toEqual(sorted);
   });
 
+  // Neglect is not only for undated work: a distant deadline used to suppress
+  // it entirely, so a task due in three months and untouched for three months
+  // scored as calmly as one written yesterday.
+  it('accrues on a dated task that is being ignored', () => {
+    const farOff = { dueDate: dueIn(90) };
+    expect(pressure({ ...farOff, updatedAt: daysAgo(1) })).toBe(5);    // deadline only
+    expect(pressure({ ...farOff, updatedAt: daysAgo(120) })).toBe(20); // neglect wins
+  });
+
+  it('takes the louder of the two rather than adding them', () => {
+    // Due tomorrow beats any amount of neglect, and is not inflated by it.
+    expect(pressure({ dueDate: dueIn(1), updatedAt: daysAgo(120) })).toBe(40);
+  });
+
+  it('lets lateness outrun neglect entirely', () => {
+    expect(pressure({ dueDate: dueIn(-1), updatedAt: daysAgo(120) })).toBe(50);
+  });
+
+  // "Needs to be at least planned": the rot is about nobody having said when
+  // this happens, so committing to a day settles it.
+  describe('a plan settles the question', () => {
+    it('stops neglect accruing once the task is planned', () => {
+      expect(pressure({ updatedAt: daysAgo(120) })).toBe(20);
+      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(3) })).toBe(0);
+    });
+
+    it('counts a plan for today as still planned', () => {
+      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(0) })).toBe(0);
+    });
+
+    // A plan you have already slid past is not an answer any more.
+    it('starts rotting again once the planned day has passed', () => {
+      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(-1) })).toBe(20);
+    });
+
+    it('does not let a plan mask a real deadline', () => {
+      expect(pressure({ dueDate: dueIn(0), plannedDate: dueIn(0) })).toBe(45);
+      expect(pressure({ dueDate: dueIn(-3), plannedDate: dueIn(2) })).toBe(56);
+    });
+  });
+
   it('accrues pressure on an undated task that is left alone', () => {
     expect(pressure({ updatedAt: daysAgo(1) })).toBe(0);
     expect(pressure({ updatedAt: daysAgo(14) })).toBe(5);

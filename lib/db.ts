@@ -19,6 +19,12 @@ export interface Task {
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  // How the next occurrence is dated. 'completion' (the default) counts the
+  // interval from when you finished, which suits anything you just want to do
+  // every so often. 'schedule' counts it from the previous due date, so a
+  // period with a fixed deadline - a fortnightly return, rent - keeps its
+  // dates however early or late you actually get to it.
+  recurrenceAnchor: 'completion' | 'schedule' | null;
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;
@@ -250,7 +256,26 @@ export function calculateTaskScores(
     '1 - Critical': 50, '2 - High': 40, '3 - Normal': 30, '4 - Low': 20, '5 - Someday': 10,
   };
 
-  let timePressure = 0;
+  // Neglect: the pressure of nobody having said when this happens.
+  //
+  // It applies to every task, not only undated ones - a task due in three
+  // months that you have not looked at in three months is not calm. But a
+  // planned date that has not passed yet settles the question, so it stops
+  // accruing: you have committed to a day, and the task is waiting rather
+  // than drifting. Miss that day and it starts rotting again, which is the
+  // right nudge - a plan you keep sliding is not a plan.
+  const stillPlanned = !!task.plannedDate && task.plannedDate >= toDateString(new Date());
+  let neglect = 0;
+  const touched = task.updatedAt || task.createdAt;
+  if (!stillPlanned && touched) {
+    const age = Math.floor((new Date().getTime() - new Date(touched).getTime()) / 86400000);
+    if (age >= 90) neglect = 20;
+    else if (age >= 60) neglect = 15;
+    else if (age >= 30) neglect = 10;
+    else if (age >= 14) neglect = 5;
+  }
+
+  let deadline = 0;
   if (task.dueDate) {
     const days = Math.ceil((new Date(task.dueDate + 'T00:00:00').getTime() - new Date().getTime()) / 86400000);
     if (days < 0) {
@@ -258,38 +283,30 @@ export function calculateTaskScores(
       // day late and one three months late were indistinguishable, so nothing
       // ever visibly rotted.
       const late = -days;
-      if (late === 1) timePressure = 50;
-      else if (late === 2) timePressure = 53;
-      else if (late === 3) timePressure = 56;
-      else if (late === 4) timePressure = 59;
-      else if (late === 5) timePressure = 62;
-      else if (late <= 7) timePressure = 65;    // the rest of the first week
-      else if (late <= 30) timePressure = 68;   // within the month
-      else timePressure = 70;                   // over a month gone
+      if (late === 1) deadline = 50;
+      else if (late === 2) deadline = 53;
+      else if (late === 3) deadline = 56;
+      else if (late === 4) deadline = 59;
+      else if (late === 5) deadline = 62;
+      else if (late <= 7) deadline = 65;    // the rest of the first week
+      else if (late <= 30) deadline = 68;   // within the month
+      else deadline = 70;                   // over a month gone
     }
-    else if (days === 0) timePressure = 45;
-    else if (days === 1) timePressure = 40;
-    else if (days === 2) timePressure = 35;
-    else if (days <= 4) timePressure = 30;
-    else if (days <= 7) timePressure = 25;
-    else if (days <= 14) timePressure = 20;
-    else if (days <= 30) timePressure = 15;
-    else if (days <= 60) timePressure = 10;
-    else timePressure = 5;
-  } else {
-    // No deadline: pressure accrues from neglect instead. Measured from the
-    // last time the task was touched, not when it was created - editing or
-    // rescheduling it means you are still engaged with it. The daily rescore
-    // deliberately does not bump updatedAt, so this keeps accruing.
-    const touched = task.updatedAt || task.createdAt;
-    if (touched) {
-      const age = Math.floor((new Date().getTime() - new Date(touched).getTime()) / 86400000);
-      if (age >= 90) timePressure = 20;
-      else if (age >= 60) timePressure = 15;
-      else if (age >= 30) timePressure = 10;
-      else if (age >= 14) timePressure = 5;
-    }
+    else if (days === 0) deadline = 45;
+    else if (days === 1) deadline = 40;
+    else if (days === 2) deadline = 35;
+    else if (days <= 4) deadline = 30;
+    else if (days <= 7) deadline = 25;
+    else if (days <= 14) deadline = 20;
+    else if (days <= 30) deadline = 15;
+    else if (days <= 60) deadline = 10;
+    else deadline = 5;
   }
+
+  // Whichever is louder, never both: they are two readings of the same thing,
+  // and adding them would let a task be counted as pressing twice over.
+  // Overdue already outruns any neglect value, so lateness naturally wins.
+  const timePressure = Math.max(deadline, neglect);
 
   const urgencyScore = (urgencyFieldScores[task.urgency || '3 - Normal'] || 30) + timePressure;
 
@@ -332,10 +349,15 @@ export function advanceDate(from: Date, recurrence: Task['recurrence']): Date | 
  * rather than collapsing onto the same day.
  */
 export function nextRecurrenceDates(
-  task: Pick<Task, 'recurrence' | 'dueDate' | 'plannedDate' | 'lastCompleted'>,
+  task: Pick<Task, 'recurrence' | 'recurrenceAnchor' | 'dueDate' | 'plannedDate' | 'lastCompleted'>,
 ): { dueDate: string | null; plannedDate: string | null } {
-  const completedAt = task.lastCompleted ? new Date(task.lastCompleted) : new Date();
-  const next = advanceDate(completedAt, task.recurrence);
+  // A scheduled period keeps its own cadence: the fortnight after the one
+  // that just ended, not a fortnight after you got round to it. Doing it four
+  // days early must not drag every future deadline four days earlier with it.
+  const anchor = task.recurrenceAnchor === 'schedule' && task.dueDate
+    ? parseLocalDate(task.dueDate)
+    : task.lastCompleted ? new Date(task.lastCompleted) : new Date();
+  const next = advanceDate(anchor, task.recurrence);
   if (!next) return { dueDate: task.dueDate, plannedDate: task.plannedDate };
 
   const nextStr = toDateString(next);
@@ -357,6 +379,13 @@ export function nextRecurrenceDates(
 export function checkNeedsReset(task: Task): boolean {
   if (task.recurrence === 'None' || task.status !== 'Done' || !task.lastCompleted) {
     return false;
+  }
+
+  // A scheduled period reopens when the last one ends, not an interval after
+  // you finished it. Completing Friday's return on Tuesday should not mean
+  // waiting a fortnight from Tuesday before the next one exists.
+  if (task.recurrenceAnchor === 'schedule' && task.dueDate) {
+    return getTodayString() > task.dueDate;
   }
 
   const lastCompleted = new Date(task.lastCompleted);

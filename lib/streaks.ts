@@ -15,6 +15,13 @@ export interface StreakInfo {
   current: number;
   /** 'day' for plain recurrence, 'week' for a weekly target. */
   unit: 'day' | 'week';
+  /**
+   * Consecutive days, always. For a habit with a weekly target the headline
+   * run is in weeks, but the day run is what you feel while you are doing it -
+   * three days in a row on a five-a-week habit is a real thing that the weekly
+   * number alone reports as nothing.
+   */
+  days: number;
 }
 
 const DAY = 86_400_000;
@@ -38,15 +45,18 @@ export function currentStreak(
   const unit = streakUnit(targetPerWeek);
   const done = new Set(completionDates);
 
+  // Consecutive days is computed either way; today not being done yet does not
+  // break it, because the day is not over.
+  let cursor = parseLocalDate(today);
+  if (!done.has(today)) cursor = new Date(cursor.getTime() - DAY);
+  let days = 0;
+  while (done.has(toDateString(cursor))) {
+    days += 1;
+    cursor = new Date(cursor.getTime() - DAY);
+  }
+
   if (unit === 'day') {
-    let cursor = parseLocalDate(today);
-    if (!done.has(today)) cursor = new Date(cursor.getTime() - DAY);
-    let run = 0;
-    while (done.has(toDateString(cursor))) {
-      run += 1;
-      cursor = new Date(cursor.getTime() - DAY);
-    }
-    return { current: run, unit };
+    return { current: days, unit, days };
   }
 
   const target = targetPerWeek as number;
@@ -61,7 +71,7 @@ export function currentStreak(
     run += 1;
     weekStart = new Date(weekStart.getTime() - 7 * DAY);
   }
-  return { current: run, unit };
+  return { current: run, unit, days };
 }
 
 function countInWeek(done: Set<string>, weekStart: Date): number {

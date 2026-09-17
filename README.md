@@ -8,6 +8,8 @@ It is also the app the [pantry](https://github.com/DK09876/pantry) voice
 assistant drives, so a task added out loud in the kitchen shows up in the
 browser a couple of seconds later.
 
+**[Architecture and diagrams →](docs/architecture.md)**
+
 ## The idea
 
 Most task apps have one "priority" field, which quietly conflates two

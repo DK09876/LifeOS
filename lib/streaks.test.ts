@@ -25,7 +25,7 @@ describe('streakUnit', () => {
 
 describe('currentStreak, daily', () => {
   it('counts consecutive days ending today', () => {
-    expect(currentStreak(run(4), null, TODAY).current).toBe(4);
+    expect(currentStreak(run(4), null, TODAY)).toMatchObject({ current: 4, days: 4 });
   });
 
   // Today is not over. A streak should break on a missed day, not at midnight.
@@ -55,7 +55,20 @@ describe('currentStreak, weekly target', () => {
 
   it('counts weeks that met the target', () => {
     const dates = [...week(0, 3), ...week(1, 3), ...week(2, 3)];
-    expect(currentStreak(dates, 3, TODAY)).toEqual({ current: 3, unit: 'week' });
+    expect(currentStreak(dates, 3, TODAY)).toMatchObject({ current: 3, unit: 'week' });
+  });
+
+  // Weeks are the headline, but three days running on a five-a-week habit is
+  // a real thing the weekly number alone reports as nothing.
+  it('also reports the consecutive-day run', () => {
+    const consecutive = [daysBefore(1), daysBefore(2), daysBefore(3)];
+    expect(currentStreak(consecutive, 5, TODAY).days).toBe(3);
+  });
+
+  it('reports a day run even when no week has met its target', () => {
+    const s = currentStreak([daysBefore(1), daysBefore(2)], 5, TODAY);
+    expect(s.current).toBe(0);
+    expect(s.days).toBe(2);
   });
 
   // The whole point of the week unit: a partial current week is in progress,

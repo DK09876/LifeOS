@@ -43,11 +43,12 @@ describe('advanceDate', () => {
 describe('nextRecurrenceDates', () => {
   const task = (extra: Record<string, unknown> = {}) => ({
     recurrence: 'Weekly' as const,
+    recurrenceAnchor: null,
     dueDate: null as string | null,
     plannedDate: null as string | null,
     lastCompleted: '2026-09-10T12:00:00.000Z',
     ...extra,
-  });
+  }) as never;
 
   // The whole point of the change: anchor on the completion, not on the old
   // due date, so finishing late does not bring the task back overdue.
@@ -105,5 +106,40 @@ describe('nextEventDate', () => {
 
   it('returns null when the event does not recur', () => {
     expect(nextEventDate({ date: '2026-09-14', recurrence: 'None' })).toBeNull();
+  });
+});
+
+describe('a scheduled period keeps its own cadence', () => {
+  const scheduled = (extra: Record<string, unknown> = {}) => ({
+    recurrence: 'Biweekly' as const,
+    recurrenceAnchor: 'schedule' as const,
+    dueDate: '2026-09-11',
+    plannedDate: null as string | null,
+    lastCompleted: '2026-09-07T12:00:00.000Z',   // finished four days early
+    ...extra,
+  }) as never;
+
+  // The case this exists for: a fortnightly return with a real deadline.
+  // Doing it early must not drag every future deadline earlier with it.
+  it('steps from the previous due date, not from the completion', () => {
+    expect(nextRecurrenceDates(scheduled()).dueDate).toBe('2026-09-25');
+  });
+
+  it('does not drift however late it is finished', () => {
+    expect(nextRecurrenceDates(scheduled({ lastCompleted: '2026-09-16T12:00:00.000Z' })).dueDate)
+      .toBe('2026-09-25');
+  });
+
+  it('keeps the planned-to-due gap like any other recurrence', () => {
+    const next = nextRecurrenceDates(scheduled({ plannedDate: '2026-09-09' }));
+    expect(next.dueDate).toBe('2026-09-25');
+    expect(next.plannedDate).toBe('2026-09-23');
+  });
+
+  // Without a due date there is no schedule to anchor to, so it behaves as a
+  // normal completion-counted recurrence rather than doing nothing.
+  it('falls back to the completion when there is no due date', () => {
+    expect(nextRecurrenceDates(scheduled({ dueDate: null, plannedDate: '2026-09-09' })).plannedDate)
+      .toBe('2026-09-21');
   });
 });

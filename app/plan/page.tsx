@@ -17,6 +17,7 @@ import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeek
 import { tasksForDay } from '@/lib/schedule';
 import { getPreference, savePreference } from '@/lib/store';
 import { useLiveQuery } from '@/lib/live-query';
+import { getTodayString } from '@/lib/dates';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -271,6 +272,8 @@ export default function PlanPage() {
     };
   }, [tasks, events]);
 
+  const todayStr = getTodayString();
+
   // Everything still open, whatever its status. The Unscheduled column and
   // the suggester want the narrower activeTasks below; the calendar wants
   // this, so that a planned task is drawn even while it needs details.
@@ -369,20 +372,23 @@ export default function PlanPage() {
   const tasksByDay = useMemo(() => {
     return calendarDays.map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
-      // Same rule as the Week view: planned work on its planned day, an
-      // unplanned deadline on its due day. Built from every live task rather
-      // than activeTasks - a task still needing details can be planned for a
-      // day, and hiding it here while the Week view showed it meant the two
-      // calendars disagreed about the same week.
+      // This board is for deciding what to do, so it shows commitments and
+      // things that have gone past their date - not every future deadline.
+      // An unplanned deadline still to come belongs in Unscheduled, waiting to
+      // be placed; drawing it here would make the week look booked by work
+      // nobody has scheduled. Finished tasks are not decisions either. (The
+      // Week view, which is a record rather than a plan, shows all of it.)
       return {
         date: day,
-        tasks: tasksForDay(liveTasks, dayStr).sort((a, b) => {
-          if (a.kind !== b.kind) return a.kind === 'planned' ? -1 : 1;
-          return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
-        })
+        tasks: tasksForDay(liveTasks, dayStr)
+          .filter(({ kind }) => kind === 'planned' || dayStr < todayStr)
+          .sort((a, b) => {
+            if (a.kind !== b.kind) return a.kind === 'planned' ? -1 : 1;
+            return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
+          })
       };
     });
-  }, [liveTasks, calendarDays]);
+  }, [liveTasks, calendarDays, todayStr]);
 
   // Events by day for the calendar
   const eventsByDay = useMemo(() => {
