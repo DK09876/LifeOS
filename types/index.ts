@@ -31,6 +31,10 @@ export interface Task {
   domainId: string | null;
   projectId: string | null;
   blockedBy: BlockedByEntry[];
+  // When to look at a blocked task again. Until then it stays quiet and stops
+  // accruing neglect - nagging about something you cannot act on only teaches
+  // you to ignore the nagging. On the day, it asks to be chased or deferred.
+  followUpDate: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -68,7 +72,10 @@ export interface Habit {
   habitName: string;
   recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;  // ISO timestamp of last completion
-  targetPerWeek: number | null;  // If set, habit is due until completed this many times per week
+  targetPerWeek: number | null;
+  // What this costs out of a day, 0-5. Zero is meaningful and common here:
+  // brushing your teeth is a habit worth keeping but not worth budgeting for.
+  actionPoints: string | null;  // If set, habit is due until completed this many times per week
   completionDates: string[];     // Array of ISO date strings (YYYY-MM-DD) for tracking weekly progress
   // High water mark, carried forward. completionDates prune at 90 days, so a
   // best streak derived from them alone would quietly shrink over time.

@@ -10,6 +10,7 @@ import EventForm, { EventFormData } from '@/components/EventForm';
 import HabitCard from '@/components/HabitCard';
 import DayCapacity from '@/components/DayCapacity';
 import MissedStrip from '@/components/MissedStrip';
+import FollowUpStrip from '@/components/FollowUpStrip';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
@@ -63,8 +64,9 @@ export default function TodayPage() {
   const todayStr = getTodayString();
   const capacity = capacityFor(capacityMap, todayStr, suggestControls.dailyAPBudget);
   const load = useMemo(
-    () => dayLoad(tasks, allEvents, suggestControls.defaultAP, todayStr),
-    [tasks, allEvents, suggestControls.defaultAP, todayStr],
+    () => dayLoad(tasks, allEvents, suggestControls.defaultAP, todayStr,
+      { due: habitsDueToday, done: habitsCompletedToday }),
+    [tasks, allEvents, suggestControls.defaultAP, todayStr, habitsDueToday, habitsCompletedToday],
   );
 
   const setCapacity = async (next: number) => {
@@ -84,6 +86,24 @@ export default function TodayPage() {
     try { await updateTaskData(taskId, { plannedDate: date }); }
     catch { showToast('Could not move that task', 'error'); }
   }
+  // Blocked work whose chase-up day has arrived.
+  const followUpsDue = useMemo(() => {
+    return tasks.filter(t =>
+      t.status === 'Blocked' && !t.deletedAt &&
+      !!t.followUpDate && t.followUpDate <= todayStr
+    ).sort((a, b) => (a.followUpDate || '').localeCompare(b.followUpDate || ''));
+  }, [tasks, todayStr]);
+
+  async function deferFollowUp(taskId: string, date: string) {
+    try { await updateTaskData(taskId, { followUpDate: date }); }
+    catch { showToast('Could not reschedule that follow-up', 'error'); }
+  }
+  async function unblockTask(taskId: string) {
+    // Clearing the blockers lets autoStatus put the task back where it belongs.
+    try { await updateTaskData(taskId, { blockedBy: [], followUpDate: null }); }
+    catch { showToast('Could not unblock that task', 'error'); }
+  }
+
   async function moveAllMissed(date: string) {
     try { for (const t of missedPlans) await updateTaskData(t.id, { plannedDate: date }); }
     catch { showToast('Could not move those tasks', 'error'); }
@@ -256,6 +276,13 @@ export default function TodayPage() {
       <div className="mb-6">
         <DayCapacity capacity={capacity} load={load} onChange={setCapacity} />
       </div>
+
+      <FollowUpStrip
+        tasks={followUpsDue}
+        onDefer={deferFollowUp}
+        onUnblock={unblockTask}
+        onEdit={handleEditTask}
+      />
 
       <MissedStrip
         tasks={missedPlans}

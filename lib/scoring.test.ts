@@ -201,6 +201,21 @@ describe('rot: overdue escalates and neglect accrues', () => {
     });
   });
 
+  // Waiting on someone else is not neglect. Scoring it as rot ranked things
+  // nobody could act on near the top of the list while they were hidden from
+  // every working view.
+  it('does not rot a blocked task', () => {
+    expect(pressure({ updatedAt: daysAgo(120), status: 'Blocked' })).toBe(0);
+  });
+
+  it('resumes rotting once it is unblocked', () => {
+    expect(pressure({ updatedAt: daysAgo(120), status: 'Backlog' })).toBe(20);
+  });
+
+  it('still honours a real deadline while blocked', () => {
+    expect(pressure({ dueDate: dueIn(-2), status: 'Blocked' })).toBe(53);
+  });
+
   it('accrues pressure on an undated task that is left alone', () => {
     expect(pressure({ updatedAt: daysAgo(1) })).toBe(0);
     expect(pressure({ updatedAt: daysAgo(14) })).toBe(5);

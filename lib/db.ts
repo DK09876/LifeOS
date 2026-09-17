@@ -32,6 +32,10 @@ export interface Task {
   domainId: string | null;
   projectId: string | null;
   blockedBy: BlockedByEntry[];
+  // When to look at a blocked task again. Until then it stays quiet and stops
+  // accruing neglect - nagging about something you cannot act on only teaches
+  // you to ignore the nagging. On the day, it asks to be chased or deferred.
+  followUpDate: string | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -85,6 +89,9 @@ export interface Habit {
   recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;
   targetPerWeek: number | null;
+  // What this costs out of a day, 0-5. Zero is meaningful and common here:
+  // brushing your teeth is a habit worth keeping but not worth budgeting for.
+  actionPoints: string | null;
   completionDates: string[];
   // High water mark, carried forward. completionDates prune at 90 days, so a
   // best streak derived from them alone would quietly shrink over time.
@@ -265,9 +272,13 @@ export function calculateTaskScores(
   // than drifting. Miss that day and it starts rotting again, which is the
   // right nudge - a plan you keep sliding is not a plan.
   const stillPlanned = !!task.plannedDate && task.plannedDate >= toDateString(new Date());
+  // Blocked work is not being neglected, it is waiting on someone else.
+  // Scoring it as rot ranked things nobody could act on near the top of the
+  // list while they were hidden from every working view.
+  const waiting = task.status === 'Blocked';
   let neglect = 0;
   const touched = task.updatedAt || task.createdAt;
-  if (!stillPlanned && touched) {
+  if (!stillPlanned && !waiting && touched) {
     const age = Math.floor((new Date().getTime() - new Date(touched).getTime()) / 86400000);
     if (age >= 90) neglect = 20;
     else if (age >= 60) neglect = 15;

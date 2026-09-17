@@ -26,6 +26,11 @@ describe('apOf', () => {
     expect(apOf({ actionPoints: null }, 2)).toBe(2);
     expect(apOf({ actionPoints: '' }, 3)).toBe(3);
   });
+  // Zero is a real answer, not a missing one: worth keeping, not worth
+  // budgeting for. It must not fall through to the default.
+  it('honours an explicit zero', () => {
+    expect(apOf({ actionPoints: '0' }, 2)).toBe(0);
+  });
 });
 
 describe('capacityFor', () => {
@@ -94,5 +99,33 @@ describe('dayLoad', () => {
 
   it('reads a date-only doneDate as the local day, not UTC midnight', () => {
     expect(dayLoad([task({ status: 'Done', doneDate: TODAY, actionPoints: '3' })], [], 2, TODAY).done).toBe(3);
+  });
+});
+
+describe('habits count against the day', () => {
+  const habit = (ap: string | null) => ({ actionPoints: ap }) as never;
+
+  // They are a third of most days and used to cost nothing, which made the
+  // meter quietly optimistic.
+  it('adds due habits to what is still planned', () => {
+    const load = dayLoad([], [], 2, TODAY, { due: [habit('3'), habit('1')], done: [] });
+    expect(load.planned).toBe(4);
+  });
+
+  it('adds completed habits to what has been spent', () => {
+    const load = dayLoad([], [], 2, TODAY, { due: [], done: [habit('3')] });
+    expect(load.done).toBe(3);
+  });
+
+  it('lets a trivial habit cost nothing', () => {
+    const load = dayLoad([], [], 2, TODAY, { due: [habit('0'), habit('2')], done: [] });
+    expect(load.planned).toBe(2);
+  });
+
+  // Habits skew small, so an unestimated one should not cost what an
+  // unestimated task does.
+  it('guesses lower than a task for an unestimated habit', () => {
+    const load = dayLoad([], [], 2, TODAY, { due: [habit(null)], done: [] });
+    expect(load.planned).toBe(1);
   });
 });

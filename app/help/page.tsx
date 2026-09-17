@@ -453,7 +453,13 @@ export default function HelpPage() {
           <h2 className="text-lg font-medium text-white mb-4">The day&rsquo;s effort</h2>
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>
-              Every task and event carries an action-point estimate from 1 to 5. Today shows three numbers built from them: what the day is allowed to cost, what it has cost so far, and what is still committed.
+              Tasks, events and habits all carry an effort estimate, and Today shows three numbers built from them: what the day is allowed to cost, what it has cost so far, and what is still committed.
+            </p>
+            <p>
+              The scale is about how much of a day something takes, not how long it lasts on a clock — a twenty-minute conversation you have been dreading costs more than an hour of easy admin. <span className="text-white">Free</span> is for things worth keeping but not worth planning around, <span className="text-white">Tiny</span> a few minutes, <span className="text-white">Small</span> half an hour, <span className="text-white">Real</span> about an hour or anything you must be present for, <span className="text-white">Heavy</span> a couple of hours of focus, and <span className="text-white">Big</span> eats an afternoon.
+            </p>
+            <p>
+              Habits count too. Three of them can easily be a third of what a day actually costs, and a budget that ignored them read as far emptier than the day really was.
             </p>
             <p>
               <span className="text-white">Capacity</span> starts from the daily budget you set in Plan, and the − and + buttons change it for today alone. Some days you have less in you, and the plan should be able to say so without changing your normal.
@@ -479,6 +485,9 @@ export default function HelpPage() {
             </p>
             <p>
               Instead they collect in a strip at the top of Today, collapsed to a count. Open it and each one offers the decision directly: do it today, push it to tomorrow, unplan it, or mark it done. There is a &ldquo;move all to today&rdquo; if that is genuinely what you want.
+            </p>
+            <p>
+              Work that is <span className="text-white">blocked</span> is handled separately again. It stops scoring while it waits — being stuck behind someone else is not the same as neglecting something — and instead takes a date to chase it up. On that day it appears in its own strip asking whether to chase, defer or unblock.
             </p>
             <p>
               This is only about <span className="text-white">plans</span> — intentions you set. An overdue <span className="text-white">deadline</span> is a different thing and stays in Plan → Triage → Overdue, where it also climbs your task scores the longer it goes unaddressed.

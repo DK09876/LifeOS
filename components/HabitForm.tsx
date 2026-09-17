@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Habit } from '@/types';
+import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
 
 interface HabitFormProps {
   habit?: Habit | null;
@@ -13,6 +14,7 @@ export interface HabitFormData {
   habitName: string;
   recurrence: Habit['recurrence'];
   targetPerWeek: number | null;
+  actionPoints: string | null;
   notes: string;
   icon: string | null;
   isActive: boolean;
@@ -45,6 +47,7 @@ function getInitialFormData(habit?: Habit | null): HabitFormData {
       habitName: habit.habitName,
       recurrence: habit.recurrence,
       targetPerWeek: habit.targetPerWeek,
+      actionPoints: habit.actionPoints,
       notes: habit.notes,
       icon: habit.icon,
       isActive: habit.isActive,
@@ -54,6 +57,7 @@ function getInitialFormData(habit?: Habit | null): HabitFormData {
     habitName: '',
     recurrence: 'Daily',
     targetPerWeek: null,
+    actionPoints: null,
     notes: '',
     icon: null,
     isActive: true,
@@ -235,6 +239,39 @@ export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps)
           {formData.targetPerWeek === null
             ? 'Habit will be due on a fixed schedule (e.g., every day, every week)'
             : 'Habit will appear daily until you complete it the target number of times each week'}
+        </p>
+      </div>
+
+      {/* Effort */}
+      <div>
+        <label className={labelClass}>What it costs</label>
+        <div className="flex gap-1">
+          {EFFORT_LEVELS.map(({ value, name }) => {
+            const selected = formData.actionPoints === String(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFormData(prev => ({
+                  ...prev,
+                  actionPoints: prev.actionPoints === String(value) ? null : String(value),
+                }))}
+                className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${
+                  selected
+                    ? 'bg-blue-600 text-white ring-2 ring-white/30'
+                    : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                }`}
+              >
+                {value} {name}
+              </button>
+            );
+          })}
+        </div>
+        {/* Zero is offered first here because so many habits deserve it:
+            keeping the habit matters, the effort does not. */}
+        <p className="text-xs text-[var(--muted)] mt-1 min-h-[1rem]">
+          {effortLevel(formData.actionPoints)?.hint
+            ?? 'Counts against your daily budget. Pick Free for anything too small to plan around.'}
         </p>
       </div>
 

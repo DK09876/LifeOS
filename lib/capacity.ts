@@ -8,7 +8,7 @@
  * say so.
  */
 
-import { Task, Event } from './db';
+import { Task, Event, Habit } from './db';
 import { getTodayString, parseLocalDateTime } from './dates';
 
 /** Per-date overrides, keyed YYYY-MM-DD. Absent means "use the default". */
@@ -50,7 +50,11 @@ export function capacityFor(map: CapacityMap, date: string, fallback: number): n
 }
 
 /** A task's effort, falling back to the configured default when unestimated. */
-export function apOf(item: Pick<Task, 'actionPoints'> | Pick<Event, 'actionPoints'>, defaultAP: number): number {
+export function apOf(item: { actionPoints: string | null }, defaultAP: number): number {
+  // An explicit 0 is a real answer - brushing your teeth is worth keeping and
+  // not worth budgeting for - so it must survive rather than falling through
+  // to the default the way an unestimated item does.
+  if (item.actionPoints === '0') return 0;
   return parseInt(item.actionPoints || '0') || defaultAP;
 }
 
@@ -75,6 +79,7 @@ export function dayLoad(
   events: Event[],
   defaultAP: number,
   today = getTodayString(),
+  habits: { due: Habit[]; done: Habit[] } = { due: [], done: [] },
 ): DayLoad {
   let done = 0;
   let planned = 0;
@@ -97,8 +102,22 @@ export function dayLoad(
     else planned += apOf(event, defaultAP);
   }
 
+  // Habits are a third of most days and used to cost nothing at all, which
+  // made the meter quietly optimistic. They carry their own estimate, often 0.
+  for (const habit of habits.done) done += apOf(habit, HABIT_DEFAULT_AP);
+  for (const habit of habits.due) planned += apOf(habit, HABIT_DEFAULT_AP);
+
   return { done, planned, committed: done + planned };
 }
+
+/**
+ * What an unestimated habit costs.
+ *
+ * Lower than the task default: habits skew small and repetitive, and guessing
+ * 2 for every one of them would swamp a day's budget with things the user
+ * never thought were expensive.
+ */
+export const HABIT_DEFAULT_AP = 1;
 
 function sameLocalDay(stored: string, today: string): boolean {
   // doneDate is a timestamp from the web app and a date-only string from the

@@ -400,6 +400,7 @@ export async function createTask(taskData: {
   domainId?: string | null;
   projectId?: string | null;
   blockedBy?: BlockedByEntry[];
+  followUpDate?: string | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -431,6 +432,7 @@ export async function createTask(taskData: {
     domainId: taskData.domainId || null,
     projectId: taskData.projectId ?? null,
     blockedBy: taskData.blockedBy ?? [],
+    followUpDate: taskData.followUpDate ?? null,
     deletedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -646,6 +648,7 @@ export async function createHabit(habitData: {
   habitName: string;
   recurrence?: Habit['recurrence'];
   targetPerWeek?: number | null;
+  actionPoints?: string | null;
   notes?: string;
   icon?: string | null;
   isActive?: boolean;
@@ -659,6 +662,7 @@ export async function createHabit(habitData: {
     recurrence: habitData.recurrence || 'Daily',
     lastCompleted: null,
     targetPerWeek: habitData.targetPerWeek ?? null,
+    actionPoints: habitData.actionPoints ?? null,
     completionDates: [],
     bestStreak: 0,
     notes: habitData.notes || '',

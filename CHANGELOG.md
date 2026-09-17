@@ -23,6 +23,15 @@ All notable changes to LifeOS will be documented in this file.
 - Priority and urgency can now be left unset, and both are required before a task promotes out of Needs Details. Previously priority was checked but defaulted to Normal so could never be empty, and urgency was not checked at all — in practice only domain and action points gated promotion
 - Level badges, sorting and filtering all understand an unset value
 
+### Effort
+- Habits now carry an effort estimate and count against the day's budget. They are a third of most days and used to cost nothing at all, which made the meter quietly optimistic
+- Action points now mean something specific. The scale ran "Low" to "High" with nothing in between, so one person's 1 was brushing their teeth and another's was an hour at the gym. Each rung now names what it covers, and 0 is a real answer for anything worth keeping but not worth budgeting for
+- Expect to re-baseline your daily budget once habits are counted — on the review data it went from 7 AP of tasks to 17 AP once three habits were included
+
+### Blocked work
+- A blocked task no longer accrues neglect. Waiting on someone else is not neglect, and scoring it as rot pushed work nobody could act on up a list it was invisible on
+- Blocked tasks take a follow-up date. Until then they stay quiet; on the day, Today asks whether to chase, defer or unblock them
+
 ### Today
 - Added a day effort meter: capacity, what you have used, and what is still planned. Capacity starts from your Plan budget and can be adjusted for a single day
 - Added a strip for plans whose day has passed, with per-item actions (today, tomorrow, unplan, done) rather than dumping them into today's list. Overdue deadlines stay in Plan

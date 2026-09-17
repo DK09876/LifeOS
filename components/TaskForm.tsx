@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Task, Domain, BlockedByEntry, Project } from '@/types';
 import { hasCircularDependency } from '@/lib/hooks';
+import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
 
 interface TaskFormProps {
   task?: Task | null;
@@ -27,6 +28,7 @@ export interface TaskFormData {
   domainId: string | null;
   projectId: string | null;
   blockedBy: BlockedByEntry[];
+  followUpDate: string | null;
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
@@ -52,6 +54,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     domainId: null,
     projectId: null,
     blockedBy: [],
+    followUpDate: null,
   });
   const [submitting, setSubmitting] = useState(false);
   const [noteBlockerText, setNoteBlockerText] = useState('');
@@ -72,6 +75,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         domainId: task.domainId,
         projectId: task.projectId,
         blockedBy: task.blockedBy || [],
+        followUpDate: task.followUpDate,
       });
     }
   }, [task]);
@@ -343,43 +347,65 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           Action Points
         </label>
         <div className="flex gap-1">
-          {[1, 2, 3, 4, 5].map((level) => {
-            const selected = formData.actionPoints === String(level);
-            const colors = [
-              'bg-green-600 hover:bg-green-500',
-              'bg-lime-600 hover:bg-lime-500',
-              'bg-yellow-600 hover:bg-yellow-500',
-              'bg-orange-600 hover:bg-orange-500',
-              'bg-red-600 hover:bg-red-500',
-            ];
-            const labels = ['Low', '', '', '', 'High'];
+          {EFFORT_LEVELS.filter((l) => l.value > 0).map(({ value, name }) => {
+            const selected = formData.actionPoints === String(value);
+            const colors: Record<number, string> = {
+              1: 'bg-green-600 hover:bg-green-500',
+              2: 'bg-lime-600 hover:bg-lime-500',
+              3: 'bg-yellow-600 hover:bg-yellow-500',
+              4: 'bg-orange-600 hover:bg-orange-500',
+              5: 'bg-red-600 hover:bg-red-500',
+            };
             return (
               <button
-                key={level}
+                key={value}
                 type="button"
                 onClick={() =>
                   setFormData((prev) => ({
                     ...prev,
-                    actionPoints: prev.actionPoints === String(level) ? null : String(level),
+                    actionPoints: prev.actionPoints === String(value) ? null : String(value),
                   }))
                 }
                 className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${
                   selected
-                    ? `${colors[level - 1]} text-white ring-2 ring-white/30`
+                    ? `${colors[value]} text-white ring-2 ring-white/30`
                     : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
                 }`}
               >
-                {level}{labels[level - 1] ? ` ${labels[level - 1]}` : ''}
+                {value} {name}
               </button>
             );
           })}
         </div>
+        {/* A scale nobody can apply consistently is not a scale, so each rung
+            says what it means rather than leaving 1-5 to interpretation. */}
+        <p className="text-xs text-[var(--muted)] mt-1 min-h-[1rem]">
+          {effortLevel(formData.actionPoints)?.hint ?? 'How much of a day does this cost?'}
+        </p>
       </div>
 
       {/* Blocked By */}
       {showBlockedBySection && (
         <div>
           <label className={labelClass}>Blocked By</label>
+          <div className="mb-2">
+            <label htmlFor="followUpDate" className="block text-xs text-[var(--muted)] mb-1">
+              Chase it up on
+            </label>
+            <input
+              type="date"
+              id="followUpDate"
+              name="followUpDate"
+              value={formData.followUpDate || ''}
+              onChange={handleChange}
+              className={inputClass}
+            />
+            {/* Waiting is not neglect, so a blocked task stays quiet and stops
+                scoring. This date is what brings it back deliberately. */}
+            <p className="text-xs text-[var(--muted)] mt-1">
+              While blocked this task stays quiet. On this day it asks to be chased.
+            </p>
+          </div>
           {formData.blockedBy.length > 0 && (
             <div className="space-y-1 mb-2">
               {formData.blockedBy.map((entry, index) => (
