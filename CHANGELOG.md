@@ -51,6 +51,10 @@ All notable changes to LifeOS will be documented in this file.
 - Finished tasks stay on the Week view, greyed out, instead of disappearing
 - The Week counter no longer calls due-dated tasks "planned"
 
+### Mobile
+- Pressing return in a text field no longer submits the form. On a phone the return key is the only obvious way to dismiss the keyboard, so typing a name and reaching for it saved a half-filled record and shut the dialog — which reads as the form closing by itself. Return now just leaves the field, and nothing is saved until you press the button
+- A toast no longer swallows taps aimed at what is underneath it. At phone width it sits exactly over a dialog's Create and Save buttons, so while the monthly backup reminder was on screen those buttons did nothing. Its own buttons still work
+
 ### Habits
 - The frequency picker now says what the option you picked actually does. It described both modes with the same sentence — "a fixed schedule (e.g., every day, every week)" — which restates the label rather than answering the question it raises. A weekly quota in particular was not obvious until you had watched one for a week
 - Weekly is now described honestly as "a week after you last did it", not "every week", which reads as a set weekday

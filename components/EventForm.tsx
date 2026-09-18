@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Event, Domain } from '@/types';
 import { getTodayString } from '@/lib/dates';
+import { blockImplicitSubmit } from '@/lib/forms';
 
 interface EventFormProps {
   event?: Event | null;
@@ -79,7 +80,7 @@ export default function EventForm({ event, domains, onSubmit, onCancel }: EventF
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={blockImplicitSubmit} className="space-y-4">
       {/* Event Name */}
       <div>
         <label htmlFor="eventName" className={labelClass}>

@@ -82,7 +82,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className={`${typeStyles[toast.type]} px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 pointer-events-auto animate-in slide-in-from-right min-w-[280px] max-w-[400px]`}
+            // Only the buttons take pointer events. The body of a toast is
+            // read, not pressed, and at phone width it lands squarely on a
+            // dialog's Create and Save buttons - swallowing those taps made
+            // the form look broken for as long as a toast was on screen.
+            className={`${typeStyles[toast.type]} px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 pointer-events-none animate-in slide-in-from-right min-w-[280px] max-w-[400px]`}
           >
             <span className="flex-1 text-sm">{toast.message}</span>
             {toast.action && (
@@ -92,14 +96,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   removeToast(toast.id);
                 }}
                 className="flex-shrink-0 px-2 py-1 rounded text-xs font-medium
-                           bg-white/20 hover:bg-white/30 transition-colors"
+                           bg-white/20 hover:bg-white/30 transition-colors pointer-events-auto"
               >
                 {toast.action.label}
               </button>
             )}
             <button
               onClick={() => removeToast(toast.id)}
-              className="text-white/70 hover:text-white flex-shrink-0"
+              className="text-white/70 hover:text-white flex-shrink-0 pointer-events-auto"
               aria-label="Close notification"
             >
               ×
