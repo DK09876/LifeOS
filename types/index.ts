@@ -75,10 +75,10 @@ export interface Habit {
   habitName: string;
   recurrence: 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
   lastCompleted: string | null;  // ISO timestamp of last completion
-  targetPerWeek: number | null;
+  targetPerWeek: number | null;  // If set, habit is due until completed this many times per week
   // What this costs out of a day, 0-5. Zero is meaningful and common here:
   // brushing your teeth is a habit worth keeping but not worth budgeting for.
-  actionPoints: string | null;  // If set, habit is due until completed this many times per week
+  actionPoints: string | null;
   completionDates: string[];     // Array of ISO date strings (YYYY-MM-DD) for tracking weekly progress
   // High water mark, carried forward. completionDates prune at 90 days, so a
   // best streak derived from them alone would quietly shrink over time.
