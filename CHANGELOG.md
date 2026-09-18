@@ -52,6 +52,10 @@ All notable changes to LifeOS will be documented in this file.
 - The Week counter no longer calls due-dated tasks "planned"
 
 ### Habits
+- The frequency picker now says what the option you picked actually does. It described both modes with the same sentence — "a fixed schedule (e.g., every day, every week)" — which restates the label rather than answering the question it raises. A weekly quota in particular was not obvious until you had watched one for a week
+- Weekly is now described honestly as "a week after you last did it", not "every week", which reads as a set weekday
+
+### Habits (earlier)
 - Fixed habits appearing as due and completed at the same time. A weekly target made the already-done-today check unreachable
 - Added streaks and a 30-day history strip. The streak unit follows the habit — days for a plain habit, target-hitting weeks for one with a weekly target, which also shows its consecutive-day run alongside
 - Best streak is stored rather than derived, so it does not shrink as completion history ages out
