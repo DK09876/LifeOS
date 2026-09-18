@@ -52,6 +52,8 @@ All notable changes to LifeOS will be documented in this file.
 - The Week counter no longer calls due-dated tasks "planned"
 
 ### Mobile
+- Fixed the keyboard dropping every couple of seconds while typing in any dialog. The modal re-focused itself on every render, and it re-rendered on every poll, so focus was pulled off the field you were in twice a second. On a desktop that is an invisible flicker; on a phone the keyboard goes with it
+- Polls no longer look like changes. The server stamps every read with the time it was read, so the "has anything moved" comparison found a difference every single time and re-rendered the whole app twice a second. It now compares content and ignores the timestamp
 - Pressing return in a text field no longer submits the form. On a phone the return key is the only obvious way to dismiss the keyboard, so typing a name and reaching for it saved a half-filled record and shut the dialog — which reads as the form closing by itself. Return now just leaves the field, and nothing is saved until you press the button
 - A toast no longer swallows taps aimed at what is underneath it. At phone width it sits exactly over a dialog's Create and Save buttons, so while the monthly backup reminder was on screen those buttons did nothing. Its own buttons still work
 

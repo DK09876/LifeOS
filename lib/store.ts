@@ -81,6 +81,22 @@ export function isHydrated() {
 
 // --- server io -----------------------------------------------------------
 
+/**
+ * Whether two payloads say the same thing.
+ *
+ * The server stamps every read with the time it was read, so a plain string
+ * comparison found a difference on every single poll - which defeated the
+ * check entirely and re-rendered the whole app twice a second. Everything
+ * else in the body is content, so ignoring that one field is enough.
+ */
+function unchanged(a: string, b: string): boolean {
+  return withoutReadTime(a) === withoutReadTime(b);
+}
+
+function withoutReadTime(body: string): string {
+  return body.replace(/,?"exportedAt":"[^"]*"/, '');
+}
+
 export async function hydrate(): Promise<void> {
   const profile = getProfile();
   if (!profile) return;
@@ -90,7 +106,7 @@ export async function hydrate(): Promise<void> {
   if (!response.ok) throw new Error(`Could not load data (HTTP ${response.status})`);
 
   const text = await response.text();
-  if (hydrated && text === lastBody) return; // nothing moved
+  if (hydrated && unchanged(text, lastBody)) return; // nothing moved
   lastBody = text;
 
   const body = JSON.parse(text) as Record<string, unknown>;
