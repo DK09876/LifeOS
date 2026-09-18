@@ -39,3 +39,17 @@ describe('backupReminderDetail', () => {
     expect(backupReminderDetail(daysAgo(40))).toMatch(/^Last copied /);
   });
 });
+
+describe('an empty profile', () => {
+  // The reminder fires on a brand-new install otherwise, which is the one
+  // screen where a first impression is being formed and there is by
+  // definition nothing to lose.
+  it('is never owed a reminder', () => {
+    expect(isBackupDue(null, new Date(), false)).toBe(false);
+    expect(isBackupDue('2020-01-01T00:00:00.000Z', new Date(), false)).toBe(false);
+  });
+
+  it('still reminds once there is data', () => {
+    expect(isBackupDue(null, new Date(), true)).toBe(true);
+  });
+});

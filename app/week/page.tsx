@@ -8,7 +8,8 @@ import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useToast } from '@/components/Toast';
 import { useTasks, useDomains, useProjects, useEvents, markTaskDone, createTask, updateTaskData, deleteTask } from '@/lib/hooks';
 import { Task } from '@/types';
-import { getPriorityDotColor } from '@/lib/colors';
+import { getPriorityDotColor, levelRank } from '@/lib/colors';
+import { tasksForDay } from '@/lib/schedule';
 import { Event } from '@/types';
 
 export default function WeekPage() {
@@ -40,18 +41,16 @@ export default function WeekPage() {
   const weekTasks = useMemo(() => {
     return weekDays.map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
+      // Planned work shows on its planned day; an unplanned deadline shows
+      // on its due day. One task, one square - see lib/schedule.
       return {
         date: day,
-        tasks: tasks.filter(t => {
-          if (t.status === 'Done' || t.status === 'Archived') return false;
-          // Compare date strings directly to avoid timezone issues
-          if (t.plannedDate === dayStr) return true;
-          if (t.dueDate === dayStr) return true;
-          return false;
-        }).sort((a, b) => {
-          const priorityA = parseInt(a.taskPriority[0]) || 3;
-          const priorityB = parseInt(b.taskPriority[0]) || 3;
-          return priorityA - priorityB;
+        tasks: tasksForDay(tasks, dayStr, true).sort((a, b) => {
+          // Committed work first, then deadlines still to be placed, then
+          // what is already finished - done work is context, not a call to act.
+          const rank = { planned: 0, due: 1, done: 2 } as const;
+          if (a.kind !== b.kind) return rank[a.kind] - rank[b.kind];
+          return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
         })
       };
     });
@@ -105,6 +104,11 @@ export default function WeekPage() {
   }
 
   const totalTasks = weekTasks.reduce((sum, day) => sum + day.tasks.length, 0);
+  const count = (kind: 'planned' | 'due' | 'done') =>
+    weekTasks.reduce((sum, day) => sum + day.tasks.filter(t => t.kind === kind).length, 0);
+  const plannedCount = count('planned');
+  const dueCount = count('due');
+  const doneCount = count('done');
 
   return (
     <div>
@@ -143,26 +147,31 @@ export default function WeekPage() {
       {/* Stats */}
       <div className="bg-[var(--card-bg)] rounded-lg p-4 mb-6">
         <p className="text-[var(--muted)] text-sm">
-          <span className="text-white font-semibold">{totalTasks}</span> tasks planned this week
+          <span className="text-white font-semibold">{totalTasks}</span> tasks this week
+          {totalTasks > 0 && (
+            <span className="text-[var(--muted)]">
+              {' — '}{plannedCount} planned, {dueCount} due{doneCount > 0 && `, ${doneCount} done`}
+            </span>
+          )}
         </p>
       </div>
 
       {/* Week Grid */}
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
         {weekTasks.map(({ date, tasks: dayTasks }) => (
-          <div key={date.toISOString()} className="min-h-[300px]">
+          <div key={date.toISOString()} className="sm:min-h-[300px]">
             {/* Day Header */}
-            <div className={`p-2 rounded-t-lg text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
+            <div className={`p-2 rounded-t-lg flex sm:block items-baseline gap-2 text-left sm:text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
               <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
                 {format(date, 'EEE')}
               </p>
-              <p className={`text-lg font-semibold ${isToday(date) ? 'text-white' : 'text-white'}`}>
+              <p className="text-lg font-semibold text-white">
                 {format(date, 'd')}
               </p>
             </div>
 
             {/* Day Tasks */}
-            <div className="bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 min-h-[250px]">
+            <div className="group bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 sm:min-h-[250px]">
               {/* Events for this day */}
               {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => (
                 <div
@@ -180,24 +189,44 @@ export default function WeekPage() {
                   </div>
                 </div>
               ))}
-              {dayTasks.map(task => (
+              {dayTasks.map(({ task, kind }) => (
                 <div
                   key={task.id}
-                  className="bg-[var(--background)] rounded p-2 group hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
+                  // A due-but-unplanned task is a deadline, not a commitment:
+                  // dashed and dimmed so a glance separates the two.
+                  className={`rounded p-2 group cursor-pointer transition-colors hover:bg-[var(--card-hover)] ${
+                    kind === 'due'
+                      ? 'bg-transparent border border-dashed border-amber-500/50'
+                      : kind === 'done'
+                        ? 'bg-[var(--background)]/40 opacity-50'
+                        : 'bg-[var(--background)]'
+                  }`}
                   onClick={() => handleEditTask(task)}
                 >
                   <div className="flex items-start gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
-                      className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
-                      aria-label={`Mark "${task.taskName}" as done`}
-                    >
-                      <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
-                    </button>
+                    {kind === 'done' ? (
+                      <span
+                        className="w-4 h-4 mt-0.5 rounded-full border border-green-600/60 flex items-center justify-center flex-shrink-0 text-green-500 text-[10px]"
+                        aria-label={`"${task.taskName}" is done`}
+                      >
+                        ✓
+                      </span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
+                        className="w-4 h-4 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+                        aria-label={`Mark "${task.taskName}" as done`}
+                      >
+                        <span className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-green-500 text-[10px]">✓</span>
+                      </button>
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm line-clamp-2">{task.taskName}</p>
+                      <p className={`text-sm line-clamp-2 ${kind === 'done' ? 'text-[var(--muted)] line-through' : 'text-white'}`}>{task.taskName}</p>
                       <div className="flex items-center gap-1 mt-1">
                         <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
+                        {kind === 'due' && (
+                          <span className="text-[10px] px-1 rounded bg-amber-500/20 text-amber-400">due</span>
+                        )}
                         {task.domain?.icon && (
                           <span className="text-xs">{task.domain.icon}</span>
                         )}
@@ -210,7 +239,7 @@ export default function WeekPage() {
               {/* Add task button */}
               <button
                 onClick={() => handleOpenCreateTask(date)}
-                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                className="w-full p-2 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-sm text-left opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                 aria-label={`Add task for ${format(date, 'EEEE, MMM d')}`}
               >
                 + Add

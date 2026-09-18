@@ -4,53 +4,65 @@ This file provides context for Claude Code when working on this repository.
 
 ## Project Overview
 
-LifeOS is a **local-first Progressive Web App (PWA)** for personal productivity — tasks, habits, and planning. It stores data locally using IndexedDB and backs up to the user's personal Google Drive via explicit Push/Pull.
+LifeOS is a **self-hosted** personal productivity app — tasks, habits, events, and
+projects. A Raspberry Pi on the user's tailnet runs the app and holds the
+authoritative SQLite database; browsers keep an in-memory copy and write back
+to the server.
 
-**Key Principle**: No central server database - each user owns their data completely.
+**Key Principle**: no cloud account and no third party. Each profile's data is
+separate, and the user can download and restore it themselves.
 
 ## Architecture
 
 ```
-User's Device                          User's Google Drive
-┌─────────────────┐                   ┌─────────────────┐
-│  React UI       │                   │ LifeOS/         │
-│       ↓↑        │  Push ──────────→ │   lifeos-data.json
-│  IndexedDB      │  ←────────── Pull │   (version: 2)  │
-│  (Dexie.js)     │                   │                 │
-└─────────────────┘                   └─────────────────┘
+Browser                          Raspberry Pi
+┌─────────────────┐             ┌──────────────────────┐
+│  React UI       │             │  Next.js (port 3000) │
+│       ↓↑        │  HTTP ─────→│        ↓↑            │
+│  in-memory copy │←─── poll 2s │  SQLite (lifeos.db)  │
+└─────────────────┘             │        ↑             │
+                                │  pantry (voice)      │
+                                └──────────────────────┘
 ```
 
 ### Data Flow
-1. User makes changes → saved to IndexedDB immediately
-2. **Push**: uploads local data to Google Drive (replaces remote)
-3. **Pull**: downloads remote data and replaces local (with unsaved-changes warning)
-4. No auto-sync — user controls when data moves
+1. A change writes to the server immediately and updates the local copy
+2. The client polls every 2s and adopts the server's view, so a change made on
+   another device — or by the voice assistant writing directly — appears without
+   a refresh
+3. `/api/data?profile=<id>` is the read/write endpoint; `/api/sync` is the
+   token-authenticated equivalent used by other clients
 
 ### Deletion Model
-- Records get `deletedAt` timestamp (soft delete / tombstone) instead of being removed
-- Tombstones propagate deletions across devices: push on Device A → pull on Device B
-- Tombstones older than 30 days are compacted (hard-deleted) before each push
+- Records get `deletedAt` (soft delete / tombstone) instead of being removed
+- Tombstones stop a delete on one device being resurrected by another that had
+  not caught up
 
 ## Tech Stack
 
 - **Framework**: Next.js 16 with App Router
 - **UI**: React 19 + Tailwind CSS 4
-- **Local Database**: Dexie.js (IndexedDB wrapper), schema version 11
-- **Auth**: Google OAuth 2.0 (popup with callback page + localStorage events)
-- **Sync**: Google Drive API (REST) — Push/Pull only, no auto-sync
+- **Client store**: in-memory copy of the profile, polled from the server
+- **Server**: Next.js route handlers on the Pi, SQLite via `node-sqlite3-wasm`
+- **Auth**: per-user bearer tokens on `/api/sync`; `/api/data` is unauthenticated
+  and relies on the tailnet for isolation
 - **Date Handling**: date-fns
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `lib/db.ts` | Dexie database schema, CRUD operations, score calculation, sync payload types |
+| `lib/db.ts` | Types, CRUD over the store shim, score calculation, recurrence helpers |
 | `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, `useProjects()`, action functions |
-| `lib/sync.ts` | Google Drive Push/Pull: `pushToGoogleDrive()`, `pullFromGoogleDrive()` |
+| `lib/store.ts` | Client store: hydrate, poll, read/write against `/api/data` |
+| `lib/server/store.ts` | Server store: SQLite schema, per-profile reads and writes |
+| `lib/schedule.ts` | Where a task sits on a calendar: planned date, else due date, once |
+| `lib/capacity.ts` | The day's AP budget and what has been spent against it |
+| `lib/streaks.ts` | Habit streaks (days, or target-hitting weeks) and 30-day history |
+| `lib/backup-file.ts` | Backup export/import: build, name, and validate the JSON file |
 | `lib/colors.ts` | Shared color utility functions (priority, status, due date colors) |
 | `lib/suggest.ts` | Auto-suggest algorithm: scoring, suggestNextTask, suggestWeekSchedule (pure functions) |
-| `lib/google-auth.ts` | Google OAuth: sign in, sign out, token management |
-| `components/AppLayout.tsx` | Main layout: sidebar, header with Push/Pull buttons, quote |
+| `components/AppLayout.tsx` | Main layout: sidebar, header with quick-add and profile switcher |
 | `app/page.tsx` | Today view: due tasks + habits, completed today |
 | `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix + Auto-Suggest |
 | `app/projects/page.tsx` | Projects management: cards, progress bars, task lists |
@@ -66,14 +78,15 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   id: string;
   taskName: string;
   status: 'Needs Details' | 'Backlog' | 'Planned' | 'Blocked' | 'Done' | 'Archived';
-  taskPriority: '1 - Urgent' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Optional';
-  urgency: '1 - Critical' | '2 - High' | '3 - Normal' | '4 - Low' | '5 - Someday';
+  taskPriority: '1 - Urgent' | ... | '5 - Optional' | null;   // null = not yet decided
+  urgency: '1 - Critical' | ... | '5 - Someday' | null;       // null = not yet decided
   importanceScore: number;   // priority + domain, range 20-80
-  urgencyScore: number;      // urgency field + due date proximity, range 10-100
+  urgencyScore: number;      // urgency field + time pressure, range 10-120
   taskScore: number;         // combined: (importance × urgency) / 100
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  recurrenceAnchor: 'completion' | 'schedule' | null;  // null = completion
   lastCompleted: string | null;
   doneDate: string | null;
   actionPoints: string | null;
@@ -125,6 +138,7 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   lastCompleted: string | null;
   targetPerWeek: number | null;
   completionDates: string[];    // Pruned to last 90 days on each completion
+  bestStreak: number | null;    // Stored, not derived: completionDates prune
   notes: string;
   icon: string | null;
   isActive: boolean;
@@ -144,6 +158,7 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   duration: number | null;   // minutes
   actionPoints: string | null;
   recurrence: 'None' | 'Daily' | 'Weekly' | 'Biweekly' | 'Monthly' | 'Bimonthly' | 'Quarterly' | 'Half-Yearly' | 'Yearly';
+  recurrenceAnchor: 'completion' | 'schedule' | null;  // null = completion
   lastCompleted: string | null;
   notes: string;
   domainId: string | null;
@@ -166,7 +181,7 @@ npm run lint     # Run ESLint
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | No | Google OAuth Client ID (only needed for sync) |
+| `LIFEOS_DB_PATH` | No | SQLite file location (default `./data/lifeos.db`) |
 
 ## Important Patterns
 
@@ -192,11 +207,13 @@ import { createProject, updateProjectData, deleteProject } from '@/lib/hooks';
 import { getTaskPriorityColor, getDomainPriorityColor, getStatusColor, getDueDateColor, getPriorityDotColor, getTaskPriorityBorder } from '@/lib/colors';
 ```
 
-### Sync Flow
+### Backups
 ```typescript
-import { pushToGoogleDrive, pullFromGoogleDrive } from '@/lib/sync';
-// Push: compacts tombstones, exports all data (v2 payload), uploads to Drive
-// Pull: downloads from Drive, replaces all local data
+import { buildBackup, parseBackup, backupFilename } from '@/lib/backup-file';
+// Settings downloads buildBackup(profile, payload) as JSON and restores via
+// parseBackup() + replaceAllOnServer(). parseBackup rejects anything that is
+// not a backup - import replaces the whole profile, so a wrong file would
+// destroy the data it was meant to protect.
 ```
 
 ### Soft Deletes
@@ -240,9 +257,17 @@ new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
 
 ## Notes
 
-- The app works fully offline without Google sign-in
-- Google Drive sync is optional — Push/Pull only, no auto-sync
-- Deletions use tombstones (`deletedAt`) that propagate across devices via sync
+- The Pi is the source of truth; the browser copy is a cache that polls every 2s
+- Deletions use tombstones (`deletedAt`) so a delete is not resurrected by a
+  device that had not caught up
+- `taskPriority` and `urgency` are nullable on purpose: unset is what keeps a
+  task in Needs Details, so never reintroduce a default on create
+- Urgency = urgency field + `max(deadline pressure, neglect)`. The two are
+  never summed; a current-or-future `plannedDate` suppresses neglect entirely
+- `recurrenceAnchor: 'schedule'` dates the next occurrence from the previous
+  `dueDate` rather than from completion, and reopens when that date passes
+- Plan's calendar deliberately shows less than Week's: commitments and overdue
+  work only. Week is a record and includes future deadlines and done tasks
 - Task scores (importance, urgency, combined) are recalculated when priority, urgency, due date, or domain changes
 - Recurring tasks have `needsReset` computed at runtime (not stored)
 - `completionDates` on habits are pruned to 90 days to prevent unbounded growth

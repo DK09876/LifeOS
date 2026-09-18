@@ -14,15 +14,24 @@
 import { useEffect, useRef } from 'react';
 
 import { backupReminderDetail, isBackupDue } from '@/lib/backup-reminder';
+import { useTasks, useHabits, useEvents, useProjects } from '@/lib/hooks';
 import { useToast } from './Toast';
 
 export function BackupReminder() {
   const { showToast } = useToast();
+  const tasks = useTasks();
+  const habits = useHabits();
+  const events = useEvents();
+  const projects = useProjects();
+  const hasData = tasks.length + habits.length + events.length + projects.length > 0;
   // React runs effects twice in development; without this the toast doubles.
   const checked = useRef(false);
 
   useEffect(() => {
     if (checked.current) return;
+    // Wait for the store to hydrate before deciding; an empty first render
+    // would otherwise suppress the reminder for the whole session.
+    if (!hasData) return;
     checked.current = true;
 
     (async () => {
@@ -33,10 +42,10 @@ export function BackupReminder() {
           backupLastConfirmedAt: string | null;
         };
 
-        if (!isBackupDue(backupLastConfirmedAt)) return;
+        if (!isBackupDue(backupLastConfirmedAt, new Date(), hasData)) return;
 
         showToast(
-          `Back up your data to your PC. ${backupReminderDetail(backupLastConfirmedAt)}`,
+          `Download a backup from Settings. ${backupReminderDetail(backupLastConfirmedAt)}`,
           'info',
           {
             action: {
@@ -55,7 +64,7 @@ export function BackupReminder() {
         // A reminder is not worth surfacing an error over.
       }
     })();
-  }, [showToast]);
+  }, [showToast, hasData]);
 
   return null;
 }

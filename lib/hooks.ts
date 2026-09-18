@@ -2,9 +2,13 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from './live-query';
-import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset } from './db';
+import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, nextEventDate } from './db';
 import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
+import { bestStreakSoFar, currentStreak } from './streaks';
+import { CAPACITY_PREF, capacityFor, parseCapacityMap } from './capacity';
+import { HISTORY_PREF, parseHistory, pruneHistory, recentDays, spentOn } from './history';
+import { DEFAULT_SUGGEST_CONTROLS } from './suggest';
 
 /** Per-profile marker for the last daily maintenance run. */
 const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
@@ -18,9 +22,15 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   for (const task of allTasks) {
     if (task.deletedAt) continue;
     if (checkNeedsReset(task)) {
-      const newStatus = task.plannedDate ? 'Planned' : 'Backlog';
+      // Roll the dates forward as well as the status. Leaving them on the
+      // previous occurrence brought the task back already overdue, planned
+      // for a day that had passed, where it sat in Triage for good.
+      const { dueDate, plannedDate } = nextRecurrenceDates(task);
+      const newStatus = plannedDate ? 'Planned' : 'Backlog';
       await db.tasks.update(task.id, {
         status: newStatus,
+        dueDate,
+        plannedDate,
         lastCompleted: null,
         doneDate: null,
         updatedAt: new Date().toISOString(),
@@ -71,15 +81,59 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   for (const event of allEvents) {
     if (event.deletedAt) continue;
     if (checkEventNeedsReset(event)) {
-      await db.events.update(event.id, { lastCompleted: null, updatedAt: new Date().toISOString() });
+      // Move the occurrence forward as well as clearing lastCompleted.
+      // Clearing alone left a recurring event pinned to its first date, so it
+      // sat in Triage as permanently missed and never reached a future week.
+      const date = nextEventDate(event) ?? event.date;
+      await db.events.update(event.id, { date, lastCompleted: null, updatedAt: new Date().toISOString() });
     }
   }
+
+  // Close yesterday's books. The first run of a new day is the first moment
+  // the previous one is finished and safe to total up, and this check already
+  // runs exactly once a day.
+  await recordYesterday();
 
   // Record when this ran, per profile, so it happens once a day rather than
   // on every page load.
   await savePreference(RECURRENCE_LAST_RUN, getTodayString());
 
   return { tasksReset, tasksRescored };
+}
+
+/**
+ * Write what yesterday cost into the history.
+ *
+ * Only completions are recorded; what was planned for a past day cannot be
+ * recovered afterwards, and a guess would make the record less trustworthy
+ * than no record.
+ */
+async function recordYesterday(): Promise<void> {
+  const yesterday = recentDays(1)[0];
+  const history = pruneHistory(parseHistory(getPreference(HISTORY_PREF)));
+  if (history[yesterday]) return;
+
+  let controls = DEFAULT_SUGGEST_CONTROLS;
+  try {
+    const stored = getPreference('suggest.settings');
+    if (stored) controls = { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
+  } catch { /* fall back to the defaults */ }
+
+  const capacityMap = parseCapacityMap(getPreference(CAPACITY_PREF));
+  const [tasks, events, habits] = await Promise.all([
+    db.tasks.toArray(), db.events.toArray(), db.habits.toArray(),
+  ]);
+  const { spent, finished } = spentOn(yesterday, tasks, events, habits, controls.defaultAP);
+
+  // A day nobody touched is not evidence of anything, so it is not recorded.
+  if (spent === 0 && finished === 0) return;
+
+  history[yesterday] = {
+    capacity: capacityFor(capacityMap, yesterday, controls.dailyAPBudget),
+    spent,
+    finished,
+  };
+  await savePreference(HISTORY_PREF, JSON.stringify(history));
 }
 
 // Hook to run daily auto-reset check for recurring tasks (runs once on app load)
@@ -318,6 +372,7 @@ function isTaskComplete(task: Partial<Task>): boolean {
   return !!(
     task.taskName?.trim() &&
     task.taskPriority &&
+    task.urgency &&
     task.domainId &&
     task.actionPoints
   );
@@ -382,11 +437,14 @@ export async function createTask(taskData: {
   dueDate?: string | null;
   plannedDate?: string | null;
   recurrence?: Task['recurrence'];
+  recurrenceAnchor?: Task['recurrenceAnchor'];
+  recurrenceWeekdays?: Task['recurrenceWeekdays'];
   actionPoints?: string | null;
   notes?: string;
   domainId?: string | null;
   projectId?: string | null;
   blockedBy?: BlockedByEntry[];
+  followUpDate?: string | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -402,14 +460,16 @@ export async function createTask(taskData: {
     id,
     taskName: taskData.taskName,
     status: taskData.status || 'Needs Details',
-    taskPriority: taskData.taskPriority || '3 - Normal',
-    urgency: taskData.urgency || '3 - Normal',
+    taskPriority: taskData.taskPriority ?? null,
+    urgency: taskData.urgency ?? null,
     taskScore: 0,
     importanceScore: 0,
     urgencyScore: 0,
     dueDate: taskData.dueDate || null,
     plannedDate: taskData.plannedDate || null,
     recurrence: taskData.recurrence || 'None',
+    recurrenceAnchor: taskData.recurrenceAnchor ?? null,
+    recurrenceWeekdays: taskData.recurrenceWeekdays ?? null,
     lastCompleted: null,
     doneDate: null,
     actionPoints: taskData.actionPoints || null,
@@ -417,6 +477,7 @@ export async function createTask(taskData: {
     domainId: taskData.domainId || null,
     projectId: taskData.projectId ?? null,
     blockedBy: taskData.blockedBy ?? [],
+    followUpDate: taskData.followUpDate ?? null,
     deletedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -441,7 +502,10 @@ export async function updateTaskData(taskId: string, updates: Partial<Task>): Pr
 
   // Recalculate scores if relevant fields changed
   let { importanceScore, urgencyScore, taskScore } = { importanceScore: task.importanceScore, urgencyScore: task.urgencyScore, taskScore: task.taskScore };
-  if (updates.taskPriority || updates.urgency || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
+  // Compare against undefined, not truthiness: priority and urgency can now
+  // be cleared back to null, and a truthiness test would skip the rescore
+  // and leave the task carrying a score it no longer earns.
+  if (updates.taskPriority !== undefined || updates.urgency !== undefined || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
     const domainId = updates.domainId !== undefined ? updates.domainId : task.domainId;
     let domainPriority: string | undefined;
     if (domainId) {
@@ -580,9 +644,12 @@ export async function markHabitDone(habitId: string): Promise<void> {
     completionDates.push(todayStr);
   }
 
+  const { current } = currentStreak(completionDates, habit.targetPerWeek, todayStr);
+
   await db.habits.update(habitId, {
     lastCompleted: now,
     completionDates,
+    bestStreak: bestStreakSoFar(habit.bestStreak, current),
     updatedAt: now,
   });
 }
@@ -626,6 +693,7 @@ export async function createHabit(habitData: {
   habitName: string;
   recurrence?: Habit['recurrence'];
   targetPerWeek?: number | null;
+  actionPoints?: string | null;
   notes?: string;
   icon?: string | null;
   isActive?: boolean;
@@ -639,7 +707,9 @@ export async function createHabit(habitData: {
     recurrence: habitData.recurrence || 'Daily',
     lastCompleted: null,
     targetPerWeek: habitData.targetPerWeek ?? null,
+    actionPoints: habitData.actionPoints ?? null,
     completionDates: [],
+    bestStreak: 0,
     notes: habitData.notes || '',
     icon: habitData.icon ?? null,
     isActive: habitData.isActive ?? true,

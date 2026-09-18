@@ -31,7 +31,7 @@ export default function HelpPage() {
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
           <h2 className="text-lg font-medium text-white mb-3">What is LifeOS?</h2>
           <p className="text-sm text-[var(--muted)] mb-3">
-            LifeOS is a personal productivity app for managing tasks, habits, events, and projects. All your data lives on your device — nothing is sent to a server. You can optionally back up to your personal Google Drive.
+            LifeOS is a personal productivity app for managing tasks, habits, events, and projects. Your data lives on a Raspberry Pi on your own network — there is no cloud account and nothing leaves your tailnet. Each profile keeps its own separate data, and you can download a backup at any time from Settings.
           </p>
           <p className="text-sm text-[var(--muted)]">
             The core idea: capture everything, organize it into domains and projects, plan your week, and work from your Today view.
@@ -46,14 +46,14 @@ export default function HelpPage() {
               <span className="text-xl w-8 flex-shrink-0">📍</span>
               <div>
                 <p className="text-white font-medium">Today</p>
-                <p className="text-[var(--muted)]">Your daily dashboard. Shows habits due today, today's events, and tasks planned or due today. Mark items complete with one click. Completed items move to a collapsible "Completed Today" section where you can undo them.</p>
+                <p className="text-[var(--muted)]">Your daily dashboard. Shows habits due today, today&rsquo;s events, and tasks planned or due today. Mark items complete with one click; completed items move to a collapsible &ldquo;Completed Today&rdquo; section where you can undo them. Above the list sit two things: an effort meter for the day, and — if you planned something for an earlier day and did not do it — a strip asking what you want to do about it.</p>
               </div>
             </div>
             <div className="flex gap-4">
               <span className="text-xl w-8 flex-shrink-0">📅</span>
               <div>
                 <p className="text-white font-medium">Week</p>
-                <p className="text-[var(--muted)]">A 7-day calendar (Mon–Sun). See tasks and events for each day. Navigate between weeks. Hover over a day to add tasks directly to it. Drag tasks between days to reschedule.</p>
+                <p className="text-[var(--muted)]">A 7-day calendar (Mon–Sun) showing what each day holds. Navigate between weeks; hover a day to add a task straight to it. A task appears on exactly one day: the day you planned it for, or — if you have not planned it — its due date, drawn dashed so a deadline you have not made room for looks different from work you have committed to. Finished tasks stay put, greyed out, so the week reads as a record rather than emptying as you go.</p>
               </div>
             </div>
             <div className="flex gap-4">
@@ -63,7 +63,7 @@ export default function HelpPage() {
                 <p className="text-[var(--muted)]">Your planning hub with three views:</p>
                 <ul className="text-[var(--muted)] list-disc ml-4 mt-1 space-y-1">
                   <li><span className="text-white">Triage</span> — Review tasks that need attention: incomplete details, blocked tasks (with blocker info shown inline), missed planned dates, overdue due dates, and archived items.</li>
-                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. Filter and sort tasks. Use filter presets for quick views. Auto-suggest can recommend your next task or schedule your whole week.</li>
+                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill the week within your effort budget.</li>
                   <li><span className="text-white">Matrix</span> — Eisenhower scatter plot showing tasks by importance vs. urgency. Click dots to see task names, click a task to edit it.</li>
                 </ul>
               </div>
@@ -107,7 +107,7 @@ export default function HelpPage() {
               <span className="text-xl w-8 flex-shrink-0">⚙️</span>
               <div>
                 <p className="text-white font-medium">Settings</p>
-                <p className="text-[var(--muted)]">Configure filter presets for quick planning views, run recurring task resets manually, manage Google Drive push/pull, and toggle the Get Started page.</p>
+                <p className="text-[var(--muted)]">Download a backup of your data or restore one, configure filter presets for quick planning views, run recurring task resets manually, and toggle the Get Started page.</p>
               </div>
             </div>
           </div>
@@ -141,7 +141,7 @@ export default function HelpPage() {
           <div className="space-y-3 text-sm">
             <div className="flex items-start gap-3">
               <span className="px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-xs flex-shrink-0 mt-0.5">Needs Details</span>
-              <p className="text-[var(--muted)]">Task is missing required info (name, priority, domain, or action points). Fill these in and it automatically promotes to Backlog or Planned.</p>
+              <p className="text-[var(--muted)]">Task is missing required info — it needs a name, priority, urgency, domain and action points. Fill all of them in and it automatically promotes to Backlog, or Planned if it also has a planned date.</p>
             </div>
             <div className="flex items-start gap-3">
               <span className="px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs flex-shrink-0 mt-0.5">Backlog</span>
@@ -169,7 +169,7 @@ export default function HelpPage() {
             <div className="space-y-2 text-sm text-[var(--muted)] pt-3">
               <p>LifeOS automatically adjusts status based on your task's fields:</p>
               <ul className="list-disc ml-4 space-y-1">
-                <li>A task missing name, priority, domain, or AP stays at <span className="text-yellow-400">Needs Details</span></li>
+                <li>A task missing name, priority, urgency, domain or AP stays at <span className="text-yellow-400">Needs Details</span></li>
                 <li>Once all fields are filled, it promotes to <span className="text-blue-400">Backlog</span></li>
                 <li>If a planned date is set, it promotes to <span className="text-purple-400">Planned</span>. Remove the date and it drops back to Backlog.</li>
                 <li>Setting status to <span className="text-gray-400">Blocked</span> (or adding a blocker) and <span className="text-green-400">Done</span>/<span className="text-gray-500">Archived</span> are always manual — auto-status never overrides these.</li>
@@ -277,7 +277,21 @@ export default function HelpPage() {
 
         {/* Recurring Tasks */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
-          <h2 className="text-lg font-medium text-white mb-4">Recurring Tasks & Events</h2>
+          <h2 className="text-lg font-medium text-white mb-4">Recurring Tasks &amp; Events</h2>
+          <div className="mb-4 text-sm text-[var(--muted)] space-y-2">
+            <p>
+              A recurring task asks how the next one should be dated, and the answer depends on what kind of thing it is.
+            </p>
+            <p>
+              <span className="text-white">When I finish it</span> restarts the clock on completion — right for anything you simply want to do every so often. Water the plants a few days late and the next one is a fortnight from then, not a fortnight from a date you already missed.
+            </p>
+            <p>
+              A <span className="text-white">weekly</span> task can also name the days it lands on. Pick Mon, Wed and Fri and it comes back on the next of those, rather than a week after you last got to it — which is what &ldquo;every weekday&rdquo; means and what a plain weekly cycle could only approximate.
+            </p>
+            <p>
+              <span className="text-white">The due date</span> keeps a fixed period — right for anything with a real deadline inside a window, like a fortnightly return or a monthly bill. Doing it four days early does not drag every future deadline four days earlier, and the next period opens as soon as the last one closes rather than an interval after you got to it.
+            </p>
+          </div>
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>Tasks and events can recur on a schedule. When a recurring task is marked Done, it stays done until the interval passes, then automatically resets to Backlog (or Planned if it has a planned date).</p>
             <p>This check runs automatically when you open the app each day. You can also trigger it manually from Settings.</p>
@@ -379,21 +393,28 @@ export default function HelpPage() {
             <Collapsible title="How task scoring works">
               <div className="space-y-3 text-sm text-[var(--muted)] pt-3">
                 <div className="bg-[var(--background)] rounded-lg p-3">
-                  <p className="text-white font-medium mb-1">Importance Score <span className="font-normal text-[var(--muted)]">(20–80)</span></p>
+                  <p className="text-white font-medium mb-1">Importance Score <span className="font-normal text-[var(--muted)]">(15–65)</span></p>
                   <p className="font-mono text-white text-xs">Importance = Task Priority + Domain Priority</p>
                   <p className="mt-1">Task Priority: Urgent (50), High (40), Normal (30), Low (20), Optional (10)</p>
-                  <p>Domain Priority: Critical (30), Important (20), Maintenance (10)</p>
+                  <p>Domain Priority: Critical (15), Important (10), Maintenance (5)</p>
+                  <p className="mt-1">The domain is a tiebreaker, not the verdict. What a task is worth is mostly what you said it is worth — otherwise anything filed under a quiet domain is capped below a trivial job in a loud one, and the things that matter most tend to live in the quiet ones.</p>
                 </div>
                 <div className="bg-[var(--background)] rounded-lg p-3">
-                  <p className="text-white font-medium mb-1">Urgency Score <span className="font-normal text-[var(--muted)]">(10–100)</span></p>
-                  <p className="font-mono text-white text-xs">Urgency = Urgency Field + Due Date Proximity</p>
+                  <p className="text-white font-medium mb-1">Urgency Score <span className="font-normal text-[var(--muted)]">(10–120)</span></p>
+                  <p className="font-mono text-white text-xs">Urgency = Urgency Field + Time Pressure</p>
                   <p className="mt-1">Urgency Field: Critical (50), High (40), Normal (30), Low (20), Someday (10)</p>
-                  <p>Due Date Bonus: Overdue (+50) down to 2+ months away (+5)</p>
+                  <p className="mt-2 text-white">Time pressure comes from one of two places:</p>
+                  <p className="mt-1"><span className="text-white">A deadline</span> — due today (+45), tomorrow (+40), this week (+25), a month out (+15), further (+5).</p>
+                  <p><span className="text-white">Overdue</span> climbs rather than flattening: +50 the first day late, rising each day to +62 by day five, +65 within the week, +68 within the month, +70 beyond it. Something that has rotted for months outranks something merely late.</p>
+                  <p className="mt-1"><span className="text-white">A cycle</span> — a repeating task with no due date is due by the end of its own interval. "Every two weeks" already says when it is due, so a fortnight after you last did it, it is due today; a day later it is a day late, and it climbs from there.</p>
+                  <p className="mt-1"><span className="text-white">Neglect</span> — pressure from nobody having said when this happens: +5 after two weeks untouched, +10 after a month, +15 after two, +20 after three. It applies whether or not there is a due date, because a deadline three months out does not make a task you have ignored for three months calm.</p>
+                  <p className="mt-1">A <span className="text-white">planned date that has not passed</span> stops neglect accruing — you have committed to a day, so the task is waiting rather than drifting. Miss that day and it starts rotting again.</p>
+                  <p className="mt-1">The two never add up: a task takes whichever reading is louder, so a plan can never mask a real deadline and lateness always wins.</p>
                 </div>
                 <div className="bg-[var(--background)] rounded-lg p-3">
                   <p className="text-white font-medium mb-1">Combined Score</p>
                   <p className="font-mono text-white text-xs">Combined = (Importance x Urgency) / 100</p>
-                  <p className="mt-1">This is the main score used for default sorting and the Eisenhower Matrix position.</p>
+                  <p className="mt-1">This is the main score used for default sorting and the Eisenhower Matrix position. Multiplied rather than added, so a task that is both important and urgent pulls clearly ahead of one that is merely a bit of each. Recalculated once a day, so an approaching deadline actually moves a task up your list.</p>
                 </div>
               </div>
             </Collapsible>
@@ -425,31 +446,138 @@ export default function HelpPage() {
             </div>
           </div>
           <p className="text-[var(--muted)] text-sm mt-3">
+            The lines sit at an importance of 45 and an urgency of 65. Because urgency now grows both from a deadline approaching and from a task being left alone, something undated can drift rightwards into &ldquo;Do Now&rdquo; if you ignore it long enough — which is usually the moment you should look at it.
+          </p>
+          <p className="text-[var(--muted)] text-sm mt-3">
             Click dots to see task names, then click a task to edit it. Filters from the Planning view apply here too.
           </p>
         </section>
 
-        {/* Sync */}
+        {/* The day's effort */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
-          <h2 className="text-lg font-medium text-white mb-4">Data & Sync</h2>
+          <h2 className="text-lg font-medium text-white mb-4">The day&rsquo;s effort</h2>
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>
-              <span className="text-white">Local First:</span> All data is stored in your browser. The app works fully offline — no account required.
+              Tasks, events and habits all carry an effort estimate, and Today shows three numbers built from them: what the day is allowed to cost, what it has cost so far, and what is still committed.
             </p>
             <p>
-              <span className="text-white">Google Drive Backup:</span> Optionally sign in with Google to back up your data. Everything is stored in your personal Google Drive as a JSON file.
+              The scale is about how much of a day something takes, not how long it lasts on a clock — a twenty-minute conversation you have been dreading costs more than an hour of easy admin. <span className="text-white">Free</span> is for things worth keeping but not worth planning around, <span className="text-white">Tiny</span> a few minutes, <span className="text-white">Small</span> half an hour, <span className="text-white">Real</span> about an hour or anything you must be present for, <span className="text-white">Heavy</span> a couple of hours of focus, and <span className="text-white">Big</span> eats an afternoon.
             </p>
             <p>
-              <span className="text-white">Push:</span> Uploads all your local data to Google Drive, replacing the remote backup.
+              Habits count too. Three of them can easily be a third of what a day actually costs, and a budget that ignored them read as far emptier than the day really was.
             </p>
             <p>
-              <span className="text-white">Pull:</span> Downloads data from Google Drive and replaces all local data. You'll be warned if you have unpushed local changes.
+              <span className="text-white">Capacity</span> starts from the daily budget you set in Plan, and the − and + buttons change it for today alone. Some days you have less in you, and the plan should be able to say so without changing your normal.
             </p>
             <p>
-              <span className="text-white">Deletions sync too:</span> Deleted items are kept as hidden "tombstones" so they propagate across devices. Push on one device, pull on another.
+              <span className="text-white">Used</span> counts what you have finished today — including things you had planned for an earlier day, because the effort was spent today either way.
             </p>
             <p>
-              <span className="text-white">Privacy:</span> No central server. Your data stays on your devices and your personal Google Drive. No one else can access it.
+              <span className="text-white">Planned left</span> is what you are still signed up for. This is the number that warns you before the day rather than after it: if the bar is already past the end, something needs to move.
+            </p>
+            <p>
+              Going over is not an error and nothing stops you. The bar turns amber and says what happened, so that a run of overspent days is visible rather than something you only feel.
+            </p>
+          </div>
+        </section>
+
+        {/* Missed plans */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Plans you missed</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              When you planned something for a day and the day passed without it, it does not silently join today&rsquo;s list. A day that absorbs everything you meant to do earlier stops being a plan and becomes a pile, and a pile is something you stop reading.
+            </p>
+            <p>
+              Instead they collect in a strip at the top of Today, collapsed to a count. Open it and each one offers the decision directly: do it today, push it to tomorrow, unplan it, or mark it done. There is a &ldquo;move all to today&rdquo; if that is genuinely what you want.
+            </p>
+            <p>
+              Work that is <span className="text-white">blocked</span> is handled separately again. It stops scoring while it waits — being stuck behind someone else is not the same as neglecting something — and instead takes a date to chase it up. On that day it appears in its own strip asking whether to chase, defer or unblock.
+            </p>
+            <p>
+              This is only about <span className="text-white">plans</span> — intentions you set. An overdue <span className="text-white">deadline</span> is a different thing and stays in Plan → Triage → Overdue, where it also climbs your task scores the longer it goes unaddressed.
+            </p>
+          </div>
+        </section>
+
+        {/* Habit history */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Streaks and history</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              Each habit shows the run it is on, its best run, and the last 30 days as dots — filled where you did it, dimmer at weekends, ringed on today.
+            </p>
+            <p>
+              <span className="text-white">The unit follows the habit.</span> A plain daily habit streaks in days. A habit with a weekly target streaks in weeks that hit the target, because counting its days would show the chain breaking every single week.
+            </p>
+            <p>
+              A habit with a weekly target shows both: the run of target-hitting weeks as the headline, and the consecutive days alongside it. Three days running on a five-a-week habit is a real thing, and the weekly number on its own reports it as nothing.
+            </p>
+            <p>
+              A streak does not break just because today is not done yet — the day is not over. It breaks when a day (or a target week) is genuinely missed.
+            </p>
+          </div>
+        </section>
+
+        {/* Quick capture */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Capturing quickly</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              The <span className="text-white">+</span> button in the top bar opens a new task from any page, and pressing <span className="font-mono text-white">n</span> does the same without reaching for the mouse. It will not fire while you are typing in a field.
+            </p>
+            <p>
+              The form asks for five things: what it is, how much it matters, how soon, where it belongs and what it costs. Everything else — planned date, project, recurrence, blockers, notes — sits behind <span className="text-white">More options</span>, and opens by itself when you edit a task that already uses it.
+            </p>
+            <p>
+              It is the same form as everywhere else, so a task captured in a hurry follows the same rules — a name on its own lands in Needs Details, waiting for you to triage it rather than pretending it has been thought about.
+            </p>
+          </div>
+        </section>
+
+        {/* Retrospect */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Retrospect</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              Every other page is about what to do next. This one is the only place the app says something about you rather than about your list.
+            </p>
+            <p>
+              <span className="text-white">Your days</span> draws the last four weeks as bars, each against the budget you had set for that day, so you can see whether the number you chose has any relationship to the days you actually have. A budget you blow every week is not a budget.
+            </p>
+            <p>
+              <span className="text-white">Habits</span> shows every streak and its 30-day strip in one place, which is easier to read than one card at a time.
+            </p>
+            <p>
+              A day is written up the first time you open the app the following morning — the first moment it is finished and safe to total. Only completions are recorded; what you had <em>planned</em> for a past day cannot be recovered afterwards, and a guess would make the record less trustworthy than none.
+            </p>
+          </div>
+        </section>
+
+        {/* Data */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Where your data lives</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              <span className="text-white">On your Pi:</span> One SQLite database on a Raspberry Pi on your own network holds every profile. The browser keeps a copy for speed and writes straight back to the Pi, so a change made on your laptop shows up on your phone within a couple of seconds — and so does one made by the voice assistant.
+            </p>
+            <p>
+              <span className="text-white">Profiles are separate:</span> Each person has their own data. Switching profiles in the top right reloads from the server; nothing is shared between them.
+            </p>
+            <p>
+              <span className="text-white">Nightly snapshots:</span> The Pi snapshots the database every night and keeps the recent ones, skipping nights where nothing changed. That protects you from mistakes and corruption.
+            </p>
+            <p>
+              <span className="text-white">Download a backup:</span> Snapshots live on the same SD card as the database, so they do not protect you from the card failing. Settings → Your data downloads everything as a single JSON file, and restores one. Do this occasionally; the app will remind you monthly.
+            </p>
+            <p>
+              <span className="text-white">Restoring replaces:</span> Importing a backup swaps out everything in the current profile. You are asked to confirm, and told how many records are coming in, before anything is touched.
+            </p>
+            <p>
+              <span className="text-white">Deletions:</span> Deleted items are kept briefly as hidden &ldquo;tombstones&rdquo; rather than removed outright, so a delete on one device is not undone by another device that had not caught up yet.
+            </p>
+            <p>
+              <span className="text-white">Privacy:</span> No cloud account and no third party. The Pi is reachable only over your own tailnet.
             </p>
           </div>
         </section>

@@ -3,6 +3,7 @@
 import { Habit } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { getCompletionsThisWeek } from '@/lib/db';
+import HabitHistory from './HabitHistory';
 
 interface HabitCardProps {
   habit: Habit;
@@ -69,6 +70,7 @@ export default function HabitCard({
         {onMarkDone && habit.isActive && (
           <button
             onClick={() => onMarkDone(habit.id)}
+            aria-label={`Mark "${habit.habitName}" as done`}
             className="w-5 h-5 rounded-full border-2 border-[var(--muted)] hover:border-green-500 hover:bg-green-500/20 flex items-center justify-center flex-shrink-0 transition-colors"
           >
             <span className="opacity-0 group-hover:opacity-100 text-green-500 text-xs">✓</span>
@@ -113,6 +115,7 @@ export default function HabitCard({
         {isDue && onMarkDone && habit.isActive && (
           <button
             onClick={() => onMarkDone(habit.id)}
+            aria-label={`Mark "${habit.habitName}" as done`}
             className="w-6 h-6 mt-1 rounded-full border-2 border-[var(--muted)] hover:border-green-500 hover:bg-green-500/20 flex items-center justify-center flex-shrink-0 transition-colors"
           >
             <span className="opacity-0 group-hover:opacity-100 text-green-500 text-sm">✓</span>
@@ -179,6 +182,11 @@ export default function HabitCard({
 
           {/* Last completed */}
           <p className="text-sm text-[var(--muted)] mt-2">{lastCompletedText}</p>
+
+          {/* Streak and the last 30 days */}
+          <div className="mt-3">
+            <HabitHistory habit={habit} />
+          </div>
 
           {/* Notes */}
           {habit.notes && (

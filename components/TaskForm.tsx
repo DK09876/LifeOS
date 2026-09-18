@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Task, Domain, BlockedByEntry, Project } from '@/types';
 import { hasCircularDependency } from '@/lib/hooks';
+import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
 
 interface TaskFormProps {
   task?: Task | null;
@@ -21,16 +22,22 @@ export interface TaskFormData {
   dueDate: string | null;
   plannedDate: string | null;
   recurrence: Task['recurrence'];
+  recurrenceAnchor: Task['recurrenceAnchor'];
+  recurrenceWeekdays: Task['recurrenceWeekdays'];
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
   projectId: string | null;
   blockedBy: BlockedByEntry[];
+  followUpDate: string | null;
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
-const PRIORITY_OPTIONS: Task['taskPriority'][] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
-const URGENCY_OPTIONS: Task['urgency'][] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
+const PRIORITY_OPTIONS: NonNullable<Task['taskPriority']>[] = ['1 - Urgent', '2 - High', '3 - Normal', '4 - Low', '5 - Optional'];
+const URGENCY_OPTIONS: NonNullable<Task['urgency']>[] = ['1 - Critical', '2 - High', '3 - Normal', '4 - Low', '5 - Someday'];
+/** Sunday first, matching Date.getDay(). */
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
 const RECURRENCE_OPTIONS: Task['recurrence'][] = ['None', 'Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'];
 
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
@@ -40,19 +47,49 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
   const [formData, setFormData] = useState<TaskFormData>({
     taskName: '',
     status: 'Needs Details',
-    taskPriority: '3 - Normal',
-    urgency: '3 - Normal',
+    taskPriority: null,
+    urgency: null,
     dueDate: null,
     plannedDate: null,
     recurrence: 'None',
+    recurrenceAnchor: null,
+    recurrenceWeekdays: null,
     actionPoints: null,
     notes: '',
     domainId: null,
     projectId: null,
     blockedBy: [],
+    followUpDate: null,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+
+  // How many of the optional fields this task actually uses. Shown on the
+  // collapsed toggle so nothing set earlier can hide behind it unnoticed.
+  const extrasInUse = [
+    formData.plannedDate,
+    formData.projectId,
+    formData.recurrence !== 'None' ? formData.recurrence : null,
+    formData.blockedBy.length ? 'blocked' : null,
+    formData.notes?.trim() ? 'notes' : null,
+  ].filter(Boolean).length;
   const [noteBlockerText, setNoteBlockerText] = useState('');
+
+  // Open the section when editing something that already uses it, so an
+  // existing recurrence or blocker is never hidden behind a collapsed toggle.
+  // Read from the task rather than formData: this runs alongside the effect
+  // that populates the form, so formData is still empty at this point.
+  useEffect(() => {
+    const usesExtras = !!task && (
+      !!task.plannedDate || !!task.projectId ||
+      task.recurrence !== 'None' || (task.blockedBy?.length ?? 0) > 0 ||
+      !!task.notes?.trim()
+    );
+    setShowMore(usesExtras);
+    // Only when switching task: reopening on every keystroke would stop the
+    // user closing it again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id]);
 
   useEffect(() => {
     if (task) {
@@ -64,11 +101,14 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         dueDate: task.dueDate,
         plannedDate: task.plannedDate,
         recurrence: task.recurrence,
+        recurrenceAnchor: task.recurrenceAnchor,
+        recurrenceWeekdays: task.recurrenceWeekdays,
         actionPoints: task.actionPoints,
         notes: task.notes,
         domainId: task.domainId,
         projectId: task.projectId,
         blockedBy: task.blockedBy || [],
+        followUpDate: task.followUpDate,
       });
     }
   }, [task]);
@@ -159,26 +199,8 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         />
       </div>
 
-      {/* Status, Priority, and Urgency */}
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label htmlFor="status" className={labelClass}>
-            Status
-          </label>
-          <select
-            id="status"
-            name="status"
-            value={formData.status}
-            onChange={handleChange}
-            className={inputClass}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Priority and Urgency */}
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="taskPriority" className={labelClass}>
             Priority
@@ -186,10 +208,11 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           <select
             id="taskPriority"
             name="taskPriority"
-            value={formData.taskPriority}
+            value={formData.taskPriority ?? ''}
             onChange={handleChange}
             className={inputClass}
           >
+            <option value="">Not set</option>
             {PRIORITY_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
@@ -204,10 +227,11 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           <select
             id="urgency"
             name="urgency"
-            value={formData.urgency}
+            value={formData.urgency ?? ''}
             onChange={handleChange}
             className={inputClass}
           >
+            <option value="">Not set</option>
             {URGENCY_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
@@ -217,8 +241,8 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         </div>
       </div>
 
-      {/* Domain and Project */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Domain */}
+      <div>
         <div>
           <label htmlFor="domainId" className={labelClass}>
             Domain
@@ -238,7 +262,128 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             ))}
           </select>
         </div>
+      </div>
+
+      {/* Due date */}
+      <div>
         <div>
+          <label htmlFor="dueDate" className={labelClass}>
+            Due Date
+          </label>
+          <input
+            type="date"
+            id="dueDate"
+            name="dueDate"
+            value={formData.dueDate || ''}
+            onChange={handleChange}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      {/* Action Points */}
+      <div>
+        <label className={labelClass}>
+          Action Points
+        </label>
+        <div className="flex gap-1">
+          {EFFORT_LEVELS.filter((l) => l.value > 0).map(({ value, name }) => {
+            const selected = formData.actionPoints === String(value);
+            const colors: Record<number, string> = {
+              1: 'bg-green-600 hover:bg-green-500',
+              2: 'bg-lime-600 hover:bg-lime-500',
+              3: 'bg-yellow-600 hover:bg-yellow-500',
+              4: 'bg-orange-600 hover:bg-orange-500',
+              5: 'bg-red-600 hover:bg-red-500',
+            };
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    actionPoints: prev.actionPoints === String(value) ? null : String(value),
+                  }))
+                }
+                className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${
+                  selected
+                    ? `${colors[value]} text-white ring-2 ring-white/30`
+                    : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                }`}
+              >
+                {value} {name}
+              </button>
+            );
+          })}
+        </div>
+        {/* A scale nobody can apply consistently is not a scale, so each rung
+            says what it means rather than leaving 1-5 to interpretation. */}
+        <p className="text-xs text-[var(--muted)] mt-1 min-h-[1rem]">
+          {effortLevel(formData.actionPoints)?.hint ?? 'How much of a day does this cost?'}
+        </p>
+      </div>
+
+      {/* Everything below is optional. Most tasks are a name, how much they
+          matter, where they belong and what they cost - putting eleven fields
+          in front of that made writing one down feel like filing a form. */}
+      <div className="border-t border-[var(--border-color)] pt-3">
+        <button
+          type="button"
+          onClick={() => setShowMore((open) => !open)}
+          className="text-sm text-[var(--muted)] hover:text-white flex items-center gap-1"
+          aria-expanded={showMore}
+        >
+          <span className={`transition-transform ${showMore ? 'rotate-90' : ''}`}>›</span>
+          {showMore ? 'Fewer options' : 'More options'}
+          {!showMore && extrasInUse > 0 && (
+            <span className="ml-1 text-xs px-1.5 rounded-full bg-[var(--card-hover)]">{extrasInUse}</span>
+          )}
+        </button>
+      </div>
+
+      {showMore && (
+        <div className="space-y-4">
+        {/* Status */}
+        <div>
+
+          <label htmlFor="status" className={labelClass}>
+            Status
+          </label>
+          <select
+            id="status"
+            name="status"
+            value={formData.status}
+            onChange={handleChange}
+            className={inputClass}
+          >
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Planned date */}
+        <div>
+
+          <label htmlFor="plannedDate" className={labelClass}>
+            Planned Date
+          </label>
+          <input
+            type="date"
+            id="plannedDate"
+            name="plannedDate"
+            value={formData.plannedDate || ''}
+            onChange={handleChange}
+            className={inputClass}
+          />
+        </div>
+
+        {/* Project */}
+        <div>
+
           <label htmlFor="projectId" className={labelClass}>
             Project
           </label>
@@ -257,37 +402,6 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             ))}
           </select>
         </div>
-      </div>
-
-      {/* Dates */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="dueDate" className={labelClass}>
-            Due Date
-          </label>
-          <input
-            type="date"
-            id="dueDate"
-            name="dueDate"
-            value={formData.dueDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label htmlFor="plannedDate" className={labelClass}>
-            Planned Date
-          </label>
-          <input
-            type="date"
-            id="plannedDate"
-            name="plannedDate"
-            value={formData.plannedDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
-      </div>
 
       {/* Recurrence */}
       <div>
@@ -307,51 +421,89 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             </option>
           ))}
         </select>
-      </div>
 
-      {/* Action Points */}
-      <div>
-        <label className={labelClass}>
-          Action Points
-        </label>
-        <div className="flex gap-1">
-          {[1, 2, 3, 4, 5].map((level) => {
-            const selected = formData.actionPoints === String(level);
-            const colors = [
-              'bg-green-600 hover:bg-green-500',
-              'bg-lime-600 hover:bg-lime-500',
-              'bg-yellow-600 hover:bg-yellow-500',
-              'bg-orange-600 hover:bg-orange-500',
-              'bg-red-600 hover:bg-red-500',
-            ];
-            const labels = ['Low', '', '', '', 'High'];
-            return (
-              <button
-                key={level}
-                type="button"
-                onClick={() =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    actionPoints: prev.actionPoints === String(level) ? null : String(level),
-                  }))
-                }
-                className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${
-                  selected
-                    ? `${colors[level - 1]} text-white ring-2 ring-white/30`
-                    : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
-                }`}
-              >
-                {level}{labels[level - 1] ? ` ${labels[level - 1]}` : ''}
-              </button>
-            );
-          })}
-        </div>
+        {formData.recurrence === 'Weekly' && (
+          <div className="mt-2">
+            <label className={labelClass}>On which days</label>
+            <div className="flex gap-1">
+              {WEEKDAY_LABELS.map((label, day) => {
+                const picked = (formData.recurrenceWeekdays || []).includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setFormData((prev) => {
+                      const current = prev.recurrenceWeekdays || [];
+                      const next = current.includes(day)
+                        ? current.filter((d) => d !== day)
+                        : [...current, day].sort((a, b) => a - b);
+                      return { ...prev, recurrenceWeekdays: next.length ? next : null };
+                    })}
+                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                      picked
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceWeekdays?.length
+                ? 'It comes back on the next of these days.'
+                : 'Leave blank for a plain week after each time you do it.'}
+            </p>
+          </div>
+        )}
+
+        {formData.recurrence !== 'None' && (
+          <div className="mt-2">
+            <label htmlFor="recurrenceAnchor" className={labelClass}>
+              Next one is counted from
+            </label>
+            <select
+              id="recurrenceAnchor"
+              name="recurrenceAnchor"
+              value={formData.recurrenceAnchor ?? 'completion'}
+              onChange={handleChange}
+              className={inputClass}
+            >
+              <option value="completion">When I finish it</option>
+              <option value="schedule">The due date (fixed period)</option>
+            </select>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceAnchor === 'schedule'
+                ? 'Deadlines stay put whether you are early or late — for things with a real period, like a fortnightly return.'
+                : 'The clock restarts when you finish — for things you just want to do every so often.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Blocked By */}
       {showBlockedBySection && (
         <div>
           <label className={labelClass}>Blocked By</label>
+          <div className="mb-2">
+            <label htmlFor="followUpDate" className="block text-xs text-[var(--muted)] mb-1">
+              Chase it up on
+            </label>
+            <input
+              type="date"
+              id="followUpDate"
+              name="followUpDate"
+              value={formData.followUpDate || ''}
+              onChange={handleChange}
+              className={inputClass}
+            />
+            {/* Waiting is not neglect, so a blocked task stays quiet and stops
+                scoring. This date is what brings it back deliberately. */}
+            <p className="text-xs text-[var(--muted)] mt-1">
+              While blocked this task stays quiet. On this day it asks to be chased.
+            </p>
+          </div>
           {formData.blockedBy.length > 0 && (
             <div className="space-y-1 mb-2">
               {formData.blockedBy.map((entry, index) => (
@@ -426,6 +578,9 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           placeholder="Additional notes..."
         />
       </div>
+
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 justify-end pt-4 border-t border-[var(--border-color)]">

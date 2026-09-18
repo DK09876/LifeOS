@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, DragEvent } from 'react';
+import { DragEvent, useCallback, useMemo, useState } from 'react';
 import { format, startOfWeek, startOfMonth, addDays, addWeeks, addMonths, isToday, startOfDay, endOfMonth, getDay, isBefore, differenceInCalendarDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
@@ -11,9 +11,13 @@ import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLe
 import { useTasks, useDomains, useVisibleFilterPresets, useEvents, useProjects, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
-import { getTaskPriorityColor, getPriorityDotColor, getDueDateColor, getTaskPriorityBorder, getDueSoonLabel } from '@/lib/colors';
+import { getDueDateColor, getDueSoonLabel, getPriorityDotColor, getTaskPriorityBorder, getTaskPriorityColor, levelLabel, levelRank } from '@/lib/colors';
 import { parseLocalDate, toDateString } from '@/lib/dates';
 import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeekSchedule, WeekDayInfo } from '@/lib/suggest';
+import { tasksForDay } from '@/lib/schedule';
+import { getPreference, savePreference } from '@/lib/store';
+import { useLiveQuery } from '@/lib/live-query';
+import { getTodayString } from '@/lib/dates';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -96,6 +100,8 @@ const PRESET_COLOR_MAP: Record<string, { active: string; inactive: string }> = {
   gray: { active: 'bg-gray-600 text-white', inactive: 'bg-[var(--background)] text-[var(--muted)] hover:text-white' },
 };
 
+const SUGGEST_SETTINGS = 'suggest.settings';
+
 export default function PlanPage() {
   const tasks = useTasks();
   const domains = useDomains();
@@ -124,17 +130,34 @@ export default function PlanPage() {
   const [pinnedTaskIds, setPinnedTaskIds] = useState<Set<string>>(new Set());
   const [suggestRemovedPlacements, setSuggestRemovedPlacements] = useState<Set<string>>(new Set()); // "taskId:dateStr"
   const [suggestSettingsOpen, setSuggestSettingsOpen] = useState(false);
+  // Kept against the profile on the server, not in localStorage. Your daily
+  // AP budget is a fact about you, not about the browser you happened to open
+  // - stored locally it did not follow you to your phone and was in no backup.
   const [suggestControls, setSuggestControls] = useState<SuggestControls>(() => {
-    if (typeof window === 'undefined') return DEFAULT_SUGGEST_CONTROLS;
     try {
-      const stored = localStorage.getItem('suggest-settings');
+      const stored = getPreference(SUGGEST_SETTINGS);
       if (stored) return { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
     } catch {}
     return DEFAULT_SUGGEST_CONTROLS;
   });
+  // The store hydrates after first render, so pick the saved value up once it
+  // arrives; without this the slider silently snaps back to the default.
+  // Adjusted during render rather than in an effect - React re-runs this
+  // component before committing, so there is no flash of the stale value and
+  // no cascading second render.
+  const storedSuggest = useLiveQuery(() => getPreference(SUGGEST_SETTINGS), []);
+  const [seenSuggest, setSeenSuggest] = useState<string | undefined>(undefined);
+  if (storedSuggest !== seenSuggest) {
+    setSeenSuggest(storedSuggest);
+    if (storedSuggest) {
+      try {
+        setSuggestControls({ ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(storedSuggest) });
+      } catch {}
+    }
+  }
   const updateSuggestControls = useCallback((c: SuggestControls) => {
     setSuggestControls(c);
-    localStorage.setItem('suggest-settings', JSON.stringify(c));
+    void savePreference(SUGGEST_SETTINGS, JSON.stringify(c));
   }, []);
 
   // Planning view state
@@ -163,8 +186,8 @@ export default function PlanPage() {
   // Comparators for sorting
   const comparators: Record<string, (a: Task, b: Task) => number> = useMemo(() => ({
     taskName: (a, b) => a.taskName.localeCompare(b.taskName),
-    taskPriority: (a, b) => a.taskPriority.localeCompare(b.taskPriority),
-    urgency: (a, b) => a.urgency.localeCompare(b.urgency),
+    taskPriority: (a, b) => levelRank(a.taskPriority) - levelRank(b.taskPriority),
+    urgency: (a, b) => levelRank(a.urgency) - levelRank(b.urgency),
     dueDate: (a, b) => (a.dueDate || 'z').localeCompare(b.dueDate || 'z'),
     domain: (a, b) => (a.domain?.name || '').localeCompare(b.domain?.name || ''),
     actionPoints: (a, b) => (parseInt(a.actionPoints || '0') || 0) - (parseInt(b.actionPoints || '0') || 0),
@@ -248,6 +271,16 @@ export default function PlanPage() {
       archived: tasks.filter(t => t.status === 'Archived'),
     };
   }, [tasks, events]);
+
+  const todayStr = getTodayString();
+
+  // Everything still open, whatever its status. The Unscheduled column and
+  // the suggester want the narrower activeTasks below; the calendar wants
+  // this, so that a planned task is drawn even while it needs details.
+  const liveTasks = useMemo(
+    () => tasks.filter(t => t.status !== 'Done' && t.status !== 'Archived'),
+    [tasks],
+  );
 
   // Active tasks (not done/archived/needs details/blocked)
   const activeTasks = useMemo(() => {
@@ -339,19 +372,23 @@ export default function PlanPage() {
   const tasksByDay = useMemo(() => {
     return calendarDays.map(day => {
       const dayStr = format(day, 'yyyy-MM-dd');
+      // This board is for deciding what to do, so it shows commitments and
+      // things that have gone past their date - not every future deadline.
+      // An unplanned deadline still to come belongs in Unscheduled, waiting to
+      // be placed; drawing it here would make the week look booked by work
+      // nobody has scheduled. Finished tasks are not decisions either. (The
+      // Week view, which is a record rather than a plan, shows all of it.)
       return {
         date: day,
-        tasks: activeTasks.filter(t => {
-          if (!t.plannedDate) return false;
-          return t.plannedDate === dayStr;
-        }).sort((a, b) => {
-          const priorityA = parseInt(a.taskPriority[0]) || 3;
-          const priorityB = parseInt(b.taskPriority[0]) || 3;
-          return priorityA - priorityB;
-        })
+        tasks: tasksForDay(liveTasks, dayStr)
+          .filter(({ kind }) => kind === 'planned' || dayStr < todayStr)
+          .sort((a, b) => {
+            if (a.kind !== b.kind) return a.kind === 'planned' ? -1 : 1;
+            return levelRank(a.task.taskPriority) - levelRank(b.task.taskPriority);
+          })
       };
     });
-  }, [activeTasks, calendarDays]);
+  }, [liveTasks, calendarDays, todayStr]);
 
   // Events by day for the calendar
   const eventsByDay = useMemo(() => {
@@ -697,7 +734,7 @@ export default function PlanPage() {
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-white font-medium">{task.taskName}</h3>
             <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-              {task.taskPriority.split(' - ')[1]}
+              {levelLabel(task.taskPriority)}
             </span>
           </div>
 
@@ -731,15 +768,17 @@ export default function PlanPage() {
   );
 
   // Render a task in the calendar
-  const renderCalendarTask = (task: Task) => (
+  const renderCalendarTask = (task: Task, kind: 'planned' | 'due' | 'done' = 'planned') => (
     <div
       key={task.id}
       draggable
       onDragStart={(e) => handleDragStart(e, task.id)}
       onDragEnd={handleDragEnd}
-      className={`bg-[var(--background)] rounded p-1.5 group hover:bg-[var(--card-hover)] cursor-grab active:cursor-grabbing transition-colors ${
-        draggedTaskId === task.id ? 'opacity-50' : ''
-      }`}
+      // Dashed amber marks a deadline that has not been planned onto a day;
+      // dragging it onto one turns it into a commitment and a solid card.
+      className={`rounded p-1.5 group hover:bg-[var(--card-hover)] cursor-grab active:cursor-grabbing transition-colors ${
+        kind === 'due' ? 'bg-transparent border border-dashed border-amber-500/50' : 'bg-[var(--background)]'
+      } ${draggedTaskId === task.id ? 'opacity-50' : ''}`}
       onClick={() => handleEditTask(task)}
     >
       <div className="flex items-start gap-1.5">
@@ -753,6 +792,9 @@ export default function PlanPage() {
           <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
           <div className="flex items-center gap-1 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
+            {kind === 'due' && (
+              <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-400">due</span>
+            )}
             {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
           </div>
         </div>
@@ -907,7 +949,7 @@ export default function PlanPage() {
                           </span>
                         )}
                         <span className={`px-2 py-0.5 rounded text-xs ${getTaskPriorityColor(task.taskPriority)}`}>
-                          {task.taskPriority.split(' - ')[1]}
+                          {levelLabel(task.taskPriority)}
                         </span>
                       </div>
                     </div>
@@ -1054,8 +1096,8 @@ export default function PlanPage() {
           {/* Right: Calendar */}
           <div className="flex-1 min-w-0">
             {/* Calendar Navigation */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={() => setDateOffset(prev => prev - 1)}
                   className="p-2 hover:bg-[var(--card-bg)] rounded text-[var(--muted)] hover:text-white"
@@ -1080,7 +1122,7 @@ export default function PlanPage() {
               </div>
 
               {/* View Toggle */}
-              <div className="flex items-center gap-1 bg-[var(--card-bg)] rounded-lg p-1">
+              <div className="flex items-center gap-1 bg-[var(--card-bg)] rounded-lg p-1 flex-shrink-0">
                 {(['day', 'week', 'month'] as CalendarView[]).map(view => (
                   <button
                     key={view}
@@ -1234,7 +1276,7 @@ export default function PlanPage() {
                     </div>
                   ) : (
                     <>
-                      {tasksByDay[0]?.tasks.map(task => renderDetailedTask(task))}
+                      {tasksByDay[0]?.tasks.map(({ task }) => renderDetailedTask(task))}
                     </>
                   )}
                   <div className="flex gap-2">
@@ -1257,7 +1299,8 @@ export default function PlanPage() {
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="grid grid-cols-7 gap-2">
+              <div className="overflow-x-auto -mx-1 px-1">
+              <div className="grid grid-cols-7 gap-2 min-w-[640px]">
                 {tasksByDay.map(({ date, tasks: dayTasks }) => {
                   const dayStr = format(date, 'yyyy-MM-dd');
                   const dayEvents = events.filter(e => e.date === dayStr);
@@ -1272,7 +1315,7 @@ export default function PlanPage() {
                     .filter(Boolean) as Task[];
 
                   // Calculate AP for footer
-                  const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
+                  const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t.task), 0);
                   const eventAP = dayEvents.reduce((sum, e) => sum + (parseInt(e.actionPoints || '0') || suggestControls.defaultAP), 0);
                   const suggestedAP = suggestedTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
                   const totalAP = taskAP + eventAP + suggestedAP;
@@ -1296,9 +1339,9 @@ export default function PlanPage() {
                           {format(date, 'd')}
                         </p>
                       </button>
-                      <div className="bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
+                      <div className="group bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
                         {dayEvents.map(event => renderCalendarEvent(event))}
-                        {dayTasks.map(task => renderCalendarTask(task))}
+                        {dayTasks.map(({ task, kind }) => renderCalendarTask(task, kind))}
 
                         {/* Suggested tasks (inline with dashed green border) */}
                         {suggestedTasks.map(task => {
@@ -1352,7 +1395,7 @@ export default function PlanPage() {
                         )}
                         <button
                           onClick={() => handleOpenCreateTask(date)}
-                          className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 hover:opacity-100 transition-opacity"
+                          className="w-full p-1.5 text-[var(--muted)] hover:text-white hover:bg-[var(--background)] rounded text-xs text-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                         >
                           + Add
                         </button>
@@ -1368,6 +1411,7 @@ export default function PlanPage() {
                     </div>
                   );
                 })}
+              </div>
               </div>
             )}
 
@@ -1410,14 +1454,14 @@ export default function PlanPage() {
                             const dayStr = format(date, 'yyyy-MM-dd');
                             const dayEvents = events.filter(e => e.date === dayStr);
                             const allItems = [
-                              ...dayEvents.map(e => ({ type: 'event' as const, item: e })),
-                              ...dayTasks.map(t => ({ type: 'task' as const, item: t })),
+                              ...dayEvents.map(e => ({ type: 'event' as const, item: e, kind: 'planned' as const })),
+                              ...dayTasks.map(({ task, kind }) => ({ type: 'task' as const, item: task, kind })),
                             ];
                             const visibleItems = allItems.slice(0, 3);
                             const overflowCount = allItems.length - 3;
                             return (
                               <>
-                                {visibleItems.map(({ type, item }) =>
+                                {visibleItems.map(({ type, item, kind }) =>
                                   type === 'event' ? (
                                     <div
                                       key={item.id}
@@ -1435,7 +1479,7 @@ export default function PlanPage() {
                                       onClick={() => handleEditTask(item as Task)}
                                       className={`text-xs p-1 rounded truncate cursor-grab active:cursor-grabbing ${
                                         getTaskPriorityColor((item as Task).taskPriority)
-                                      } hover:opacity-80 ${draggedTaskId === item.id ? 'opacity-50' : ''}`}
+                                      } ${kind === 'due' ? 'border border-dashed border-amber-500/60' : ''} hover:opacity-80 ${draggedTaskId === item.id ? 'opacity-50' : ''}`}
                                     >
                                       {(item as Task).taskName}
                                     </div>

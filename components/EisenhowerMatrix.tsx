@@ -13,6 +13,13 @@ import {
 } from 'recharts';
 import { Task } from '@/types';
 
+const IMPORTANCE_CUT = 45;
+const URGENCY_CUT = 65;
+const URGENCY_MAX = 120;
+const IMPORTANCE_MIN = 15;
+const IMPORTANCE_MAX = 65;
+const URGENCY_MIN = 10;
+
 interface EisenhowerMatrixProps {
   tasks: Task[];
   onTaskClick: (task: Task) => void;
@@ -168,12 +175,18 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
     setPinnedData({ data, x, y });
   }, []);
 
+  // Where the quadrants divide. Urgency now runs to 120 because overdue
+  // escalates and neglect accrues, so the old cut at 55 - which no undated
+  // task could ever reach - sits far too low. 65 is the midpoint of the new
+  // range. Importance moves from 50 to 60 because 9 of the 15 possible
+  // priority-by-domain combinations cleared 50, which made "important" stop
+  // distinguishing anything.
   // Quadrant counts
   const quadrantCounts = useMemo(() => {
     const counts = { doNow: 0, schedule: 0, fitIn: 0, backburner: 0 };
     for (const task of activeTasks) {
-      const highImportance = task.importanceScore >= 50;
-      const highUrgency = task.urgencyScore >= 55;
+      const highImportance = task.importanceScore >= IMPORTANCE_CUT;
+      const highUrgency = task.urgencyScore >= URGENCY_CUT;
       if (highImportance && highUrgency) counts.doNow++;
       else if (highImportance) counts.schedule++;
       else if (highUrgency) counts.fitIn++;
@@ -223,7 +236,7 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
             {/* Quadrant backgrounds */}
             {/* Do Now: top-right (red) */}
             <ReferenceArea
-              x1={55} x2={100} y1={50} y2={80}
+              x1={URGENCY_CUT} x2={URGENCY_MAX} y1={IMPORTANCE_CUT} y2={IMPORTANCE_MAX}
               fill="rgba(239,68,68,0.12)"
               fillOpacity={1}
               stroke="none"
@@ -233,7 +246,7 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
             </ReferenceArea>
             {/* Schedule: top-left (purple) */}
             <ReferenceArea
-              x1={10} x2={55} y1={50} y2={80}
+              x1={URGENCY_MIN} x2={URGENCY_CUT} y1={IMPORTANCE_CUT} y2={IMPORTANCE_MAX}
               fill="rgba(139,92,246,0.10)"
               fillOpacity={1}
               stroke="none"
@@ -243,7 +256,7 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
             </ReferenceArea>
             {/* Fit In: bottom-right (amber) */}
             <ReferenceArea
-              x1={55} x2={100} y1={20} y2={50}
+              x1={URGENCY_CUT} x2={URGENCY_MAX} y1={IMPORTANCE_MIN} y2={IMPORTANCE_CUT}
               fill="rgba(245,158,11,0.10)"
               fillOpacity={1}
               stroke="none"
@@ -253,7 +266,7 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
             </ReferenceArea>
             {/* Backburner: bottom-left (slate) */}
             <ReferenceArea
-              x1={10} x2={55} y1={20} y2={50}
+              x1={URGENCY_MIN} x2={URGENCY_CUT} y1={IMPORTANCE_MIN} y2={IMPORTANCE_CUT}
               fill="rgba(100,116,139,0.08)"
               fillOpacity={1}
               stroke="none"
@@ -265,8 +278,8 @@ export default function EisenhowerMatrix({ tasks, onTaskClick }: EisenhowerMatri
             <XAxis
               type="number"
               dataKey="x"
-              domain={[10, 100]}
-              ticks={[10, 25, 40, 55, 70, 85, 100]}
+              domain={[URGENCY_MIN, URGENCY_MAX]}
+              ticks={[10, 30, 50, 65, 85, 100, 120]}
               tick={{ fill: 'var(--muted)', fontSize: 11 }}
               axisLine={{ stroke: 'var(--border-color)' }}
               tickLine={{ stroke: 'var(--border-color)' }}
