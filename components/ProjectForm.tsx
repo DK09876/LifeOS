@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Project, Domain } from '@/types';
+import { blockImplicitSubmit } from '@/lib/forms';
 
 interface ProjectFormProps {
   project?: Project | null;
@@ -69,7 +70,7 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={blockImplicitSubmit} className="space-y-4">
       {/* Project Name */}
       <div>
         <label htmlFor="name" className={labelClass}>

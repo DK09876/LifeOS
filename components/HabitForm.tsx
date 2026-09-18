@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Habit } from '@/types';
 import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
 import { frequencyHint } from '@/lib/frequency';
+import { blockImplicitSubmit } from '@/lib/forms';
 
 interface HabitFormProps {
   habit?: Habit | null;
@@ -107,7 +108,7 @@ export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={blockImplicitSubmit} className="space-y-4">
       {/* Habit Name */}
       <div>
         <label htmlFor="habitName" className={labelClass}>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Task, Domain, BlockedByEntry, Project } from '@/types';
 import { hasCircularDependency } from '@/lib/hooks';
 import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
+import { blockImplicitSubmit } from '@/lib/forms';
 
 interface TaskFormProps {
   task?: Task | null;
@@ -181,7 +182,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
   const showBlockedBySection = formData.status === 'Blocked' || formData.blockedBy.length > 0;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={blockImplicitSubmit} className="space-y-4">
       {/* Task Name */}
       <div>
         <label htmlFor="taskName" className={labelClass}>

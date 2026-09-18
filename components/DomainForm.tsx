@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Domain } from '@/types';
+import { blockImplicitSubmit } from '@/lib/forms';
 
 interface DomainFormProps {
   domain?: Domain | null;
@@ -83,7 +84,7 @@ export default function DomainForm({ domain, onSubmit, onCancel }: DomainFormPro
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} onKeyDown={blockImplicitSubmit} className="space-y-4">
       {/* Domain Name */}
       <div>
         <label htmlFor="name" className={labelClass}>
