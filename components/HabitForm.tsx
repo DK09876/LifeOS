@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Habit } from '@/types';
 import { EFFORT_LEVELS, effortLevel } from '@/lib/effort';
+import { frequencyHint } from '@/lib/frequency';
 
 interface HabitFormProps {
   habit?: Habit | null;
@@ -236,9 +237,7 @@ export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps)
           </div>
         )}
         <p className="text-xs text-[var(--muted)] mt-2">
-          {formData.targetPerWeek === null
-            ? 'Habit will be due on a fixed schedule (e.g., every day, every week)'
-            : 'Habit will appear daily until you complete it the target number of times each week'}
+          {frequencyHint(formData.recurrence, formData.targetPerWeek)}
         </p>
       </div>
 
