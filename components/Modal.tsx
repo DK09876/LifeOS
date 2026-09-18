@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -11,30 +11,42 @@ interface ModalProps {
 }
 
 export default function Modal({ isOpen, onClose, title, children, maxWidth = 'md' }: ModalProps) {
-  const handleEscape = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    },
-    [onClose]
-  );
-
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2, 9)}`).current;
 
+  // Held in a ref so the effects below do not depend on it. Callers pass an
+  // inline arrow, which is a new function on every render, and an effect that
+  // depended on it re-ran constantly.
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      document.body.style.overflow = 'hidden';
-      // Focus the dialog
-      setTimeout(() => dialogRef.current?.focus(), 0);
-    }
+    onCloseRef.current = onClose;
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseRef.current();
+    };
+    document.addEventListener('keydown', handleEscape);
+    document.body.style.overflow = 'hidden';
     return () => {
       document.removeEventListener('keydown', handleEscape);
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen, handleEscape]);
+  }, [isOpen]);
+
+  // Focus the dialog when it opens, and only then.
+  //
+  // This used to share the effect above, whose dependencies changed on every
+  // render, so the dialog grabbed focus again every couple of seconds - the
+  // polling interval. On a desktop that is an invisible flicker. On a phone
+  // it takes focus off whatever field you are typing in, and the keyboard
+  // drops with it, over and over.
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => dialogRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
 
   // Focus trap
   useEffect(() => {
