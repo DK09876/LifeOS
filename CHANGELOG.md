@@ -2,6 +2,19 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.8.0] - 2026-09-23
+
+### Projects have two shapes
+- A project is now either a **pile of work** (tasks, done when they are all done — the old behaviour) or a **goal you count towards** (a target you log against)
+- A goal pursued by a daily recurring task used to show 0%, jump to 100% the moment the task was ticked, and fall back to 0% at the next rollover — it measured the state of a task row rather than work done, so fifty pages read left it where it started. A target project counts what you log, in its own unit, and nothing can take it away
+- Logging is deliberately uncoupled from tasks and habits: you did some amount of the thing and you say so. Days with something logged form a streak, and today's entry can be undone
+
+### Planning
+- The planner reserves what habits will cost before offering anything to tasks. It used to ignore them entirely, so it offered a whole budget on a day that already had a gym session in it — and Today's meter counted habits while the planner did not, so the two pages disagreed about the same day
+- The reservation is named in the day footer rather than silently deducted, so a day that looks empty because the gym claimed it says so
+- You can choose which days to plan into. Filling Monday on a Thursday is not a plan, so it defaults to the rest of the week
+- Four normalised weight sliders are replaced by named styles — balanced, deadline-driven, quick wins, big rocks — with the sliders kept under Custom. Nobody can say what "domain balance 0.15" ought to be
+
 ## [0.7.0] - 2026-09-17
 
 ### Dates and recurrence

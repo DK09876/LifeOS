@@ -63,7 +63,7 @@ export default function HelpPage() {
                 <p className="text-[var(--muted)]">Your planning hub with three views:</p>
                 <ul className="text-[var(--muted)] list-disc ml-4 mt-1 space-y-1">
                   <li><span className="text-white">Triage</span> — Review tasks that need attention: incomplete details, blocked tasks (with blocker info shown inline), missed planned dates, overdue due dates, and archived items.</li>
-                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill the week within your effort budget.</li>
+                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill the week within your effort budget — choosing which days to plan into, and a style: balanced, deadline-driven, quick wins, or big rocks.</li>
                   <li><span className="text-white">Matrix</span> — Eisenhower scatter plot showing tasks by importance vs. urgency. Click dots to see task names, click a task to edit it.</li>
                 </ul>
               </div>
@@ -79,7 +79,7 @@ export default function HelpPage() {
               <span className="text-xl w-8 flex-shrink-0">📦</span>
               <div>
                 <p className="text-white font-medium">Projects</p>
-                <p className="text-[var(--muted)]">Group related tasks into projects. Each project shows a progress bar based on completed action points. Expand a project to see its tasks, or create new tasks within it. Assign existing tasks to projects by editing the task and selecting a project.</p>
+                <p className="text-[var(--muted)]">Two shapes, because there are two kinds of project. A <span className="text-white">pile of work</span> is a set of tasks finished when they are all done — &ldquo;get the house clean&rdquo; — and its progress is completed action points. A <span className="text-white">goal you count towards</span> is something you chip away at and log — &ldquo;read a page, 300 times&rdquo; — and its progress is whatever you have logged, in its own unit.</p>
               </div>
             </div>
             <div className="flex gap-4">
@@ -453,6 +453,25 @@ export default function HelpPage() {
           </p>
         </section>
 
+        {/* Projects: the two shapes */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Goals you count towards</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              A habit is indefinite — something you do to keep doing it. A goal is finite and tangible: read a book, run a hundred miles, learn a hundred words. The difference is that a goal <em>ends</em>, and you want to see it getting closer.
+            </p>
+            <p>
+              A goal project has a count and a unit, and you log against it: <span className="text-white">&ldquo;read two pages today&rdquo;</span> adds two. Nothing is tied to completing a task or a habit, which is the point — you did some amount of the thing, and you say so.
+            </p>
+            <p>
+              Tying it to a recurring task was the obvious approach and it did not work: a recurring task is Done only between finishing it and the next rollover, so the bar swung between 0% and 100% instead of adding up. Fifty pages read left the project exactly where it started.
+            </p>
+            <p>
+              Leave the count blank to tally with no finish line. A run of days with something logged shows as a streak, and &ldquo;undo today&rdquo; takes back a mis-log.
+            </p>
+          </div>
+        </section>
+
         {/* The day's effort */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
           <h2 className="text-lg font-medium text-white mb-4">The day&rsquo;s effort</h2>
@@ -471,6 +490,9 @@ export default function HelpPage() {
             </p>
             <p>
               <span className="text-white">Used</span> counts what you have finished today — including things you had planned for an earlier day, because the effort was spent today either way.
+            </p>
+            <p>
+              <span className="text-white">Habits are reserved, not scheduled.</span> The planner subtracts what your habits will cost a day before it offers anything to tasks, and the day footer names it — <span className="font-mono text-white">AP: 3/8 +3h</span> means three points of tasks, three more already owed to habits. Before this it offered a whole budget on a day that already had a gym session in it, and Today&rsquo;s meter and the planner disagreed about the same day.
             </p>
             <p>
               <span className="text-white">Planned left</span> is what you are still signed up for. This is the number that warns you before the day rather than after it: if the bar is already past the end, something needs to move.

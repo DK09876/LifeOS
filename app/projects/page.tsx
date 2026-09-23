@@ -6,9 +6,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import ProjectForm, { ProjectFormData } from '@/components/ProjectForm';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useProjects, createProject, updateProjectData, deleteProject, createTask, updateTaskData } from '@/lib/hooks';
+import { createProject, createTask, deleteProject, logProjectProgress, updateProjectData, updateTaskData, useDomains, useProjects, useTasks } from '@/lib/hooks';
 import { Project, Task } from '@/types';
 import { getStatusColor, getTaskPriorityColor, levelLabel } from '@/lib/colors';
+import LogProgress from '@/components/LogProgress';
 
 type StatusFilter = 'all' | 'Active' | 'Completed' | 'Archived';
 
@@ -190,21 +191,39 @@ export default function ProjectsPage() {
                     </div>
                   </div>
 
-                  {/* Progress Bar */}
+                  {/* Progress. A bundle counts action points completed; a
+                      target counts what you have logged, in its own unit. */}
                   <div className="flex items-center gap-3">
                     <div className="flex-1 h-2 bg-[var(--background)] rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                        style={{ width: `${project.completionPercent || 0}%` }}
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          project.kind === 'target' ? 'bg-emerald-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${project.progress?.percent ?? 0}%` }}
                       />
                     </div>
-                    <span className="text-xs text-[var(--muted)] w-10 text-right">
-                      {project.completionPercent || 0}%
-                    </span>
+                    {project.progress?.total !== null && (
+                      <span className="text-xs text-[var(--muted)] w-10 text-right">
+                        {project.progress?.percent ?? 0}%
+                      </span>
+                    )}
                     <span className="text-xs text-[var(--muted)]">
-                      {project.completedAP}/{project.totalAP} AP
+                      {project.progress?.done ?? 0}
+                      {project.progress?.total !== null && <>/{project.progress?.total}</>}
+                      {' '}{project.progress?.unit ?? 'AP'}
                     </span>
                   </div>
+
+                  {project.kind === 'target' && (
+                    <LogProgress
+                      project={project}
+                      onLog={async (amount) => {
+                        try {
+                          await logProjectProgress(project.id, amount);
+                        } catch { showToast('Could not record that', 'error'); }
+                      }}
+                    />
+                  )}
 
                   {project.description && (
                     <p className="text-xs text-[var(--muted)] mt-2 line-clamp-2">{project.description}</p>

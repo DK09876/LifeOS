@@ -112,6 +112,12 @@ export interface Event {
   domain?: Domain | null;
 }
 
+export interface ProgressEntry {
+  date: string;    // YYYY-MM-DD, local
+  amount: number;
+  note?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -119,6 +125,21 @@ export interface Project {
   icon: string | null;
   status: 'Active' | 'Completed' | 'Archived';
   domainId: string | null;
+  // A project is one of two shapes, and they measure progress differently.
+  //
+  // 'bundle' is a finite pile of work - "get the house clean", five tasks,
+  // done when they are all done. Progress is completed action points.
+  //
+  // 'target' is a goal reached by repetition - "read a page 300 times". It is
+  // not tied to a task or a habit at all: you log what you did and the count
+  // goes up. A recurring task could never express this, because a recurring
+  // task is Done only between finishing it and the next rollover, so the
+  // progress bar swung between 0% and 100% instead of accumulating.
+  kind: 'bundle' | 'target';
+  targetCount: number | null;
+  targetUnit: string | null;   // "pages", "sessions", "km" - shown beside the count
+  progressLog: ProgressEntry[];
+
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -130,4 +151,5 @@ export interface Project {
   totalAP?: number;
   completedAP?: number;
   completionPercent?: number;
+  progress?: import('@/lib/progress').Progress;
 }

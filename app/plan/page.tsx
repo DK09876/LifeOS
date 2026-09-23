@@ -8,16 +8,18 @@ import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
-import { useTasks, useDomains, useVisibleFilterPresets, useEvents, useProjects, markTaskDone, createTask, updateTaskData, createEvent, updateEventData, deleteEvent } from '@/lib/hooks';
+import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
 import { getDueDateColor, getDueSoonLabel, getPriorityDotColor, getTaskPriorityBorder, getTaskPriorityColor, levelLabel, levelRank } from '@/lib/colors';
 import { parseLocalDate, toDateString } from '@/lib/dates';
-import { SuggestControls, DEFAULT_SUGGEST_CONTROLS, suggestNextTask, suggestWeekSchedule, WeekDayInfo } from '@/lib/suggest';
+import { DEFAULT_SUGGEST_CONTROLS, SUGGEST_PRESETS, SuggestControls, WeekDayInfo, suggestNextTask, suggestWeekSchedule, applyPreset as applySuggestPreset } from '@/lib/suggest';
 import { tasksForDay } from '@/lib/schedule';
 import { getPreference, savePreference } from '@/lib/store';
 import { useLiveQuery } from '@/lib/live-query';
 import { getTodayString } from '@/lib/dates';
+import { habitLoadByDay } from '@/lib/habit-load';
+import type { SuggestPreset } from '@/lib/suggest';
 
 type MainView = 'triage' | 'planning' | 'matrix';
 type TriageTab = 'needsDetails' | 'blocked' | 'missed' | 'overdue' | 'archived';
@@ -102,11 +104,15 @@ const PRESET_COLOR_MAP: Record<string, { active: string; inactive: string }> = {
 
 const SUGGEST_SETTINGS = 'suggest.settings';
 
+/** Monday-first, matching the calendar. */
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 export default function PlanPage() {
   const tasks = useTasks();
   const domains = useDomains();
   const filterPresets = useVisibleFilterPresets();
   const events = useEvents();
+  const habits = useHabits();
   const projects = useProjects();
 
   const [mainView, setMainView] = useState<MainView>('planning');
@@ -416,20 +422,38 @@ export default function PlanPage() {
   }, [activeTasks, events, suggestControls, suggestNextSkipIds]);
 
   // Suggest Week: compute week days info for current week
+  // Which days the suggester is allowed to plan into. Defaults to the rest of
+  // the week from today: asking it to fill Monday on a Thursday is not a plan.
+  const weekStartDate = useMemo(() => startOfWeek(startOfDay(new Date()), { weekStartsOn: 1 }), []);
+  const todayIndex = useMemo(
+    () => Math.max(0, differenceInCalendarDays(startOfDay(new Date()), weekStartDate)),
+    [weekStartDate],
+  );
+  const [suggestRange, setSuggestRange] = useState<{ from: number; to: number }>(
+    () => ({ from: todayIndex, to: 6 }),
+  );
+
   const suggestWeekDays = useMemo((): WeekDayInfo[] => {
-    const today = startOfDay(new Date());
-    const weekStart = startOfWeek(today, { weekStartsOn: 1 });
-    return Array.from({ length: 7 }, (_, i) => {
-      const date = addDays(weekStart, i);
+    const from = Math.min(suggestRange.from, suggestRange.to);
+    const to = Math.max(suggestRange.from, suggestRange.to);
+    const span = to - from + 1;
+    // Habits are reserved, not placed: they are a floor under the days rather
+    // than work to schedule, and ignoring them is what let the planner offer
+    // a whole budget on a day that already had a gym session in it.
+    const habitAPByDay = habitLoadByDay(habits, span);
+
+    return Array.from({ length: span }, (_, offset) => {
+      const date = addDays(weekStartDate, from + offset);
       const dateStr = toDateString(date);
       return {
         date,
         dateStr,
         existingTasks: activeTasks.filter(t => t.plannedDate === dateStr),
         events: events.filter(e => e.date === dateStr),
+        habitAP: habitAPByDay[offset] ?? 0,
       };
     });
-  }, [activeTasks, events]);
+  }, [activeTasks, events, habits, weekStartDate, suggestRange]);
 
   // Get task AP helper for display
   const getDisplayAP = useCallback((task: Task) => {
@@ -1155,6 +1179,52 @@ export default function PlanPage() {
                   <span className="text-xs text-white font-medium w-3">{suggestControls.dailyAPBudget}</span>
                 </div>
 
+                {/* Which days to plan into. Filling Monday on a Thursday is
+                    not a plan, so this defaults to the rest of the week. */}
+                <div className="flex items-center gap-1 mr-2">
+                  <span className="text-xs text-[var(--muted)]">Plan</span>
+                  <select
+                    aria-label="Plan from"
+                    value={suggestRange.from}
+                    onChange={(e) => setSuggestRange((r) => {
+                      const from = parseInt(e.target.value);
+                      return { from, to: Math.max(from, r.to) };
+                    })}
+                    className="bg-[var(--background)] border border-[var(--border-color)] rounded px-1.5 py-1 text-xs text-white"
+                  >
+                    {DAY_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
+                  </select>
+                  <span className="text-xs text-[var(--muted)]">to</span>
+                  <select
+                    aria-label="Plan to"
+                    value={suggestRange.to}
+                    onChange={(e) => setSuggestRange((r) => {
+                      const to = parseInt(e.target.value);
+                      return { from: Math.min(r.from, to), to };
+                    })}
+                    className="bg-[var(--background)] border border-[var(--border-color)] rounded px-1.5 py-1 text-xs text-white"
+                  >
+                    {DAY_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
+                  </select>
+                </div>
+
+                {/* Named ways of weighting the four factors. The raw sliders
+                    stay in the settings panel for anyone who wants them. */}
+                <select
+                  aria-label="Planning style"
+                  value={suggestControls.preset ?? 'balanced'}
+                  onChange={(e) => updateSuggestControls(
+                    applySuggestPreset(suggestControls, e.target.value as SuggestPreset))}
+                  title={suggestControls.preset && suggestControls.preset !== 'custom'
+                    ? SUGGEST_PRESETS[suggestControls.preset].description : 'Your own weighting'}
+                  className="bg-[var(--background)] border border-[var(--border-color)] rounded px-2 py-1 text-xs text-white mr-2"
+                >
+                  {(Object.keys(SUGGEST_PRESETS) as Array<keyof typeof SUGGEST_PRESETS>).map((key) => (
+                    <option key={key} value={key}>{SUGGEST_PRESETS[key].label}</option>
+                  ))}
+                  <option value="custom">Custom…</option>
+                </select>
+
                 {suggestedAssignments.size === 0 ? (
                   <button
                     onClick={handleGenerateWeekSchedule}
@@ -1319,6 +1389,7 @@ export default function PlanPage() {
                   const eventAP = dayEvents.reduce((sum, e) => sum + (parseInt(e.actionPoints || '0') || suggestControls.defaultAP), 0);
                   const suggestedAP = suggestedTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
                   const totalAP = taskAP + eventAP + suggestedAP;
+                  const habitAPForDay = suggestWeekDays.find(d => d.dateStr === dayStr)?.habitAP ?? 0;
                   const hasSuggestions = suggestedTasks.length > 0;
 
                   return (
@@ -1400,12 +1471,18 @@ export default function PlanPage() {
                           + Add
                         </button>
                       </div>
-                      {/* AP usage footer */}
+                      {/* AP usage footer. The habit reservation is named
+                          rather than silently deducted - a day that looks
+                          empty because the gym already claimed it should say
+                          so, or the planner just seems lazy. */}
                       {(hasSuggestions || suggestedAssignments.size > 0) && (
                         <div className={`text-center py-0.5 text-[10px] ${
-                          totalAP > suggestControls.dailyAPBudget ? 'text-red-400' : 'text-[var(--muted)]'
+                          totalAP + habitAPForDay > suggestControls.dailyAPBudget ? 'text-red-400' : 'text-[var(--muted)]'
                         }`}>
                           AP: {totalAP}/{suggestControls.dailyAPBudget}
+                          {habitAPForDay > 0 && (
+                            <span title="Reserved for habits"> +{habitAPForDay}h</span>
+                          )}
                         </div>
                       )}
                     </div>

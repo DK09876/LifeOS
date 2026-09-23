@@ -4,20 +4,63 @@ import { startOfDay, differenceInCalendarDays } from 'date-fns';
 
 // --- Types ---
 
+export type SuggestPreset = 'balanced' | 'deadlines' | 'quick-wins' | 'big-rocks' | 'custom';
+
 export interface SuggestControls {
   dailyAPBudget: number;       // 1-15, default 8
   defaultAP: number;           // 1-3, default 2
   domainFocus: string[];       // domain IDs, empty = all
+  preset: SuggestPreset;
   scoreWeight: number;         // 0-1, default 0.4
   deadlineWeight: number;      // 0-1, default 0.3
   balanceWeight: number;       // 0-1, default 0.15
   efficiencyWeight: number;    // 0-1, default 0.15
 }
 
+/**
+ * Named ways of weighting the four factors.
+ *
+ * Four normalised sliders is a control surface for tuning an algorithm, not
+ * for planning a week - nobody can say what "domain balance 0.15" ought to
+ * be. These say what they do; the sliders stay for anyone who wants them.
+ */
+export const SUGGEST_PRESETS: Record<Exclude<SuggestPreset, 'custom'>, {
+  label: string;
+  description: string;
+  weights: Pick<SuggestControls, 'scoreWeight' | 'deadlineWeight' | 'balanceWeight' | 'efficiencyWeight'>;
+}> = {
+  balanced: {
+    label: 'Balanced',
+    description: 'What matters most, tempered by what is due and a spread across life areas.',
+    weights: { scoreWeight: 0.4, deadlineWeight: 0.3, balanceWeight: 0.15, efficiencyWeight: 0.15 },
+  },
+  deadlines: {
+    label: 'Deadline-driven',
+    description: 'Whatever is due soonest, first. For a week with real dates in it.',
+    weights: { scoreWeight: 0.25, deadlineWeight: 0.55, balanceWeight: 0.1, efficiencyWeight: 0.1 },
+  },
+  'quick-wins': {
+    label: 'Quick wins',
+    description: 'Favours small tasks, to clear as many as possible off the list.',
+    weights: { scoreWeight: 0.25, deadlineWeight: 0.2, balanceWeight: 0.1, efficiencyWeight: 0.45 },
+  },
+  'big-rocks': {
+    label: 'Big rocks',
+    description: 'The important things first, even when they take the whole day.',
+    weights: { scoreWeight: 0.6, deadlineWeight: 0.25, balanceWeight: 0.1, efficiencyWeight: 0.05 },
+  },
+};
+
+export function applyPreset(controls: SuggestControls, preset: SuggestPreset): SuggestControls {
+  if (preset === 'custom') return { ...controls, preset };
+  return { ...controls, preset, ...SUGGEST_PRESETS[preset].weights };
+}
+
 export const DEFAULT_SUGGEST_CONTROLS: SuggestControls = {
   dailyAPBudget: 8,
   defaultAP: 2,
   domainFocus: [],
+  preset: 'balanced',
   scoreWeight: 0.4,
   deadlineWeight: 0.3,
   balanceWeight: 0.15,
@@ -178,6 +221,11 @@ export interface WeekDayInfo {
   dateStr: string;
   existingTasks: Task[];
   events: Event[];
+  /**
+   * Effort already owed to habits on this day. Reserved, not scheduled:
+   * habits are a floor under the week rather than something to place.
+   */
+  habitAP?: number;
 }
 
 export function suggestWeekSchedule(
@@ -196,6 +244,7 @@ export function suggestWeekSchedule(
   for (const day of weekDays) {
     const existingAP = day.existingTasks.reduce((sum, t) => sum + getTaskAP(t, controls.defaultAP), 0);
     const eventsAP = day.events.reduce((sum, e) => sum + getEventAP(e, controls.defaultAP), 0);
+    const habitAP = day.habitAP ?? 0;
 
     // Deduct pinned AP
     let pinnedAP = 0;
@@ -209,7 +258,7 @@ export function suggestWeekSchedule(
       }
     }
 
-    remainingAP.set(day.dateStr, Math.max(0, controls.dailyAPBudget - existingAP - eventsAP - pinnedAP));
+    remainingAP.set(day.dateStr, Math.max(0, controls.dailyAPBudget - existingAP - eventsAP - habitAP - pinnedAP));
 
     // Track domain counts from existing + pinned
     const domainCounts = new Map<string, number>();

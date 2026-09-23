@@ -6,6 +6,7 @@ import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset,
 import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
 import { bestStreakSoFar, currentStreak } from './streaks';
+import { logProgress, projectProgress } from './progress';
 import { CAPACITY_PREF, capacityFor, parseCapacityMap } from './capacity';
 import { HISTORY_PREF, parseHistory, pruneHistory, recentDays, spentOn } from './history';
 import { DEFAULT_SUGGEST_CONTROLS } from './suggest';
@@ -893,6 +894,9 @@ export function useProjects() {
       const totalAP = projectTasks.reduce((sum, t) => sum + (parseInt(t.actionPoints || '0') || DEFAULT_AP), 0);
       const completedAP = completedTasks.reduce((sum, t) => sum + (parseInt(t.actionPoints || '0') || DEFAULT_AP), 0);
 
+      // A target project measures logged work, not the state of task rows.
+      const progress = projectProgress(project, projectTasks);
+
       return {
         ...project,
         domain: project.domainId ? domainMap.get(project.domainId) || null : null,
@@ -901,7 +905,8 @@ export function useProjects() {
         completedTaskCount: completedTasks.length,
         totalAP,
         completedAP,
-        completionPercent: totalAP > 0 ? Math.round((completedAP / totalAP) * 100) : 0,
+        progress,
+        completionPercent: progress.percent,
       };
     }).sort((a, b) => {
       // Active first, then Completed, then Archived
@@ -915,6 +920,22 @@ export function useProjects() {
   return projects || [];
 }
 
+/**
+ * Record work against a target project.
+ *
+ * Deliberately not tied to completing a task or a habit: the point of a
+ * target is that you log what you actually did - two pages, four, none - and
+ * the count goes up by that much.
+ */
+export async function logProjectProgress(projectId: string, amount: number, note?: string): Promise<void> {
+  const project = await db.projects.get(projectId);
+  if (!project) return;
+  await db.projects.update(projectId, {
+    progressLog: logProgress(project.progressLog, amount, note),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 // Create a new project
 export async function createProject(projectData: {
   name: string;
@@ -922,6 +943,9 @@ export async function createProject(projectData: {
   icon?: string | null;
   status?: Project['status'];
   domainId?: string | null;
+  kind?: Project['kind'];
+  targetCount?: number | null;
+  targetUnit?: string | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -933,6 +957,10 @@ export async function createProject(projectData: {
     icon: projectData.icon ?? null,
     status: projectData.status || 'Active',
     domainId: projectData.domainId ?? null,
+    kind: projectData.kind ?? 'bundle',
+    targetCount: projectData.targetCount ?? null,
+    targetUnit: projectData.targetUnit ?? null,
+    progressLog: [],
     deletedAt: null,
     createdAt: now,
     updatedAt: now,
