@@ -17,6 +17,9 @@ export interface ProjectFormData {
   icon: string | null;
   status: Project['status'];
   domainId: string | null;
+  kind: 'bundle' | 'target';
+  targetCount: number | null;
+  targetUnit: string | null;
 }
 
 const STATUS_OPTIONS: Project['status'][] = ['Active', 'Completed', 'Archived'];
@@ -31,6 +34,9 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
     icon: null,
     status: 'Active',
     domainId: null,
+    kind: 'bundle',
+    targetCount: null,
+    targetUnit: null,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -42,6 +48,9 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
         icon: project.icon,
         status: project.status,
         domainId: project.domainId,
+        kind: project.kind ?? 'bundle',
+        targetCount: project.targetCount ?? null,
+        targetUnit: project.targetUnit ?? null,
       });
     }
   }, [project]);
@@ -124,6 +133,69 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
           </select>
         </div>
       </div>
+
+      {/* What shape of project this is. The two measure progress in
+          different currencies, so it has to be said up front. */}
+      <div>
+        <label className={labelClass}>What kind</label>
+        <div className="flex gap-2">
+          {([
+            { value: 'bundle' as const, title: 'A pile of work',
+              blurb: 'A set of tasks, finished when they are all done. "Get the house clean."' },
+            { value: 'target' as const, title: 'A goal you count towards',
+              blurb: 'Something you chip away at and log. "Read a page, 300 times."' },
+          ]).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setFormData((prev) => ({ ...prev, kind: option.value }))}
+              className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                formData.kind === option.value
+                  ? 'border-blue-500 bg-blue-500/10'
+                  : 'border-[var(--border-color)] hover:border-[var(--muted)]'
+              }`}
+            >
+              <span className="block text-sm font-medium text-white">{option.title}</span>
+              <span className="mt-0.5 block text-xs text-[var(--muted)]">{option.blurb}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {formData.kind === 'target' && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="targetCount" className={labelClass}>How many</label>
+            <input
+              type="number"
+              id="targetCount"
+              name="targetCount"
+              min={1}
+              value={formData.targetCount ?? ''}
+              onChange={(e) => setFormData((prev) => ({
+                ...prev, targetCount: e.target.value ? Math.max(1, parseInt(e.target.value)) : null,
+              }))}
+              placeholder="300"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="targetUnit" className={labelClass}>Of what</label>
+            <input
+              type="text"
+              id="targetUnit"
+              name="targetUnit"
+              value={formData.targetUnit ?? ''}
+              onChange={(e) => setFormData((prev) => ({ ...prev, targetUnit: e.target.value || null }))}
+              placeholder="pages, sessions, km"
+              className={inputClass}
+            />
+          </div>
+          <p className="col-span-2 -mt-2 text-xs text-[var(--muted)]">
+            Leave the count blank to just tally up with no finish line.
+          </p>
+        </div>
+      )}
 
       {/* Domain */}
       <div>
