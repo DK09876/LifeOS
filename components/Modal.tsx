@@ -93,19 +93,20 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'md
         aria-hidden="true"
       />
 
-      {/* Modal container */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      {/* Modal container. On a phone it is a full-screen sheet: a centred
+          dialog left the form cramped, and the keyboard covered its buttons. */}
+      <div className="flex min-h-full items-stretch sm:items-center justify-center sm:p-4">
         <div
           ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
           tabIndex={-1}
-          className={`relative w-full ${maxWidthClasses[maxWidth]} bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl shadow-xl transform transition-all outline-none`}
+          className={`relative w-full ${maxWidthClasses[maxWidth]} min-h-[100dvh] sm:min-h-0 bg-[var(--card-bg)] sm:border border-[var(--border-color)] sm:rounded-xl shadow-xl transform transition-all outline-none pb-safe`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
+          <div className="sticky top-0 z-10 bg-[var(--card-bg)] pt-safe sm:pt-0 sm:rounded-t-xl flex items-center justify-between p-4 border-b border-[var(--border-color)]">
             <h2 id={titleId} className="text-xl font-semibold text-[var(--foreground)]">{title}</h2>
             <button
               onClick={onClose}

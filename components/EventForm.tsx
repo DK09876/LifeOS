@@ -244,7 +244,7 @@ export default function EventForm({ event, domains, onSubmit, onCancel }: EventF
       </div>
 
       {/* Actions */}
-      <div className="flex gap-3 justify-end pt-4 border-t border-[var(--border-color)]">
+      <div className="flex gap-3 justify-end pt-4 border-t border-[var(--border-color)] sticky bottom-0 -mx-4 px-4 pb-4 sm:pb-0 bg-[var(--card-bg)] z-10">
         <button
           type="button"
           onClick={onCancel}

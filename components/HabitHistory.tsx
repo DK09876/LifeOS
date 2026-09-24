@@ -33,13 +33,14 @@ export default function HabitHistory({ habit }: { habit: Habit }) {
         )}
       </div>
 
-      <div className="flex items-end gap-[3px]" aria-label="Last 30 days">
+      {/* Dots shrink to fit a narrow screen rather than pushing past it. */}
+      <div className="flex items-end gap-[2px] sm:gap-[3px] w-full max-w-[300px] min-w-0" aria-label="Last 30 days">
         {history.map(day => (
           <span
             key={day.date}
             title={`${day.date}${day.done ? ' — done' : ''}`}
             className={[
-              'w-[7px] rounded-[2px]',
+              'flex-1 min-w-0 max-w-[7px] rounded-[2px]',
               day.done ? 'h-3 bg-green-500' : 'h-3 bg-[var(--background)] border border-[var(--border-color)]',
               // Weekends sit lower so the week boundaries are visible without
               // labels; today gets a ring so "have I done it yet" is instant.

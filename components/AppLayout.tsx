@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import BottomNav from './BottomNav';
 import Sidebar from './Sidebar';
 import { BackupReminder } from './BackupReminder';
 import { ToastProvider, useToast } from './Toast';
@@ -22,6 +24,13 @@ function AppLayoutInner({ children }: AppLayoutProps) {
   const [quote, setQuote] = useState<Quote>(getDailyQuote());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const pathname = usePathname();
+  // Picking a page from the phone menu should put the menu away.
+  const [menuPath, setMenuPath] = useState(pathname);
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    setMobileSidebarOpen(false);
+  }
 
   useEffect(() => {
     async function init() {
@@ -70,33 +79,34 @@ function AppLayoutInner({ children }: AppLayoutProps) {
       {/* Main content area */}
       <div className={`${sidebarCollapsed ? 'md:ml-14' : 'md:ml-56'} transition-all duration-200`}>
         {/* Top bar */}
-        <header className="h-14 border-b border-[var(--border-color)] flex items-center px-4 md:px-6 gap-2 md:gap-4 sticky top-0 bg-[var(--background)] z-10">
-          {/* Mobile hamburger */}
-          <button
-            onClick={() => setMobileSidebarOpen(true)}
-            className="md:hidden p-2 text-[var(--muted)] hover:text-white"
-            aria-label="Open navigation menu"
-          >
-            ☰
-          </button>
-
-          {/* Quote */}
-          <div className="flex-1 min-w-0 hidden sm:block">
-            <p className="text-sm text-[var(--muted)] italic truncate">
-              &ldquo;{quote.text}&rdquo; — {quote.author}
-            </p>
+        <header className="border-b border-[var(--border-color)] sticky top-0 bg-[var(--background)] z-20 pt-safe">
+          <div className="h-14 flex items-center px-4 md:px-6 gap-2 md:gap-4">
+            {/* Quote. On a phone it gets its own line below, rather than
+                being squeezed out of the bar entirely. */}
+            <div className="flex-1 min-w-0">
+              <p className="hidden sm:block text-sm text-[var(--muted)] italic truncate">
+                &ldquo;{quote.text}&rdquo; — {quote.author}
+              </p>
+              <p className="sm:hidden text-base font-semibold text-white">LifeOS</p>
+            </div>
+            <QuickAdd />
+            <NotificationBell />
+            <ProfileSwitcher />
           </div>
-          <QuickAdd />
-          <NotificationBell />
-          <ProfileSwitcher />
+          {/* On a phone the quote only rides along on Today: two lines of
+              header on every page is a lot of a small screen. */}
+          <p className={`sm:hidden px-4 pb-2 -mt-1 text-xs text-[var(--muted)] italic line-clamp-2 ${pathname === '/' ? '' : 'hidden'}`}>
+            &ldquo;{quote.text}&rdquo; — {quote.author}
+          </p>
         </header>
 
-        {/* Page content */}
-        <main className="p-4 md:p-6">
+        {/* Page content. Bottom padding clears the phone's tab bar. */}
+        <main className="p-4 md:p-6 pb-28 md:pb-6">
           {children}
         </main>
       </div>
 
+      <BottomNav onMore={() => setMobileSidebarOpen(true)} />
     </div>
   );
 }

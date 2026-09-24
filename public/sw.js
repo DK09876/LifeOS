@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifeos-v3';
+const CACHE_NAME = 'lifeos-v4';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -30,54 +30,69 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch strategy.
+//
+// Pages (and Next's page data requests) go to the network first, falling
+// back to the cache only when offline or slow. Serving them cache-first meant
+// every deploy showed the previous version until a hard refresh.
+//
+// Build assets under /_next/static have content hashes in their names, so a
+// cached copy can never be stale: those stay cache-first and cost nothing.
+const NETWORK_TIMEOUT_MS = 2500;
+
+function isPageRequest(request, url) {
+  return request.mode === 'navigate' ||
+    request.headers.get('RSC') === '1' ||
+    url.searchParams.has('_rsc');
+}
+
+function networkFirst(request) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const fallback = () => caches.match(request).then((cached) => cached ||
+      (request.mode === 'navigate' ? caches.match('/') : null) ||
+      new Response('Offline', { status: 503 }));
+    const timer = setTimeout(() => {
+      fallback().then((cached) => {
+        if (!settled && cached && cached.status !== 503) { settled = true; resolve(cached); }
+      });
+    }, NETWORK_TIMEOUT_MS);
+    fetch(request).then((response) => {
+      clearTimeout(timer);
+      if (response.ok && response.type === 'basic') {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      }
+      if (!settled) { settled = true; resolve(response); }
+    }).catch(() => {
+      clearTimeout(timer);
+      if (!settled) { settled = true; fallback().then(resolve); }
+    });
+  });
+}
+
+function cacheFirst(request) {
+  return caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+    if (response.ok && response.type === 'basic') {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    }
+    return response;
+  }));
+}
+
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
   // Skip API requests and Google OAuth
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/') ||
-      url.hostname.includes('google') ||
-      url.hostname.includes('googleapis')) {
-    return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  if (isPageRequest(event.request, url)) {
+    event.respondWith(networkFirst(event.request));
+  } else {
+    event.respondWith(cacheFirst(event.request));
   }
-
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Return cached version and update cache in background
-        event.waitUntil(
-          fetch(event.request).then((response) => {
-            if (response.ok) {
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, response);
-              });
-            }
-          }).catch(() => {})
-        );
-        return cachedResponse;
-      }
-
-      // Not in cache - fetch from network
-      return fetch(event.request).then((response) => {
-        // Cache successful responses
-        if (response.ok && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return response;
-      }).catch(() => {
-        // Offline fallback for navigation requests
-        if (event.request.mode === 'navigate') {
-          return caches.match('/');
-        }
-        return new Response('Offline', { status: 503 });
-      });
-    })
-  );
 });
 
 // Listen for messages from the app

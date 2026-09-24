@@ -2,6 +2,26 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.9.1] - 2026-09-24
+
+### On a phone
+- A **tab bar** along the bottom — Today, Plan, Week, Yesterday, More — instead of a menu behind ☰
+- Buttons that only appeared on hover (delete, edit, pause, + Add) were invisible on a touch screen; they now show
+- **📅 Plan** on every task in Plan and the Matrix opens a day picker showing what each of the next days already holds against its budget. Dragging never worked on an iPhone, so this is how anything gets planned there (and it is handy on a desktop too)
+- Plan's and Week's calendars are a list of days on a phone, starting at today, with earlier days one tap away
+- Forms open full screen with Save always in reach; Tasks is a list of cards rather than a sideways-scrolling table; nothing on any page is wider than the screen any more
+- Toasts sit at the top on a phone, clear of the tab bar and form buttons; the notch and home bar are respected
+
+### Planning
+- The Suggested task can be dragged onto a day, planned for today in one tap, or sent to the day picker
+- **Yesterday → Do it today**: move a missed plan to today in one tap (it still counts as a slip — the plan did move)
+
+### Matrix
+- Opens as four **lists** — Do Now, Schedule, Fit In, Backburner — each task named, with its dates and a Plan button. The chart is one tap away, redrawn with quadrants that fill it, colour by quadrant, and names on the dots that have room
+
+### Other
+- After an update the app loads the new version straight away instead of showing the previous one until a hard refresh. Pages come from the network first and only fall back to the offline copy when there is none
+
 ## [0.9.0] - 2026-09-24
 
 ### Time pressure that means what it says

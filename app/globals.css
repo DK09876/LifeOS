@@ -145,3 +145,21 @@ body {
   background: var(--card-hover);
   color: var(--foreground);
 }
+
+/*
+ * Touch screens have no hover. Tailwind only applies hover variants where
+ * hover exists, so every "appears on hover" control - the tick, delete, edit
+ * and "+ Add" buttons - was simply invisible on a phone. Show them.
+ */
+@media (hover: none) {
+  /* Controls only - the ✓ glyph inside a tick circle is a hover *preview*
+     and is a span; revealing it made every open task look finished. */
+  :not(span).group-hover\:opacity-100,
+  :not(span).group-focus-within\:opacity-100 {
+    opacity: 1 !important;
+  }
+}
+
+/* Room for the phone's home indicator under fixed bottom bars. */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }

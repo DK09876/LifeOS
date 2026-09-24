@@ -251,7 +251,7 @@ export default function TasksPage() {
         </div>
         <button
           onClick={handleOpenCreateTask}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+          className="whitespace-nowrap flex-shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
         >
           + New Task
         </button>
@@ -272,7 +272,32 @@ export default function TasksPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-[var(--card-bg)] rounded-lg overflow-hidden overflow-x-auto">
+      {/* Phones get cards: an 800px-wide table had to be scrolled sideways
+          and every row wrapped the task name into three lines. */}
+      <div className="md:hidden space-y-2">
+        {filteredTasks.length === 0 && (
+          <p className="bg-[var(--card-bg)] rounded-lg p-6 text-center text-sm text-[var(--muted)]">No tasks match.</p>
+        )}
+        {filteredTasks.map(task => (
+          <button key={task.id} onClick={() => handleEditTask(task)}
+                  className="w-full text-left bg-[var(--card-bg)] rounded-lg p-3 active:bg-[var(--card-hover)]">
+            <div className="flex items-start justify-between gap-2">
+              <p className={`text-white ${task.status === 'Done' ? 'line-through text-[var(--muted)]' : ''}`}>{task.taskName}</p>
+              <span className={`flex-shrink-0 px-2 py-0.5 rounded text-xs ${getStatusColor(task.status)}`}>{task.status}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-[var(--muted)]">
+              <span className={`px-1.5 py-0.5 rounded ${getTaskPriorityColor(task.taskPriority)}`}>{levelLabel(task.taskPriority)}</span>
+              {task.domain && <span>{task.domain.icon || '📁'} {task.domain.name}</span>}
+              {task.plannedDate && <span>📌 {format(parseLocalDate(task.plannedDate), 'EEE d MMM')}</span>}
+              {task.dueDate && <span className={getDueDateColor(task.dueDate)}>📅 due {format(parseLocalDate(task.dueDate), 'd MMM')}</span>}
+              {task.recurrence !== 'None' && <RecurrenceBadge task={task} />}
+              <span>score {task.taskScore}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="hidden md:block bg-[var(--card-bg)] rounded-lg overflow-hidden overflow-x-auto">
         <table className="w-full min-w-[800px]">
           <thead>
             <tr className="border-b border-[var(--border-color)]">

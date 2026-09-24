@@ -46,7 +46,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     <aside
       className={`${
         collapsed ? 'w-14' : 'w-56'
-      } h-screen bg-[#1e1e1e] border-r border-[var(--border-color)] flex flex-col fixed left-0 top-0 transition-all duration-200`}
+      } h-screen bg-[#1e1e1e] border-r border-[var(--border-color)] flex flex-col fixed left-0 top-0 transition-all duration-200 overflow-y-auto pt-safe pb-safe`}
     >
       {/* Logo + collapse toggle */}
       <div className={`${collapsed ? 'px-2 py-4 justify-center' : 'p-4 justify-between'} border-b border-[var(--border-color)] flex items-center`}>

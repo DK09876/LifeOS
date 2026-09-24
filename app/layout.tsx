@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
     title: "LifeOS",
   },
   formatDetection: {
@@ -26,6 +26,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  // Lets the app draw under the notch and home indicator; the layout pads
+  // itself with the safe-area insets instead.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
