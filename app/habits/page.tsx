@@ -73,7 +73,8 @@ export default function HabitsPage() {
 
   async function handleMarkDone(habitId: string) {
     try {
-      await markHabitDone(habitId);
+      const reached = await markHabitDone(habitId);
+      for (const m of reached) showToast(`🏆 ${m.label}!`, 'success');
     } catch { showToast('Failed to complete habit', 'error'); }
   }
 

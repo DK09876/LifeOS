@@ -370,7 +370,7 @@ export default function HelpPage() {
             <div>
               <p className="text-white font-medium mb-2">Priority (Importance)</p>
               <div className="space-y-1 text-[var(--muted)]">
-                <p><span className="text-red-400">1 - Urgent:</span> Must do immediately</p>
+                <p><span className="text-red-400">1 - Essential:</span> Matters most (how soon is urgency's job)</p>
                 <p><span className="text-orange-400">2 - High:</span> Important, do soon</p>
                 <p><span className="text-blue-400">3 - Normal:</span> Standard priority</p>
                 <p><span className="text-gray-400">4 - Low:</span> When you have time</p>

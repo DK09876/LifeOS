@@ -20,6 +20,7 @@ export interface ProjectFormData {
   kind: 'bundle' | 'target';
   targetCount: number | null;
   targetUnit: string | null;
+  targetDate: string | null;
 }
 
 const STATUS_OPTIONS: Project['status'][] = ['Active', 'Completed', 'Archived'];
@@ -37,6 +38,7 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
     kind: 'bundle',
     targetCount: null,
     targetUnit: null,
+    targetDate: null,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -51,6 +53,7 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
         kind: project.kind ?? 'bundle',
         targetCount: project.targetCount ?? null,
         targetUnit: project.targetUnit ?? null,
+        targetDate: project.targetDate ?? null,
       });
     }
   }, [project]);
@@ -194,6 +197,22 @@ export default function ProjectForm({ project, domains, onSubmit, onCancel }: Pr
           <p className="col-span-2 -mt-2 text-xs text-[var(--muted)]">
             Leave the count blank to just tally up with no finish line.
           </p>
+          <div className="col-span-2">
+            <label htmlFor="targetDate" className={labelClass}>
+              Finish by <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              type="date"
+              id="targetDate"
+              name="targetDate"
+              value={formData.targetDate ?? ''}
+              onChange={(e) => setFormData((prev) => ({ ...prev, targetDate: e.target.value || null }))}
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Shows the pace needed (&ldquo;3 a day&rdquo;) and whether you are ahead. It never nags.
+            </p>
+          </div>
         </div>
       )}
 

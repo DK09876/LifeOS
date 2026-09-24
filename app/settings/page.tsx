@@ -20,7 +20,7 @@ const COLOR_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: '1 - Urgent', label: 'Urgent' },
+  { value: '1 - Urgent', label: 'Essential' },
   { value: '2 - High', label: 'High' },
   { value: '3 - Normal', label: 'Normal' },
   { value: '4 - Low', label: 'Low' },

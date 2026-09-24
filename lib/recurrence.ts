@@ -375,3 +375,16 @@ export function pruneCompletionDates(dates: string[], retentionDays: number = 90
   const cutoff = toDateString(addDays(parseLocalDate(today), -retentionDays));
   return dates.filter(d => d >= cutoff);
 }
+
+/**
+ * When a recurring task would come round again if it were finished today -
+ * the "then" in "↻ Weekly · then Thu 1 Oct". For finished work, when it is
+ * actually back.
+ */
+export function thenOn(task: Task, today = getTodayString()): string | null {
+  if (task.recurrence === 'None') return null;
+  if (task.status === 'Done' || task.status === 'Archived') return nextOnDate(task);
+  const asIfDone = { ...task, lastCompleted: `${today}T12:00:00` };
+  if (seriesEnded(asIfDone)) return null;
+  return followingOccurrence(asIfDone);
+}

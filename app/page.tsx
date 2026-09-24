@@ -11,15 +11,18 @@ import HabitCard from '@/components/HabitCard';
 import DayCapacity from '@/components/DayCapacity';
 import MissedStrip from '@/components/MissedStrip';
 import FollowUpStrip from '@/components/FollowUpStrip';
+import AttentionStrip from '@/components/AttentionStrip';
+import RecurrenceBadge from '@/components/RecurrenceBadge';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useProjects, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
+import { useTasks, useDomains, useProjects, useHabits, useEnergySettings, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
 import { getTodayString, parseLocalDateTime } from '@/lib/dates';
-import { useLiveQuery } from '@/lib/live-query';
-import { getPreference, savePreference } from '@/lib/store';
-import { CAPACITY_PREF, capacityFor, dayLoad, parseCapacityMap, pruneCapacityMap } from '@/lib/capacity';
-import { DEFAULT_SUGGEST_CONTROLS, SuggestControls } from '@/lib/suggest';
+import { savePreference } from '@/lib/store';
+import { CAPACITY_PREF, dayLoad, pruneCapacityMap } from '@/lib/capacity';
 import { useEvents } from '@/lib/hooks';
+import { isOnToday } from '@/lib/schedule';
+import { isPressingBlocked } from '@/lib/scoring';
+import { needsTriageNag, unfinishedOn } from '@/lib/notifications';
 import { getTaskPriorityBorder, levelRank } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
 
@@ -47,22 +50,15 @@ export default function TodayPage() {
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
-  // Effort budget for today. The suggester's settings supply the default; a
-  // per-date override lets a low-energy day say so without changing the norm.
+  // Effort budget for today: the daily default, or this weekday's, or a
+  // one-off override that lets a low-energy day say so without changing the norm.
   const allEvents = useEvents();
-  const storedSuggest = useLiveQuery(() => getPreference('suggest.settings'), []);
-  const storedCapacity = useLiveQuery(() => getPreference(CAPACITY_PREF), []);
-  const suggestControls: SuggestControls = useMemo(() => {
-    try {
-      return storedSuggest
-        ? { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(storedSuggest) }
-        : DEFAULT_SUGGEST_CONTROLS;
-    } catch { return DEFAULT_SUGGEST_CONTROLS; }
-  }, [storedSuggest]);
-
-  const capacityMap = useMemo(() => parseCapacityMap(storedCapacity), [storedCapacity]);
+  const allHabits = useHabits();
+  const energy = useEnergySettings();
+  const suggestControls = energy.controls;
+  const capacityMap = energy.capacityMap;
   const todayStr = getTodayString();
-  const capacity = capacityFor(capacityMap, todayStr, suggestControls.dailyAPBudget);
+  const capacity = energy.budgetFor(todayStr);
   const load = useMemo(
     () => dayLoad(tasks, allEvents, suggestControls.defaultAP, todayStr,
       { due: habitsDueToday, done: habitsCompletedToday }),
@@ -73,6 +69,22 @@ export default function TodayPage() {
     const updated = pruneCapacityMap({ ...capacityMap, [todayStr]: next }, todayStr);
     await savePreference(CAPACITY_PREF, JSON.stringify(updated));
   };
+
+  // Blocked work with a deadline closing in; captures left through a weekend;
+  // and what yesterday left unticked. None of these may live only in Triage.
+  const pressingBlocked = useMemo(
+    () => tasks.filter(t => isPressingBlocked(t, todayStr))
+      .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '')),
+    [tasks, todayStr],
+  );
+  const triageNag = useMemo(() => tasks.filter(t => needsTriageNag(t, todayStr)), [tasks, todayStr]);
+  const yesterdayCount = useMemo(() => {
+    const y = new Date(parseLocalDate(todayStr).getTime() - 86400000);
+    const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    const left = unfinishedOn(yStr, tasks, allHabits, allEvents);
+    // Missed plans are already on their own strip; count only what is not.
+    return left.tasks.filter(t => t.plannedDate !== yStr).length + left.habits.length + left.events.length;
+  }, [tasks, allHabits, allEvents, todayStr]);
 
   // Plans whose day has passed. Not overdue deadlines - those stay in Plan.
   const missedPlans = useMemo(() => {
@@ -112,18 +124,10 @@ export default function TodayPage() {
   // Filter tasks for today
   const todayTasks = useMemo(() => {
     const todayStr = getTodayString();
-    return tasks.filter(t => {
-      if (t.status === 'Done' || t.status === 'Archived') return false;
-      // Use string comparison to avoid timezone issues
-      if (t.plannedDate === todayStr) return true;
-      if (t.dueDate === todayStr) return true;
-      return false;
-    }).sort((a, b) => {
-      // Sort by priority (1 = highest)
-      const priorityA = levelRank(a.taskPriority);
-      const priorityB = levelRank(b.taskPriority);
-      return priorityA - priorityB;
-    });
+    return tasks.filter(t => isOnToday(t, todayStr)).sort((a, b) =>
+      // Priority first (1 = highest), then score, so a slipped or
+      // long-neglected task leads among equals.
+      levelRank(a.taskPriority) - levelRank(b.taskPriority) || b.taskScore - a.taskScore);
   }, [tasks]);
 
   // Completed today
@@ -175,7 +179,8 @@ export default function TodayPage() {
   // Habit handlers
   async function handleMarkHabitDone(habitId: string) {
     try {
-      await markHabitDone(habitId);
+      const reached = await markHabitDone(habitId);
+      for (const m of reached) showToast(`🏆 ${m.label}!`, 'success');
     } catch { showToast('Failed to complete habit', 'error'); }
   }
 
@@ -276,6 +281,13 @@ export default function TodayPage() {
       <div className="mb-6">
         <DayCapacity capacity={capacity} load={load} onChange={setCapacity} />
       </div>
+
+      <AttentionStrip
+        pressingBlocked={pressingBlocked}
+        triageNag={triageNag}
+        yesterdayCount={yesterdayCount}
+        onEdit={handleEditTask}
+      />
 
       <FollowUpStrip
         tasks={followUpsDue}
@@ -418,6 +430,12 @@ export default function TodayPage() {
                         <span>Due {parseLocalDate(task.dueDate).toLocaleDateString()}</span>
                       </span>
                     )}
+                    <RecurrenceBadge task={task} />
+                    {(task.slipCount ?? 0) > 0 && (
+                      <span className="text-orange-400" title="Times this plan was missed and moved">
+                        ↷ slipped {task.slipCount}×
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -486,7 +504,10 @@ export default function TodayPage() {
                 <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
                   <span className="text-green-500 text-xs">✓</span>
                 </div>
-                <p className="text-[var(--muted)] line-through flex-1">{task.taskName}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[var(--muted)] line-through">{task.taskName}</p>
+                  {task.recurrence !== 'None' && <RecurrenceBadge task={task} className="text-xs" />}
+                </div>
                 <button
                   onClick={() => handleUndoTaskDone(task.id)}
                   className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-[var(--muted)] hover:text-white text-sm px-2 py-1 rounded hover:bg-[var(--card-hover)] transition-all"

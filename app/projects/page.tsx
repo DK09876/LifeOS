@@ -10,6 +10,9 @@ import { createProject, createTask, deleteProject, logProjectProgress, updatePro
 import { Project, Task } from '@/types';
 import { getStatusColor, getTaskPriorityColor, levelLabel } from '@/lib/colors';
 import LogProgress from '@/components/LogProgress';
+import { targetPace } from '@/lib/progress';
+import { parseLocalDate } from '@/lib/dates';
+import { format } from 'date-fns';
 
 type StatusFilter = 'all' | 'Active' | 'Completed' | 'Archived';
 
@@ -213,6 +216,29 @@ export default function ProjectsPage() {
                       {' '}{project.progress?.unit ?? 'AP'}
                     </span>
                   </div>
+
+                  {project.kind === 'target' && (() => {
+                    const pace = targetPace(project);
+                    if (!pace) return null;
+                    const unit = project.targetUnit || 'done';
+                    return (
+                      <p className="text-xs mt-1.5 text-[var(--muted)]">
+                        {pace.remaining === 0 ? (
+                          <span className="text-emerald-400">Target reached 🎉</span>
+                        ) : pace.overdue ? (
+                          <>Finish date passed · {pace.remaining} {unit} to go</>
+                        ) : (
+                          <>
+                            ~{pace.perDay} {unit}/day to finish by {format(parseLocalDate(project.targetDate!), 'd MMM')}
+                            {' · '}
+                            <span className={pace.ahead >= 0 ? 'text-emerald-400' : 'text-amber-400'}>
+                              {pace.ahead >= 0 ? `${pace.ahead} ahead` : `${-pace.ahead} behind`}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    );
+                  })()}
 
                   {project.kind === 'target' && (
                     <LogProgress

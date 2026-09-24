@@ -10,6 +10,7 @@
 
 import type { Task, Event, Habit } from '@/types';
 import { getTodayString, parseLocalDateTime } from './dates';
+import { isOnToday } from './schedule';
 
 /** Per-date overrides, keyed YYYY-MM-DD. Absent means "use the default". */
 export type CapacityMap = Record<string, number>;
@@ -123,8 +124,7 @@ export function dayLoad(
       if (task.doneDate && sameLocalDay(task.doneDate, today)) done += apOf(task, defaultAP);
       continue;
     }
-    if (task.status === 'Archived') continue;
-    if (task.plannedDate === today || task.dueDate === today) planned += apOf(task, defaultAP);
+    if (isOnToday(task, today)) planned += apOf(task, defaultAP);
   }
 
   for (const event of events) {

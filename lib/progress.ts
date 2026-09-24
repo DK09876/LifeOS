@@ -9,7 +9,9 @@
  */
 
 import type { ProgressEntry, Project, Task } from '@/types';
-import { getTodayString } from './dates';
+import { differenceInCalendarDays } from 'date-fns';
+
+import { getTodayString, parseLocalDate } from './dates';
 
 export const DEFAULT_TASK_AP = 2;
 
@@ -97,4 +99,46 @@ export function loggingStreak(log: ProgressEntry[] | undefined, today = getToday
     offset += 1;
   }
   return run;
+}
+
+export interface Pace {
+  /** Still to do. */
+  remaining: number;
+  /** Days left including today. */
+  daysLeft: number;
+  /** What each remaining day needs, rounded up. */
+  perDay: number;
+  /** Where a steady pace from the start would have you by today. */
+  expected: number;
+  /** done - expected: positive is ahead, negative behind. */
+  ahead: number;
+  overdue: boolean;
+}
+
+/**
+ * The pace a target needs to land by its date - information, never a nag.
+ *
+ * "Expected" assumes an even pace from the day the project was made, which is
+ * the only honest baseline without asking you for one.
+ */
+export function targetPace(
+  project: Pick<Project, 'kind' | 'targetCount' | 'targetDate' | 'createdAt' | 'progressLog'>,
+  today = getTodayString(),
+): Pace | null {
+  if (project.kind !== 'target' || !project.targetCount || !project.targetDate) return null;
+  const done = loggedTotal(project.progressLog);
+  const remaining = Math.max(0, project.targetCount - done);
+  const start = project.createdAt.slice(0, 10);
+  const span = Math.max(1, differenceInCalendarDays(parseLocalDate(project.targetDate), parseLocalDate(start)) + 1);
+  const elapsed = Math.min(span, Math.max(0, differenceInCalendarDays(parseLocalDate(today), parseLocalDate(start)) + 1));
+  const daysLeft = differenceInCalendarDays(parseLocalDate(project.targetDate), parseLocalDate(today)) + 1;
+  const expected = Math.round((project.targetCount * elapsed) / span);
+  return {
+    remaining,
+    daysLeft: Math.max(0, daysLeft),
+    perDay: daysLeft > 0 ? Math.ceil(remaining / daysLeft) : remaining,
+    expected,
+    ahead: done - expected,
+    overdue: daysLeft <= 0 && remaining > 0,
+  };
 }
