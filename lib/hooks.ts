@@ -24,6 +24,8 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   // completion had already vanished from the day it happened on.
   await recordRecentDays();
 
+  await migrateCycleStarts();
+
   const allTasks = await db.tasks.toArray();
   let tasksReset = 0;
 
@@ -111,6 +113,24 @@ async function resetIfDue(task: Task, today = getTodayString()): Promise<boolean
     updatedAt: new Date().toISOString(),
   });
   return true;
+}
+
+const CYCLE_MIGRATION = 'migration.cycleStart';
+
+/**
+ * One-off, per profile. Recurring tasks that came back before rotSince
+ * existed have no record of when their current cycle began, so their cycle
+ * would be counted from when they were first written - weeks behind on
+ * arrival. The reset stamped updatedAt, which is the best record there is.
+ */
+async function migrateCycleStarts(): Promise<void> {
+  if (getPreference(CYCLE_MIGRATION)) return;
+  for (const task of await db.tasks.toArray()) {
+    if (task.deletedAt || task.recurrence === 'None' || task.status === 'Done') continue;
+    if (task.lastCompleted || task.rotSince) continue;
+    await db.tasks.update(task.id, { rotSince: task.updatedAt });
+  }
+  await savePreference(CYCLE_MIGRATION, getTodayString());
 }
 
 /** The energy settings as stored: defaults, per-weekday budgets, per-date overrides. */
