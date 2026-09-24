@@ -124,7 +124,12 @@ export function getDueDateColor(dueDate: string | null): string {
  * silently collapsing to an empty badge.
  */
 export function levelLabel(level: string | null): string {
-  return level ? level.split(' - ')[1] : 'Not set';
+  if (!level) return 'Not set';
+  // The top priority is stored as "1 - Urgent" for compatibility, but priority
+  // is the *importance* axis - "urgent" belongs to urgency, and the clash made
+  // the two easy to confuse when filling a task in.
+  if (level === '1 - Urgent') return 'Essential';
+  return level.split(' - ')[1];
 }
 
 /**

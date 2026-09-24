@@ -1,5 +1,6 @@
 'use client';
 
+import RecurrenceBadge from '@/components/RecurrenceBadge';
 import { useState, useMemo } from 'react';
 import { format, startOfDay, addDays } from 'date-fns';
 import Modal from '@/components/Modal';
@@ -29,7 +30,7 @@ const TASK_FILTERS: FilterDef[] = [
     key: 'priority', label: 'Priority',
     options: [
       { value: 'all', label: 'All Priorities' },
-      { value: '1 - Urgent', label: 'Urgent' },
+      { value: '1 - Urgent', label: 'Essential' },
       { value: '2 - High', label: 'High' },
       { value: '3 - Normal', label: 'Normal' },
       { value: '4 - Low', label: 'Low' },
@@ -87,7 +88,7 @@ const TASK_COLUMNS: ColumnDef[] = [
   { key: 'doneDate', label: 'Done', defaultVisible: false },
   { key: 'domain', label: 'Domain', defaultVisible: true },
   { key: 'actionPoints', label: 'AP', defaultVisible: true },
-  { key: 'recurrence', label: 'Recurrence', defaultVisible: false },
+  { key: 'recurrence', label: 'Recurrence', defaultVisible: true },
   { key: 'taskScore', label: 'Score', defaultVisible: true },
   { key: 'notes', label: 'Notes', defaultVisible: false },
   { key: 'createdAt', label: 'Created', defaultVisible: false },
@@ -408,7 +409,7 @@ export default function TasksPage() {
                   )}
                   {show('recurrence') && (
                     <td className="px-4 py-3 text-sm text-[var(--muted)]">
-                      {task.recurrence !== 'None' ? task.recurrence : '—'}
+                      {task.recurrence !== 'None' ? <RecurrenceBadge task={task} /> : '—'}
                     </td>
                   )}
                   {show('taskScore') && (

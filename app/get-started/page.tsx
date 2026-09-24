@@ -45,6 +45,13 @@ const steps = [
     href: '/plan',
     cta: 'Go to Plan',
   },
+  {
+    number: 7,
+    title: 'Set your energy and notifications',
+    description: 'In Settings, set how many AP a day may cost (optionally per weekday) and turn on notifications for your phone and laptop. On iPhone, add LifeOS to the Home Screen first.',
+    href: '/settings',
+    cta: 'Go to Settings',
+  },
 ];
 
 export default function GetStartedPage() {
@@ -52,7 +59,7 @@ export default function GetStartedPage() {
     <div className="max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-white mb-1">Get Started</h1>
-        <p className="text-[var(--muted)]">Set up LifeOS in 6 steps</p>
+        <p className="text-[var(--muted)]">Set up LifeOS in 7 steps</p>
       </div>
 
       <div className="space-y-4">

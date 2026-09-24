@@ -14,7 +14,7 @@
 'use client';
 
 export const COLLECTIONS = [
-  'tasks', 'domains', 'habits', 'events', 'projects', 'filterPresets',
+  'tasks', 'domains', 'habits', 'events', 'projects', 'filterPresets', 'notes',
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];

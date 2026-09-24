@@ -1,6 +1,7 @@
 import { Task, Event } from '@/types';
-import { parseLocalDate, toDateString } from './dates';
+import { getTodayString, parseLocalDate } from './dates';
 import { startOfDay, differenceInCalendarDays } from 'date-fns';
+import { cycleDueDate } from './recurrence';
 
 // --- Types ---
 
@@ -103,10 +104,22 @@ function normalizeWeights(controls: SuggestControls): { w_score: number; w_deadl
 
 // --- Scoring Components ---
 
+/**
+ * The date a task has to be placed by, as far as the planner is concerned:
+ * its deadline, else the end of its cycle, else - for a plan already missed -
+ * the day that was missed, which is to say "as soon as possible".
+ */
+export function placeBy(task: Task, today = getTodayString()): string | null {
+  if (task.dueDate) return task.dueDate;
+  if (task.plannedDate && task.plannedDate < today) return task.plannedDate;
+  return cycleDueDate(task);
+}
+
 /** Deadline pressure: how urgently a task needs scheduling relative to target day */
 function deadlinePressure(task: Task, targetDay: Date): number {
-  if (!task.dueDate) return 0.1;
-  const due = parseLocalDate(task.dueDate);
+  const by = placeBy(task);
+  if (!by) return 0.1;
+  const due = parseLocalDate(by);
   const daysUntil = differenceInCalendarDays(due, targetDay);
 
   if (daysUntil < 0) return 1.0;    // overdue
@@ -169,9 +182,10 @@ export function suggestNextTask(
 ): Task[] {
   const today = startOfDay(new Date());
 
-  // Filter candidates: unscheduled, active, not skipped
+  // Filter candidates: unscheduled (or a plan already missed), active, not skipped
+  const todayStr = getTodayString();
   let candidates = tasks.filter(t =>
-    !t.plannedDate &&
+    (!t.plannedDate || t.plannedDate < todayStr) &&
     t.status !== 'Done' &&
     t.status !== 'Archived' &&
     t.status !== 'Needs Details' &&
@@ -226,6 +240,13 @@ export interface WeekDayInfo {
    * habits are a floor under the week rather than something to place.
    */
   habitAP?: number;
+  /**
+   * Effort owed to the later occurrences of recurring tasks - the ones that
+   * exist only as projections. Reserved the same way as habits.
+   */
+  recurringAP?: number;
+  /** This day's budget, when it differs from the default. */
+  capacity?: number;
 }
 
 export function suggestWeekSchedule(
@@ -244,7 +265,7 @@ export function suggestWeekSchedule(
   for (const day of weekDays) {
     const existingAP = day.existingTasks.reduce((sum, t) => sum + getTaskAP(t, controls.defaultAP), 0);
     const eventsAP = day.events.reduce((sum, e) => sum + getEventAP(e, controls.defaultAP), 0);
-    const habitAP = day.habitAP ?? 0;
+    const habitAP = (day.habitAP ?? 0) + (day.recurringAP ?? 0);
 
     // Deduct pinned AP
     let pinnedAP = 0;
@@ -258,7 +279,8 @@ export function suggestWeekSchedule(
       }
     }
 
-    remainingAP.set(day.dateStr, Math.max(0, controls.dailyAPBudget - existingAP - eventsAP - habitAP - pinnedAP));
+    const budget = day.capacity ?? controls.dailyAPBudget;
+    remainingAP.set(day.dateStr, Math.max(0, budget - existingAP - eventsAP - habitAP - pinnedAP));
 
     // Track domain counts from existing + pinned
     const domainCounts = new Map<string, number>();
@@ -280,8 +302,11 @@ export function suggestWeekSchedule(
     weekDays.flatMap(d => d.existingTasks.map(t => t.id))
   );
 
+  // A plan whose day has gone is back on the table: you meant to do it, so
+  // it should be placed again rather than left out because it has a date.
+  const todayStr = getTodayString();
   let candidates = tasks.filter(t =>
-    !t.plannedDate &&
+    (!t.plannedDate || t.plannedDate < todayStr) &&
     t.status !== 'Done' &&
     t.status !== 'Archived' &&
     t.status !== 'Needs Details' &&
@@ -297,42 +322,35 @@ export function suggestWeekSchedule(
     );
   }
 
-  // --- Pass 1: Deadline tasks (earliest deadline first) ---
-  const deadlineTasks = candidates
-    .filter(t => t.dueDate)
-    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
+  // --- Pass 1: anything with a date to meet, most pressing first ---
+  //
+  // Deadlines, recurring cycles and missed plans. Each goes on the earliest
+  // day with room, and on the deadline day itself only if nothing earlier
+  // fits: leaving a Friday deadline for Friday is how it gets missed the
+  // moment Friday goes wrong.
+  const dated = candidates
+    .map(t => ({ task: t, by: placeBy(t, todayStr) }))
+    .filter((c): c is { task: Task; by: string } => c.by !== null)
+    // Only what falls due inside the range (or already has): a deadline next
+    // month is flexible work this week, not a date to meet.
+    .filter(c => c.by <= weekDays[weekDays.length - 1]?.dateStr)
+    .sort((a, b) => a.by.localeCompare(b.by) || b.task.taskScore - a.task.taskScore);
 
   const placedIds = new Set<string>();
 
-  for (const task of deadlineTasks) {
+  for (const { task, by } of dated) {
     const ap = getTaskAP(task, controls.defaultAP);
 
-    // Find best eligible day (must be <= due date, with capacity)
-    let bestDay: string | null = null;
-    let bestScore = -1;
-
-    for (const day of weekDays) {
-      const dayRemaining = remainingAP.get(day.dateStr) || 0;
-      if (ap > dayRemaining) continue;
-
-      // Must be on or before due date
-      if (task.dueDate && day.dateStr > task.dueDate) continue;
-
+    const open = weekDays.filter(day =>
+      ap <= (remainingAP.get(day.dateStr) || 0) &&
       // Skip excluded placements (user removed this task from this day)
-      if (excludedPlacements?.has(`${task.id}:${day.dateStr}`)) continue;
+      !excludedPlacements?.has(`${task.id}:${day.dateStr}`));
 
-      const context: ScoringContext = {
-        targetDay: day.date,
-        scheduledDomainCounts: dayDomainCounts.get(day.dateStr) || new Map(),
-        remainingAP: dayRemaining,
-      };
-      const score = computeSuggestionScore(task, controls, context);
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestDay = day.dateStr;
-      }
-    }
+    // Already late: the first day with room is the best there is.
+    const late = by < (weekDays[0]?.dateStr ?? by);
+    const before = open.find(day => day.dateStr < by);
+    const onTheDay = open.find(day => day.dateStr === by);
+    const bestDay = (late ? open[0] : before ?? onTheDay)?.dateStr ?? null;
 
     if (bestDay) {
       assignments.set(task.id, bestDay);

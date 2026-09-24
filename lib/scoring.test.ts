@@ -181,34 +181,41 @@ describe('rot: overdue escalates and neglect accrues', () => {
   // scored as calmly as one written yesterday.
   it('accrues on a dated task that is being ignored', () => {
     const farOff = { dueDate: dueIn(90) };
-    expect(pressure({ ...farOff, updatedAt: daysAgo(1) })).toBe(5);    // deadline only
-    expect(pressure({ ...farOff, updatedAt: daysAgo(120) })).toBe(20); // neglect wins
+    expect(pressure({ ...farOff, createdAt: daysAgo(1) })).toBe(5);    // deadline only
+    expect(pressure({ ...farOff, createdAt: daysAgo(120) })).toBe(20); // neglect wins
   });
 
   it('takes the louder of the two rather than adding them', () => {
     // Due tomorrow beats any amount of neglect, and is not inflated by it.
-    expect(pressure({ dueDate: dueIn(1), updatedAt: daysAgo(120) })).toBe(40);
+    expect(pressure({ dueDate: dueIn(1), createdAt: daysAgo(120) })).toBe(40);
   });
 
   it('lets lateness outrun neglect entirely', () => {
-    expect(pressure({ dueDate: dueIn(-1), updatedAt: daysAgo(120) })).toBe(50);
+    expect(pressure({ dueDate: dueIn(-1), createdAt: daysAgo(120) })).toBe(50);
   });
 
   // "Needs to be at least planned": the rot is about nobody having said when
   // this happens, so committing to a day settles it.
   describe('a plan settles the question', () => {
     it('stops neglect accruing once the task is planned', () => {
-      expect(pressure({ updatedAt: daysAgo(120) })).toBe(20);
-      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(3) })).toBe(0);
+      expect(pressure({ createdAt: daysAgo(120) })).toBe(20);
+      expect(pressure({ createdAt: daysAgo(120), plannedDate: dueIn(3) })).toBe(0);
     });
 
     it('counts a plan for today as still planned', () => {
-      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(0) })).toBe(0);
+      expect(pressure({ createdAt: daysAgo(120), plannedDate: dueIn(0) })).toBe(0);
     });
 
-    // A plan you have already slid past is not an answer any more.
-    it('starts rotting again once the planned day has passed', () => {
-      expect(pressure({ updatedAt: daysAgo(120), plannedDate: dueIn(-1) })).toBe(20);
+    // A plan you have already slid past is not an answer any more - and it
+    // is louder than plain neglect, because you had decided it mattered.
+    it('turns into missed-plan pressure once the planned day has passed', () => {
+      expect(pressure({ createdAt: daysAgo(1), plannedDate: dueIn(-1) })).toBe(32);
+      expect(pressure({ createdAt: daysAgo(120), plannedDate: dueIn(-1) })).toBe(32);
+      expect(pressure({ createdAt: daysAgo(1), plannedDate: dueIn(-30) })).toBe(44);
+    });
+
+    it('keeps a missed plan below a real overdue deadline', () => {
+      expect(pressure({ plannedDate: dueIn(-30) })).toBeLessThan(pressure({ dueDate: dueIn(-1) }));
     });
 
     it('does not let a plan mask a real deadline', () => {
@@ -221,11 +228,37 @@ describe('rot: overdue escalates and neglect accrues', () => {
   // nobody could act on near the top of the list while they were hidden from
   // every working view.
   it('does not rot a blocked task', () => {
-    expect(pressure({ updatedAt: daysAgo(120), status: 'Blocked' })).toBe(0);
+    expect(pressure({ createdAt: daysAgo(120), status: 'Blocked' })).toBe(0);
   });
 
-  it('resumes rotting once it is unblocked', () => {
-    expect(pressure({ updatedAt: daysAgo(120), status: 'Backlog' })).toBe(20);
+  it('restarts the clock when it is unblocked', () => {
+    expect(pressure({ createdAt: daysAgo(120), status: 'Backlog' })).toBe(20);
+    expect(pressure({ createdAt: daysAgo(120), rotSince: daysAgo(1), status: 'Backlog' })).toBe(0);
+  });
+
+  // Editing is not progress. Rot used to run from updatedAt, so renaming a
+  // task - or sliding its plan to tomorrow - made it look freshly cared for.
+  it('is not reset by editing the task', () => {
+    expect(pressure({ createdAt: daysAgo(120), updatedAt: daysAgo(0) })).toBe(20);
+  });
+
+  describe('slipping a plan', () => {
+    it('adds pressure for each slip, on top of everything else', () => {
+      expect(pressure({ slipCount: 1 })).toBe(4);
+      expect(pressure({ slipCount: 2, dueDate: dueIn(1) })).toBe(48);
+    });
+
+    it('counts even while the new plan is still ahead', () => {
+      expect(pressure({ slipCount: 3, plannedDate: dueIn(2) })).toBe(12);
+    });
+
+    it('is capped so it cannot swamp a real deadline', () => {
+      expect(pressure({ slipCount: 50 })).toBe(16);
+    });
+
+    it('does not count against blocked work', () => {
+      expect(pressure({ slipCount: 3, status: 'Blocked' })).toBe(0);
+    });
   });
 
   it('still honours a real deadline while blocked', () => {
@@ -233,18 +266,18 @@ describe('rot: overdue escalates and neglect accrues', () => {
   });
 
   it('accrues pressure on an undated task that is left alone', () => {
-    expect(pressure({ updatedAt: daysAgo(1) })).toBe(0);
-    expect(pressure({ updatedAt: daysAgo(14) })).toBe(5);
-    expect(pressure({ updatedAt: daysAgo(30) })).toBe(10);
-    expect(pressure({ updatedAt: daysAgo(60) })).toBe(15);
-    expect(pressure({ updatedAt: daysAgo(120) })).toBe(20);
+    expect(pressure({ createdAt: daysAgo(1) })).toBe(0);
+    expect(pressure({ createdAt: daysAgo(14) })).toBe(5);
+    expect(pressure({ createdAt: daysAgo(30) })).toBe(10);
+    expect(pressure({ createdAt: daysAgo(60) })).toBe(15);
+    expect(pressure({ createdAt: daysAgo(120) })).toBe(20);
   });
 
   // The case that motivated the change: a long-neglected urgent task should
   // not sit below a middling one that merely has a date on it.
   it('lets a rotted urgent task outrank a medium task due next week', () => {
     const rotted = calculateTaskScores(
-      { taskPriority: '3 - Normal', urgency: '1 - Critical', updatedAt: daysAgo(120) }, '1 - Critical');
+      { taskPriority: '3 - Normal', urgency: '1 - Critical', createdAt: daysAgo(120) }, '1 - Critical');
     const dated = calculateTaskScores(
       { taskPriority: '3 - Normal', urgency: '3 - Normal', dueDate: dueIn(7) }, '2 - Important');
     expect(rotted.combinedScore).toBeGreaterThan(dated.combinedScore);
@@ -253,7 +286,7 @@ describe('rot: overdue escalates and neglect accrues', () => {
   // But a deadline still beats a vague intention, which is the point of
   // keeping the dated ladder above the neglect one.
   it('keeps a task due today above a freshly written undated one', () => {
-    expect(pressure({ dueDate: dueIn(0) })).toBeGreaterThan(pressure({ updatedAt: daysAgo(120) }));
+    expect(pressure({ dueDate: dueIn(0) })).toBeGreaterThan(pressure({ createdAt: daysAgo(120) }));
   });
 });
 
@@ -269,17 +302,38 @@ describe('a repeating task is due by the end of its cycle', () => {
   // decided only when the task came back, never whether it was late, so
   // plants a fortnight past their watering registered nothing at all.
   it('treats one interval past the last completion as the deadline', () => {
-    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(14) })).toBe(45); // due today
-    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(15) })).toBe(50); // a day late
-    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(21) })).toBe(65); // a week late
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(14) })).toBe(32); // due today
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(15) })).toBe(36); // a day late
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(21) })).toBe(48); // a week late
   });
 
   it('counts from when it was written if it has never been done', () => {
-    expect(pressure({ recurrence: 'Weekly', createdAt: daysAgo(8) })).toBe(50);
+    expect(pressure({ recurrence: 'Weekly', createdAt: daysAgo(8) })).toBe(36);
   });
 
   it('is calm in the middle of its cycle', () => {
-    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(2) })).toBe(20);
+    expect(pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(2) })).toBe(12);
+  });
+
+  // Missed cycles pile up: a daily task three days behind is further behind
+  // than a fortnightly one three days behind.
+  it('grows with each missed cycle', () => {
+    const daily = pressure({ recurrence: 'Daily', lastCompleted: daysAgo(3) });
+    const biweekly = pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(16) });
+    expect(daily).toBeGreaterThan(biweekly);
+  });
+
+  it('outgrows neglect but never a real overdue deadline', () => {
+    const behind = pressure({ recurrence: 'Daily', lastCompleted: daysAgo(30) });
+    expect(behind).toBe(49);
+    expect(behind).toBeGreaterThan(pressure({ createdAt: daysAgo(400) }));
+    expect(behind).toBeLessThan(pressure({ dueDate: dueIn(-1) }));
+  });
+
+  // After it comes back, the cycle runs from the completion that started it
+  // (rotSince), not from when the task was first written.
+  it('counts the cycle from rotSince once the last completion is cleared', () => {
+    expect(pressure({ recurrence: 'Weekly', createdAt: daysAgo(200), rotSince: daysAgo(3) })).toBe(20);
   });
 
   // An explicit deadline is a statement; the cycle is only an inference.

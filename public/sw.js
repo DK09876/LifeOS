@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifeos-v2';
+const CACHE_NAME = 'lifeos-v3';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -85,4 +85,41 @@ self.addEventListener('message', (event) => {
   if (event.data === 'skipWaiting') {
     self.skipWaiting();
   }
+});
+
+// Push notifications from the Pi (see lib/server/notifier.ts). The payload is
+// { title, body, url, tag }; tag collapses repeats of the same notice.
+self.addEventListener('push', (event) => {
+  let data = { title: 'LifeOS', body: '', url: '/', tag: undefined };
+  try {
+    if (event.data) data = { ...data, ...event.data.json() };
+  } catch {
+    if (event.data) data.body = event.data.text();
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: data.tag,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: data.url || '/' },
+    })
+  );
+});
+
+// Tapping a notification opens (or focuses) the app on the page it is about.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { DragEvent, useCallback, useMemo, useState } from 'react';
+import { DragEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { format, startOfWeek, startOfMonth, addDays, addWeeks, addMonths, isToday, startOfDay, endOfMonth, getDay, isBefore, differenceInCalendarDays } from 'date-fns';
 import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
@@ -8,7 +8,10 @@ import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
-import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
+import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
+import { projectOccurrences } from '@/lib/recurrence';
+import { cyclesMissed, isPressingBlocked } from '@/lib/scoring';
+import { needsTriageNag } from '@/lib/notifications';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
 import { getDueDateColor, getDueSoonLabel, getPriorityDotColor, getTaskPriorityBorder, getTaskPriorityColor, levelLabel, levelRank } from '@/lib/colors';
@@ -30,7 +33,7 @@ const PLAN_FILTERS: FilterDef[] = [
     key: 'priority', label: 'Priority',
     options: [
       { value: 'all', label: 'All Priorities' },
-      { value: '1 - Urgent', label: 'Urgent' },
+      { value: '1 - Urgent', label: 'Essential' },
       { value: '2 - High', label: 'High' },
       { value: '3 - Normal', label: 'Normal' },
       { value: '4 - Low', label: 'Low' },
@@ -117,6 +120,16 @@ export default function PlanPage() {
 
   const [mainView, setMainView] = useState<MainView>('planning');
   const [triageTab, setTriageTab] = useState<TriageTab>('needsDetails');
+  // Deep links from Today and from notifications: /plan?view=triage&tab=overdue
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+    const tab = params.get('tab');
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (view === 'triage' || view === 'planning' || view === 'matrix') setMainView(view);
+    if (tab && ['needsDetails', 'blocked', 'missed', 'overdue', 'archived'].includes(tab)) setTriageTab(tab as TriageTab);
+  }, []);
+  const energy = useEnergySettings();
   const [calendarView, setCalendarView] = useState<CalendarView>('week');
   const [dateOffset, setDateOffset] = useState(0);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -373,6 +386,13 @@ export default function PlanPage() {
     const result = applyFilters(activeTasks.filter(t => !t.plannedDate));
     return multiLevelSort(result, sortLevels, comparators);
   }, [activeTasks, applyFilters, sortLevels, comparators]);
+  // Overdue work is pinned above the rest, most overdue first, whatever the
+  // chosen sort - it is the one thing in this list that has already slipped.
+  const { overdueUnscheduled, restUnscheduled } = useMemo(() => {
+    const overdue = unscheduledTasks.filter(t => t.dueDate && t.dueDate < todayStr)
+      .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
+    return { overdueUnscheduled: overdue, restUnscheduled: unscheduledTasks.filter(t => !overdue.includes(t)) };
+  }, [unscheduledTasks, todayStr]);
 
   // Tasks by day for the calendar
   const tasksByDay = useMemo(() => {
@@ -408,10 +428,28 @@ export default function PlanPage() {
   }, [events, calendarDays]);
 
   // Stats
-  const stats = useMemo(() => ({
-    needsAttention: triageTasks.needsDetails.length + triageTasks.blocked.length + triageTasks.missed.length + triageTasks.missedEvents.length + triageTasks.overdue.length,
-    unscheduled: unscheduledTasks.length,
-  }), [triageTasks, unscheduledTasks]);
+  // A task both planned and due on a past day is missed *and* overdue; count
+  // it once, or the badge claims more needs attention than does.
+  const stats = useMemo(() => {
+    const ids = new Set([
+      ...triageTasks.needsDetails, ...triageTasks.blocked, ...triageTasks.missed, ...triageTasks.overdue,
+    ].map(t => t.id));
+    return {
+      needsAttention: ids.size + triageTasks.missedEvents.length,
+      unscheduled: unscheduledTasks.length,
+    };
+  }, [triageTasks, unscheduledTasks]);
+
+  // What Triage holds that should not wait for you to go looking.
+  const attention = useMemo(() => ({
+    overdue: triageTasks.overdue.filter(t => t.status !== 'Blocked').length,
+    missed: triageTasks.missed.length,
+    pressing: tasks.filter(t => isPressingBlocked(t, todayStr)).length,
+    followUps: tasks.filter(t => t.status === 'Blocked' && !!t.followUpDate && t.followUpDate <= todayStr).length,
+    needsDetails: triageTasks.needsDetails.length,
+    nagging: tasks.filter(t => needsTriageNag(t, todayStr)).length,
+  }), [triageTasks, tasks, todayStr]);
+  const openTriage = (tab: TriageTab) => { setMainView('triage'); setTriageTab(tab); };
 
   // Suggest Next Task: compute ranked list
   const suggestNextRanked = useMemo(() => {
@@ -424,23 +462,61 @@ export default function PlanPage() {
   // Suggest Week: compute week days info for current week
   // Which days the suggester is allowed to plan into. Defaults to the rest of
   // the week from today: asking it to fill Monday on a Thursday is not a plan.
-  const weekStartDate = useMemo(() => startOfWeek(startOfDay(new Date()), { weekStartsOn: 1 }), []);
+  // The suggester plans the week on screen, as long as that is this week or
+  // next: Sunday planning is for the week ahead.
+  const suggestWeek = calendarView === 'week' && (dateOffset === 0 || dateOffset === 1) ? dateOffset : null;
+  const weekStartDate = useMemo(
+    () => addWeeks(startOfWeek(startOfDay(new Date()), { weekStartsOn: 1 }), suggestWeek ?? 0),
+    [suggestWeek],
+  );
   const todayIndex = useMemo(
     () => Math.max(0, differenceInCalendarDays(startOfDay(new Date()), weekStartDate)),
     [weekStartDate],
   );
-  const [suggestRange, setSuggestRange] = useState<{ from: number; to: number }>(
-    () => ({ from: todayIndex, to: 6 }),
+  // Remembered per week: this week defaults to the rest of it, next week to all of it.
+  const [rangeByWeek, setRangeByWeek] = useState<Record<number, { from: number; to: number }>>({});
+  const suggestRange = useMemo(
+    () => rangeByWeek[suggestWeek ?? 0] ?? { from: Math.min(todayIndex, 6), to: 6 },
+    [rangeByWeek, suggestWeek, todayIndex],
   );
+  const setSuggestRange = (update: (r: { from: number; to: number }) => { from: number; to: number }) =>
+    setRangeByWeek(prev => ({ ...prev, [suggestWeek ?? 0]: update(suggestRange) }));
+
+  // Recurring tasks: every later occurrence of each, by day, for the days on
+  // screen. Drawn faintly, and reserved against the suggester's budget.
+  const ghostsByDay = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    if (!calendarDays.length) return map;
+    const from = toDateString(calendarDays[0]);
+    const to = toDateString(calendarDays[calendarDays.length - 1]);
+    for (const task of tasks) {
+      if (task.recurrence === 'None') continue;
+      for (const day of projectOccurrences(task, from, to, todayStr)) {
+        if (day < todayStr) continue;
+        map.set(day, [...(map.get(day) ?? []), task]);
+      }
+    }
+    return map;
+  }, [tasks, calendarDays, todayStr]);
 
   const suggestWeekDays = useMemo((): WeekDayInfo[] => {
     const from = Math.min(suggestRange.from, suggestRange.to);
     const to = Math.max(suggestRange.from, suggestRange.to);
     const span = to - from + 1;
+    const start = addDays(weekStartDate, from);
     // Habits are reserved, not placed: they are a floor under the days rather
     // than work to schedule, and ignoring them is what let the planner offer
     // a whole budget on a day that already had a gym session in it.
-    const habitAPByDay = habitLoadByDay(habits, span);
+    const habitAPByDay = habitLoadByDay(habits, span, start);
+    const rangeFrom = toDateString(start);
+    const rangeTo = toDateString(addDays(weekStartDate, to));
+    const recurringAP = new Map<string, number>();
+    for (const task of tasks) {
+      if (task.recurrence === 'None') continue;
+      for (const day of projectOccurrences(task, rangeFrom, rangeTo, todayStr)) {
+        recurringAP.set(day, (recurringAP.get(day) ?? 0) + (parseInt(task.actionPoints || '0') || suggestControls.defaultAP));
+      }
+    }
 
     return Array.from({ length: span }, (_, offset) => {
       const date = addDays(weekStartDate, from + offset);
@@ -451,9 +527,11 @@ export default function PlanPage() {
         existingTasks: activeTasks.filter(t => t.plannedDate === dateStr),
         events: events.filter(e => e.date === dateStr),
         habitAP: habitAPByDay[offset] ?? 0,
+        recurringAP: recurringAP.get(dateStr) ?? 0,
+        capacity: energy.budgetFor(dateStr),
       };
     });
-  }, [activeTasks, events, habits, weekStartDate, suggestRange]);
+  }, [activeTasks, tasks, events, habits, weekStartDate, suggestRange, energy, suggestControls.defaultAP, todayStr]);
 
   // Get task AP helper for display
   const getDisplayAP = useCallback((task: Task) => {
@@ -633,6 +711,16 @@ export default function PlanPage() {
     setSuggestedAssignments(result);
   };
 
+  // Accept the whole proposal at once; pinning is for keeping some of it.
+  const handleAcceptAllSuggestions = async () => {
+    for (const [taskId, dateStr] of suggestedAssignments) {
+      await updateTaskData(taskId, { plannedDate: dateStr });
+    }
+    setSuggestedAssignments(new Map());
+    setPinnedTaskIds(new Set());
+    setSuggestRemovedPlacements(new Set());
+  };
+
   const handleApplySuggestions = async () => {
     for (const taskId of pinnedTaskIds) {
       const dateStr = suggestedAssignments.get(taskId);
@@ -706,6 +794,11 @@ export default function PlanPage() {
             {getDueSoonLabel(task.dueDate) && (
               <span className={`${getDueSoonLabel(task.dueDate)!.color} text-white text-[10px] px-1 py-0.5 rounded font-medium`}>
                 {getDueSoonLabel(task.dueDate)!.label}
+              </span>
+            )}
+            {!task.dueDate && cyclesMissed(task, todayStr) > 0 && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300" title="Recurring cycles gone by without it being done">
+                ↻ {cyclesMissed(task, todayStr)} behind
               </span>
             )}
           </div>
@@ -842,6 +935,37 @@ export default function PlanPage() {
         </button>
       </div>
 
+      {/* Attention bar: what Triage holds that should not wait to be found */}
+      {(attention.overdue + attention.missed + attention.pressing + attention.followUps + attention.nagging) > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {attention.overdue > 0 && (
+            <button onClick={() => openTriage('overdue')} className="px-2.5 py-1 rounded-full text-xs bg-red-500/15 text-red-300 hover:bg-red-500/25">
+              {attention.overdue} overdue
+            </button>
+          )}
+          {attention.pressing > 0 && (
+            <button onClick={() => openTriage('blocked')} className="px-2.5 py-1 rounded-full text-xs bg-red-500/15 text-red-300 hover:bg-red-500/25">
+              ⛔ {attention.pressing} blocked & pressing
+            </button>
+          )}
+          {attention.missed > 0 && (
+            <button onClick={() => openTriage('missed')} className="px-2.5 py-1 rounded-full text-xs bg-orange-500/15 text-orange-300 hover:bg-orange-500/25">
+              {attention.missed} missed {attention.missed === 1 ? 'plan' : 'plans'}
+            </button>
+          )}
+          {attention.followUps > 0 && (
+            <button onClick={() => openTriage('blocked')} className="px-2.5 py-1 rounded-full text-xs bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25">
+              {attention.followUps} to follow up
+            </button>
+          )}
+          {attention.nagging > 0 && (
+            <button onClick={() => openTriage('needsDetails')} className="px-2.5 py-1 rounded-full text-xs bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25">
+              📥 {attention.nagging} waited a weekend for details
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main View Tabs */}
       <div className="flex items-center gap-4 mb-6">
         <div className="flex items-center gap-2">
@@ -942,7 +1066,7 @@ export default function PlanPage() {
                     key={task.id}
                     className={`p-4 hover:bg-[var(--card-hover)] cursor-pointer transition-colors ${
                       triageTab === 'missed' ? 'border-l-4 border-orange-500' : ''
-                    } ${triageTab === 'overdue' ? 'border-l-4 border-red-500' : ''} ${
+                    } ${triageTab === 'overdue' || (triageTab === 'blocked' && isPressingBlocked(task, todayStr)) ? 'border-l-4 border-red-500' : ''} ${
                       triageTab === 'archived' ? 'border-l-4 border-gray-500 opacity-75' : ''
                     }`}
                     onClick={() => handleEditTask(task)}
@@ -957,6 +1081,12 @@ export default function PlanPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
+                        {triageTab === 'blocked' && isPressingBlocked(task, todayStr) && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-medium">PRESSING</span>
+                        )}
+                        {(task.slipCount ?? 0) > 0 && (
+                          <span className="text-xs text-orange-400" title="Times this plan was missed and moved">↷ {task.slipCount}×</span>
+                        )}
                         {triageTab === 'missed' && task.plannedDate && (
                           <span className="text-xs text-orange-400">
                             Planned {format(new Date(task.plannedDate + 'T00:00:00'), 'MMM d')}
@@ -1110,7 +1240,15 @@ export default function PlanPage() {
                     {draggedTaskId ? 'Drop here to unschedule' : 'All tasks scheduled!'}
                   </div>
                 ) : (
-                  unscheduledTasks.map(task => renderUnscheduledTask(task))
+                  <>
+                    {overdueUnscheduled.length > 0 && (
+                      <div className="rounded border border-red-500/40 bg-red-500/5 p-1.5 space-y-1.5">
+                        <p className="text-[11px] font-medium text-red-300 px-0.5">Overdue — {overdueUnscheduled.length}</p>
+                        {overdueUnscheduled.map(task => renderUnscheduledTask(task))}
+                      </div>
+                    )}
+                    {restUnscheduled.map(task => renderUnscheduledTask(task))}
+                  </>
                 )}
               </div>
             </div>
@@ -1163,8 +1301,12 @@ export default function PlanPage() {
               </div>
             </div>
 
-            {/* Suggest Week Controls (only visible in week view) */}
-            {calendarView === 'week' && (
+            {calendarView === 'week' && suggestWeek === null && (
+              <p className="text-xs text-[var(--muted)] mb-3">Suggest plans this week or next — go back to either to use it.</p>
+            )}
+
+            {/* Suggest Week Controls (this week or next, in week view) */}
+            {calendarView === 'week' && suggestWeek !== null && (
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <div className="flex items-center gap-2 mr-2">
                   <span className="text-xs text-[var(--muted)]">AP:</span>
@@ -1241,15 +1383,24 @@ export default function PlanPage() {
                       Re-run
                     </button>
                     <button
+                      onClick={handleAcceptAllSuggestions}
+                      className="px-2 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                      title="Plan every suggestion as shown"
+                    >
+                      Accept all
+                    </button>
+                    <button
                       onClick={handleApplySuggestions}
                       disabled={pinnedTaskIds.size === 0}
+                      title="Plan only the ones you pinned"
+
                       className={`px-2 py-1 text-xs rounded transition-colors ${
                         pinnedTaskIds.size > 0
                           ? 'bg-green-600 hover:bg-green-700 text-white'
                           : 'bg-green-600/30 text-green-300/50 cursor-not-allowed'
                       }`}
                     >
-                      Apply
+                      Apply pinned
                     </button>
                     <button
                       onClick={handleDiscardSuggestions}
@@ -1389,8 +1540,12 @@ export default function PlanPage() {
                   const eventAP = dayEvents.reduce((sum, e) => sum + (parseInt(e.actionPoints || '0') || suggestControls.defaultAP), 0);
                   const suggestedAP = suggestedTasks.reduce((sum, t) => sum + getDisplayAP(t), 0);
                   const totalAP = taskAP + eventAP + suggestedAP;
-                  const habitAPForDay = suggestWeekDays.find(d => d.dateStr === dayStr)?.habitAP ?? 0;
+                  const suggestDay = suggestWeekDays.find(d => d.dateStr === dayStr);
+                  const habitAPForDay = suggestDay?.habitAP ?? 0;
+                  const recurringAPForDay = suggestDay?.recurringAP ?? 0;
+                  const dayBudget = energy.budgetFor(dayStr);
                   const hasSuggestions = suggestedTasks.length > 0;
+                  const ghosts = ghostsByDay.get(dayStr) ?? [];
 
                   return (
                     <div
@@ -1413,6 +1568,17 @@ export default function PlanPage() {
                       <div className="group bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
                         {dayEvents.map(event => renderCalendarEvent(event))}
                         {dayTasks.map(({ task, kind }) => renderCalendarTask(task, kind))}
+
+                        {/* Later occurrences of recurring tasks: not tasks of
+                            their own, so faint and not draggable. */}
+                        {ghosts.map(task => (
+                          <div key={`ghost-${task.id}`}
+                               onClick={() => handleEditTask(task)}
+                               title="A later occurrence of a recurring task"
+                               className="rounded p-1.5 border border-dotted border-cyan-500/40 opacity-60 cursor-pointer hover:opacity-90">
+                            <p className="text-cyan-200 text-xs line-clamp-2">↻ {task.taskName}</p>
+                          </div>
+                        ))}
 
                         {/* Suggested tasks (inline with dashed green border) */}
                         {suggestedTasks.map(task => {
@@ -1477,11 +1643,14 @@ export default function PlanPage() {
                           so, or the planner just seems lazy. */}
                       {(hasSuggestions || suggestedAssignments.size > 0) && (
                         <div className={`text-center py-0.5 text-[10px] ${
-                          totalAP + habitAPForDay > suggestControls.dailyAPBudget ? 'text-red-400' : 'text-[var(--muted)]'
+                          totalAP + habitAPForDay + recurringAPForDay > dayBudget ? 'text-red-400' : 'text-[var(--muted)]'
                         }`}>
-                          AP: {totalAP}/{suggestControls.dailyAPBudget}
+                          AP: {totalAP}/{dayBudget}
                           {habitAPForDay > 0 && (
                             <span title="Reserved for habits"> +{habitAPForDay}h</span>
+                          )}
+                          {recurringAPForDay > 0 && (
+                            <span title="Reserved for later occurrences of recurring tasks"> +{recurringAPForDay}↻</span>
                           )}
                         </div>
                       )}

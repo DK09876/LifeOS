@@ -1,4 +1,4 @@
-import { Task } from './db';
+import type { Task } from '@/types';
 import { parseLocalDateTime } from './dates';
 
 /**
@@ -61,4 +61,15 @@ export function tasksForDay<T extends Placeable>(
     if (placement && placement.date === dayStr) out.push({ task, kind: placement.kind });
   }
   return out;
+}
+
+/**
+ * Everything on today's list: planned for today, or due today. Blocked work
+ * is not - it is not yours to do today, and its deadline is surfaced as
+ * pressing instead.
+ */
+export function isOnToday(task: Placeable & Pick<Task, 'deletedAt'>, today: string): boolean {
+  if (task.deletedAt) return false;
+  if (task.status === 'Done' || task.status === 'Archived' || task.status === 'Blocked') return false;
+  return task.plannedDate === today || task.dueDate === today;
 }

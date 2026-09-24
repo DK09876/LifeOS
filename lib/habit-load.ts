@@ -10,7 +10,7 @@
  * this reserves their effort rather than placing them.
  */
 
-import type { Habit } from './db';
+import type { Habit } from '@/types';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
 
 /**
@@ -21,8 +21,20 @@ import { apOf, HABIT_DEFAULT_AP } from './capacity';
  * all at the front would make Monday look impossible and Friday empty; not
  * reserving them at all is how the planner came to overbook every day.
  */
-export function expectedDays(habit: Habit, dayCount: number): number[] {
+export function expectedDays(habit: Habit, dayCount: number, start?: Date): number[] {
   if (!habit.isActive || dayCount <= 0) return [];
+
+  // Chosen days say exactly which ones, so no spreading is needed.
+  if (habit.weekdays?.length && start) {
+    const wanted = new Set(habit.weekdays);
+    const out: number[] = [];
+    for (let i = 0; i < dayCount; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      if (wanted.has(d.getDay())) out.push(i);
+    }
+    return out;
+  }
 
   const target = habit.targetPerWeek ?? 0;
   if (target > 0) {
@@ -53,13 +65,13 @@ export function expectedDays(habit: Habit, dayCount: number): number[] {
  * be worth 0 - brushing your teeth belongs on the list without eating a
  * planning budget.
  */
-export function habitLoadByDay(habits: Habit[], dayCount: number): number[] {
+export function habitLoadByDay(habits: Habit[], dayCount: number, start?: Date): number[] {
   const load = new Array<number>(Math.max(0, dayCount)).fill(0);
   for (const habit of habits) {
     if (habit.deletedAt || !habit.isActive) continue;
     const ap = apOf(habit, HABIT_DEFAULT_AP);
     if (ap <= 0) continue;
-    for (const index of expectedDays(habit, dayCount)) load[index] += ap;
+    for (const index of expectedDays(habit, dayCount, start)) load[index] += ap;
   }
   return load;
 }

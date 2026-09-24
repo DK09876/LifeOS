@@ -52,7 +52,14 @@ Browser                          Raspberry Pi
 
 | File | Purpose |
 |------|---------|
-| `lib/db.ts` | Types, CRUD over the store shim, score calculation, recurrence helpers |
+| `lib/db.ts` | CRUD over the store shim; re-exports types and the pure rules below |
+| `lib/recurrence.ts` | Pure: recurrence dates, resets (calendar days), projected occurrences, habit due-ness, event rollover |
+| `lib/scoring.ts` | Pure: task scores, pressure ladders (deadline / cycle / missed plan / neglect + slips), pressing blocked |
+| `lib/notifications.ts` | Pure: the notices the bell shows and the Pi pushes (one rule set for both) |
+| `lib/review.ts` | Pure: week/month review — backlog trend, energy, domains, slips, habits |
+| `lib/milestones.ts` | Habit milestone ladders |
+| `lib/server/notifier.ts` | Once-a-minute clock on the Pi that pushes due notices (started from `instrumentation.ts`) |
+| `lib/server/push.ts` | Web Push: VAPID keys (generated, stored in `_system` prefs), sending |
 | `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, `useProjects()`, action functions |
 | `lib/store.ts` | Client store: hydrate, poll, read/write against `/api/data` |
 | `lib/server/store.ts` | Server store: SQLite schema, per-profile reads and writes |
@@ -67,6 +74,9 @@ Browser                          Raspberry Pi
 | `app/plan/page.tsx` | Triage + Planning with drag-and-drop calendar + Eisenhower Matrix + Auto-Suggest |
 | `app/projects/page.tsx` | Projects management: cards, progress bars, task lists |
 | `app/habits/page.tsx` | Habits management: due now, on track, paused |
+| `app/yesterday/page.tsx` | Back-date completions to yesterday (tasks, habits, events, goals) |
+| `app/notes/page.tsx` | Notes & checklists (`notes` collection) — not tasks |
+| `app/retrospect/page.tsx` | Review: week / month / last 4 weeks |
 
 ## Data Models
 
@@ -94,6 +104,11 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   domainId: string | null;
   projectId: string | null;
   blockedBy: BlockedByEntry[];   // { type: 'task', taskId } | { type: 'note', note }
+  followUpDate: string | null;
+  rotSince?: string | null;      // neglect clock start; null = createdAt. NOT updatedAt
+  slipCount?: number | null;     // times a missed plan was moved
+  recurrenceEnd?: string | null; // last date an occurrence may fall on
+  completions?: string[] | null; // local days completed (survives recurring resets)
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -139,6 +154,9 @@ All models include `deletedAt: string | null` for tombstone-based soft deletes.
   targetPerWeek: number | null;
   completionDates: string[];    // Pruned to last 90 days on each completion
   bestStreak: number | null;    // Stored, not derived: completionDates prune
+  weekdays?: number[] | null;   // only these days (0=Sun); null = every day
+  totalCompletions?: number | null;
+  milestones?: { key: string; date: string }[] | null;
   notes: string;
   icon: string | null;
   isActive: boolean;
@@ -262,8 +280,16 @@ new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
   device that had not caught up
 - `taskPriority` and `urgency` are nullable on purpose: unset is what keeps a
   task in Needs Details, so never reintroduce a default on create
-- Urgency = urgency field + `max(deadline pressure, neglect)`. The two are
-  never summed; a current-or-future `plannedDate` suppresses neglect entirely
+- Urgency = urgency field + `max(deadline, missed cycle, missed plan, neglect)` + slips.
+  Only slips add; real overdue (50–70) always outranks a missed cycle (≤49) and a
+  missed plan (≤44). Neglect runs from `rotSince ?? createdAt`, never `updatedAt`
+- Slips are detected in `updateTaskData` (moving a plan whose date has passed)
+- Recurring resets count calendar days (the daily check runs once per day)
+- Energy budget for a date = per-date override → per-weekday (`ap.weekdayBudget`) →
+  `suggest.settings.dailyAPBudget`. Use `useEnergySettings().budgetFor(date)`
+- Back-dated completion: `markTaskDone(id, date)`, `markHabitDone(id, date)` — they
+  re-record that day's history and reset a recurring task if already owed
+- Push subscriptions and the sent log live in their own tables, not preferences
 - `recurrenceAnchor: 'schedule'` dates the next occurrence from the previous
   `dueDate` rather than from completion, and reopens when that date passes
 - Plan's calendar deliberately shows less than Week's: commitments and overdue

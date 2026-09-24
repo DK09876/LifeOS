@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import EnergySettings from '@/components/EnergySettings';
+import NotificationSettings from '@/components/NotificationSettings';
 import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
 import { getTodayString } from '@/lib/dates';
@@ -20,7 +22,7 @@ const COLOR_OPTIONS = [
 ];
 
 const PRIORITY_OPTIONS = [
-  { value: '1 - Urgent', label: 'Urgent' },
+  { value: '1 - Urgent', label: 'Essential' },
   { value: '2 - High', label: 'High' },
   { value: '3 - Normal', label: 'Normal' },
   { value: '4 - Low', label: 'Low' },
@@ -317,6 +319,10 @@ export default function SettingsPage() {
           />
         </label>
       </div>
+
+      <EnergySettings />
+
+      <NotificationSettings />
 
       {/* Automations */}
       <div className="bg-[var(--card-bg)] rounded-lg p-5 mb-6">

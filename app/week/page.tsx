@@ -10,6 +10,8 @@ import { useTasks, useDomains, useProjects, useEvents, markTaskDone, createTask,
 import { Task } from '@/types';
 import { getPriorityDotColor, levelRank } from '@/lib/colors';
 import { tasksForDay } from '@/lib/schedule';
+import { projectOccurrences } from '@/lib/recurrence';
+import { getTodayString } from '@/lib/dates';
 import { Event } from '@/types';
 
 export default function WeekPage() {
@@ -54,6 +56,29 @@ export default function WeekPage() {
         })
       };
     });
+  }, [tasks, weekDays]);
+
+  // Recurring tasks beyond the one occurrence that exists as a row: later
+  // ones ahead (faint), and earlier completions behind (from the completion
+  // log, since the row itself has moved on). The Week is a record, so both.
+  const recurringByDay = useMemo(() => {
+    const map = new Map<string, Array<{ task: Task; kind: 'ahead' | 'done' }>>();
+    const from = format(weekDays[0], 'yyyy-MM-dd');
+    const to = format(weekDays[6], 'yyyy-MM-dd');
+    const today = getTodayString();
+    const add = (day: string, task: Task, kind: 'ahead' | 'done') =>
+      map.set(day, [...(map.get(day) ?? []), { task, kind }]);
+    for (const task of tasks) {
+      if (task.recurrence === 'None') continue;
+      for (const day of projectOccurrences(task, from, to, today)) if (day >= today) add(day, task, 'ahead');
+      for (const day of task.completions ?? []) {
+        if (day < from || day > to) continue;
+        // Skip the day it is already drawn on as a finished row.
+        if (task.status === 'Done' && tasksForDay([task], day, true).length) continue;
+        add(day, task, 'done');
+      }
+    }
+    return map;
   }, [tasks, weekDays]);
 
   const { showToast } = useToast();
@@ -233,6 +258,21 @@ export default function WeekPage() {
                       </div>
                     </div>
                   </div>
+                </div>
+              ))}
+
+              {(recurringByDay.get(format(date, 'yyyy-MM-dd')) ?? []).map(({ task, kind }) => (
+                <div
+                  key={`${kind}-${task.id}`}
+                  onClick={() => handleEditTask(task)}
+                  title={kind === 'ahead' ? 'A later occurrence of a recurring task' : 'Done that day'}
+                  className={`rounded p-2 cursor-pointer text-sm ${
+                    kind === 'ahead'
+                      ? 'border border-dotted border-cyan-500/40 opacity-60 text-cyan-200'
+                      : 'bg-[var(--background)]/40 opacity-50 text-[var(--muted)] line-through'
+                  }`}
+                >
+                  {kind === 'done' ? '✓ ' : '↻ '}{task.taskName}
                 </div>
               ))}
 

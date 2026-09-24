@@ -4,6 +4,10 @@ import { Habit } from '@/types';
 import { formatDistanceToNow } from 'date-fns';
 import { getCompletionsThisWeek } from '@/lib/db';
 import HabitHistory from './HabitHistory';
+import { currentStreak } from '@/lib/streaks';
+import { milestoneLabel, nextMilestones, totalCompletions } from '@/lib/milestones';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface HabitCardProps {
   habit: Habit;
@@ -183,10 +187,16 @@ export default function HabitCard({
           {/* Last completed */}
           <p className="text-sm text-[var(--muted)] mt-2">{lastCompletedText}</p>
 
+          {habit.weekdays?.length ? (
+            <p className="text-xs text-[var(--muted)] mt-1">On {habit.weekdays.map(d => DAY_NAMES[d]).join(', ')}</p>
+          ) : null}
+
           {/* Streak and the last 30 days */}
           <div className="mt-3">
             <HabitHistory habit={habit} />
           </div>
+
+          <Milestones habit={habit} />
 
           {/* Notes */}
           {habit.notes && (
@@ -194,6 +204,26 @@ export default function HabitCard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Milestones reached, and how far to the next one on each ladder. */
+function Milestones({ habit }: { habit: Habit }) {
+  const total = totalCompletions(habit);
+  const { current } = currentStreak(habit.completionDates || [], habit.targetPerWeek);
+  const next = nextMilestones(habit, current, total);
+  const reached = (habit.milestones ?? []).slice(-4).reverse();
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--muted)]">
+      <span>{total} {total === 1 ? 'time' : 'times'} in all</span>
+      {next.streak && <span>Next: {next.streak.label} ({next.streak.remaining} to go)</span>}
+      {next.total && <span>{next.total.label} ({next.total.remaining} to go)</span>}
+      {reached.map(m => (
+        <span key={m.key} className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300" title={`Reached ${m.date}`}>
+          🏆 {milestoneLabel(m.key)}
+        </span>
+      ))}
     </div>
   );
 }

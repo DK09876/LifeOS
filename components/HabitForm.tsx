@@ -16,6 +16,7 @@ export interface HabitFormData {
   habitName: string;
   recurrence: Habit['recurrence'];
   targetPerWeek: number | null;
+  weekdays: number[] | null;
   actionPoints: string | null;
   notes: string;
   icon: string | null;
@@ -40,6 +41,9 @@ const EMOJI_SUGGESTIONS = [
   '☀️', '🌙', '💰', '🎨', '🚿', '🦷', '📝', '🏋️',
 ];
 
+/** Sunday first, matching Date.getDay(). */
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
 const inputClass = "w-full px-3 py-2 bg-[var(--background)] border border-[var(--border-color)] rounded-lg text-[var(--foreground)] focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
 const labelClass = "block text-sm font-medium text-[var(--muted)] mb-1";
 
@@ -49,6 +53,7 @@ function getInitialFormData(habit?: Habit | null): HabitFormData {
       habitName: habit.habitName,
       recurrence: habit.recurrence,
       targetPerWeek: habit.targetPerWeek,
+      weekdays: habit.weekdays ?? null,
       actionPoints: habit.actionPoints,
       notes: habit.notes,
       icon: habit.icon,
@@ -59,6 +64,7 @@ function getInitialFormData(habit?: Habit | null): HabitFormData {
     habitName: '',
     recurrence: 'Daily',
     targetPerWeek: null,
+    weekdays: null,
     actionPoints: null,
     notes: '',
     icon: null,
@@ -240,6 +246,42 @@ export default function HabitForm({ habit, onSubmit, onCancel }: HabitFormProps)
         <p className="text-xs text-[var(--muted)] mt-2">
           {frequencyHint(formData.recurrence, formData.targetPerWeek)}
         </p>
+
+        {(formData.recurrence === 'Daily' || formData.targetPerWeek !== null) && (
+          <div className="mt-3">
+            <label className={labelClass}>
+              Only on these days <span className="font-normal">(optional)</span>
+            </label>
+            <div className="flex gap-1">
+              {WEEKDAY_LABELS.map((label, day) => {
+                const picked = (formData.weekdays || []).includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => setFormData((prev) => {
+                      const current = prev.weekdays || [];
+                      const next = current.includes(day)
+                        ? current.filter((d) => d !== day)
+                        : [...current, day].sort((a, b) => a - b);
+                      return { ...prev, weekdays: next.length ? next : null };
+                    })}
+                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                      picked ? 'bg-blue-600 text-white' : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.weekdays?.length
+                ? 'Shows on Today only on these days, and is only budgeted for on them.'
+                : 'Leave blank to show it every day until it is done.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Effort */}

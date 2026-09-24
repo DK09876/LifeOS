@@ -8,7 +8,7 @@
  * a quota in particular is not obvious until you have watched one for a week.
  */
 
-import { Habit } from './db';
+import type { Habit } from '@/types';
 
 export function frequencyHint(
   recurrence: Habit['recurrence'],

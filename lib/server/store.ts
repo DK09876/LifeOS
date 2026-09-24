@@ -25,6 +25,7 @@ export const COLLECTIONS = [
   'events',
   'projects',
   'filterPresets',
+  'notes',
 ] as const;
 
 export type Collection = (typeof COLLECTIONS)[number];
@@ -84,6 +85,25 @@ function migrate(conn: Database) {
       value  TEXT NOT NULL,
       PRIMARY KEY (userId, key)
     );
+
+    -- Devices that asked for push notifications. Kept out of preferences so
+    -- they never travel to the browser or into a backup.
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      userId    TEXT NOT NULL,
+      endpoint  TEXT NOT NULL,
+      data      TEXT NOT NULL,
+      label     TEXT,
+      createdAt TEXT NOT NULL,
+      PRIMARY KEY (userId, endpoint)
+    );
+
+    -- What has been pushed, so a restart or a second tick never repeats one.
+    CREATE TABLE IF NOT EXISTS push_sent (
+      userId TEXT NOT NULL,
+      key    TEXT NOT NULL,
+      sentAt TEXT NOT NULL,
+      PRIMARY KEY (userId, key)
+    );
   `);
 }
 
@@ -96,6 +116,7 @@ function project(collection: Collection, record: StoredRecord) {
       asString(record.taskName) ??
       asString(record.habitName) ??
       asString(record.eventName) ??
+      asString(record.title) ??
       asString(record.name),
     status: asString(record.status),
     dueDate: asString(record.dueDate) ?? asString(record.date),
@@ -321,4 +342,50 @@ export function readPayload(userId: string): Payload & { exportedAt: string } {
   for (const row of rows) preferences[row.key] = row.value;
 
   return { ...result, preferences, exportedAt: new Date().toISOString() };
+}
+
+// --- push ----------------------------------------------------------------
+
+export interface PushSubscriptionRow {
+  endpoint: string;
+  data: string;
+  label: string | null;
+}
+
+export function listPushSubscriptions(userId: string): PushSubscriptionRow[] {
+  return connect().all(
+    'SELECT endpoint, data, label FROM push_subscriptions WHERE userId = ?', [userId],
+  ) as unknown as PushSubscriptionRow[];
+}
+
+export function usersWithPush(): string[] {
+  const rows = connect().all('SELECT DISTINCT userId FROM push_subscriptions') as unknown as Array<{ userId: string }>;
+  return rows.map((r) => r.userId);
+}
+
+export function savePushSubscription(userId: string, endpoint: string, data: string, label: string | null) {
+  connect().run(
+    `INSERT INTO push_subscriptions (userId, endpoint, data, label, createdAt) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (userId, endpoint) DO UPDATE SET data=excluded.data, label=excluded.label`,
+    [userId, endpoint, data, label, new Date().toISOString()],
+  );
+}
+
+export function deletePushSubscription(userId: string, endpoint: string) {
+  connect().run('DELETE FROM push_subscriptions WHERE userId = ? AND endpoint = ?', [userId, endpoint]);
+}
+
+export function wasPushed(userId: string, key: string): boolean {
+  return !!connect().get('SELECT 1 FROM push_sent WHERE userId = ? AND key = ?', [userId, key]);
+}
+
+export function markPushed(userId: string, key: string) {
+  connect().run(
+    'INSERT OR IGNORE INTO push_sent (userId, key, sentAt) VALUES (?, ?, ?)',
+    [userId, key, new Date().toISOString()],
+  );
+}
+
+export function prunePushed(olderThanIso: string) {
+  connect().run('DELETE FROM push_sent WHERE sentAt < ?', [olderThanIso]);
 }

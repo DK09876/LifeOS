@@ -1,5 +1,6 @@
 'use client';
 
+import { levelLabel } from '@/lib/colors';
 import { useState, useEffect } from 'react';
 import { Task, Domain, BlockedByEntry, Project } from '@/types';
 import { hasCircularDependency } from '@/lib/hooks';
@@ -25,6 +26,7 @@ export interface TaskFormData {
   recurrence: Task['recurrence'];
   recurrenceAnchor: Task['recurrenceAnchor'];
   recurrenceWeekdays: Task['recurrenceWeekdays'];
+  recurrenceEnd: string | null;
   actionPoints: string | null;
   notes: string;
   domainId: string | null;
@@ -55,6 +57,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     recurrence: 'None',
     recurrenceAnchor: null,
     recurrenceWeekdays: null,
+    recurrenceEnd: null,
     actionPoints: null,
     notes: '',
     domainId: null,
@@ -104,6 +107,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         recurrence: task.recurrence,
         recurrenceAnchor: task.recurrenceAnchor,
         recurrenceWeekdays: task.recurrenceWeekdays,
+        recurrenceEnd: task.recurrenceEnd ?? null,
         actionPoints: task.actionPoints,
         notes: task.notes,
         domainId: task.domainId,
@@ -216,7 +220,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
             <option value="">Not set</option>
             {PRIORITY_OPTIONS.map((opt) => (
               <option key={opt} value={opt}>
-                {opt}
+                {opt[0]} - {levelLabel(opt)}
               </option>
             ))}
           </select>
@@ -478,6 +482,22 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
               {formData.recurrenceAnchor === 'schedule'
                 ? 'Deadlines stay put whether you are early or late — for things with a real period, like a fortnightly return.'
                 : 'The clock restarts when you finish — for things you just want to do every so often.'}
+            </p>
+            <label htmlFor="recurrenceEnd" className={`${labelClass} mt-2`}>
+              Repeat until <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              type="date"
+              id="recurrenceEnd"
+              name="recurrenceEnd"
+              value={formData.recurrenceEnd || ''}
+              onChange={handleChange}
+              className={inputClass}
+            />
+            <p className="text-xs text-[var(--muted)] mt-1">
+              {formData.recurrenceEnd
+                ? 'Stops coming back after this date — for a repeating task with an end in mind.'
+                : 'Leave blank to repeat for as long as it is here. Something with no end is probably a habit.'}
             </p>
           </div>
         )}
