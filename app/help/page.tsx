@@ -46,14 +46,16 @@ export default function HelpPage() {
               <span className="text-xl w-8 flex-shrink-0">📍</span>
               <div>
                 <p className="text-white font-medium">Today</p>
-                <p className="text-[var(--muted)]">Your daily dashboard. Shows habits due today, today&rsquo;s events, and tasks planned or due today. Mark items complete with one click; completed items move to a collapsible &ldquo;Completed Today&rdquo; section where you can undo them. Above the list sit two things: an effort meter for the day, and — if you planned something for an earlier day and did not do it — a strip asking what you want to do about it.</p>
+                <p className="text-[var(--muted)]">Your daily dashboard. Shows habits due today, today&rsquo;s events, and tasks planned or due today. Mark items complete with one click; completed items move to a collapsible &ldquo;Completed Today&rdquo; section where you can undo them. Above the list sit an effort meter for the day, a single collapsed <span className="text-white">Worth a look</span> line (blocked work whose deadline is close, captures left without details through a weekend, and anything from yesterday not ticked off), and — if you planned something for an earlier day and did not do it — a strip asking what you want to do about it. Recurring tasks say when they are next on.</p>
               </div>
             </div>
             <div className="flex gap-4">
               <span className="text-xl w-8 flex-shrink-0">📅</span>
               <div>
+                <p className="text-white font-medium">Yesterday</p>
+                <p className="text-[var(--muted)] mb-3">For when you forgot to tick something off. Everything that belonged to yesterday — tasks planned or due, habits, events, goals — with a check each. Anything marked here counts on <em>yesterday</em>: in your energy history, the review, streaks, and for a recurring task, the date its next one is counted from.</p>
                 <p className="text-white font-medium">Week</p>
-                <p className="text-[var(--muted)]">A 7-day calendar (Mon–Sun) showing what each day holds. Navigate between weeks; hover a day to add a task straight to it. A task appears on exactly one day: the day you planned it for, or — if you have not planned it — its due date, drawn dashed so a deadline you have not made room for looks different from work you have committed to. Finished tasks stay put, greyed out, so the week reads as a record rather than emptying as you go.</p>
+                <p className="text-[var(--muted)]">A 7-day calendar (Mon–Sun) showing what each day holds. Navigate between weeks; hover a day to add a task straight to it. A task appears on exactly one day: the day you planned it for, or — if you have not planned it — its due date, drawn dashed so a deadline you have not made room for looks different from work you have committed to. Finished tasks stay put, greyed out, so the week reads as a record rather than emptying as you go. Recurring tasks show every occurrence: later ones faintly (↻), earlier completions ticked.</p>
               </div>
             </div>
             <div className="flex gap-4">
@@ -62,8 +64,9 @@ export default function HelpPage() {
                 <p className="text-white font-medium">Plan</p>
                 <p className="text-[var(--muted)]">Your planning hub with three views:</p>
                 <ul className="text-[var(--muted)] list-disc ml-4 mt-1 space-y-1">
+                  <li>A row of <span className="text-white">attention chips</span> sits above everything — overdue, blocked and pressing, missed plans, follow-ups, captures waiting for details — each jumping straight into the right Triage tab, so nothing important lives only in Triage.</li>
                   <li><span className="text-white">Triage</span> — Review tasks that need attention: incomplete details, blocked tasks (with blocker info shown inline), missed planned dates, overdue due dates, and archived items.</li>
-                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill the week within your effort budget — choosing which days to plan into, and a style: balanced, deadline-driven, quick wins, or big rocks.</li>
+                  <li><span className="text-white">Planning</span> — Drag unscheduled tasks onto a Day/Week/Month calendar. The calendar shows what you have committed to and anything that has gone past its date; a future deadline you have not scheduled stays in the Unscheduled column, waiting to be placed, so the week does not look booked by work nobody has planned. Filter, sort, use presets, or let auto-suggest fill this week or next within each day&rsquo;s effort budget — choosing which days to plan into, and a style: balanced, deadline-driven, quick wins, or big rocks. Take the whole suggestion with <span className="text-white">Accept all</span>, or pin the ones you want and apply those. Overdue work is pinned in red at the top of Unscheduled.</li>
                   <li><span className="text-white">Matrix</span> — Eisenhower scatter plot showing tasks by importance vs. urgency. Click dots to see task names, click a task to edit it.</li>
                 </ul>
               </div>
@@ -99,6 +102,8 @@ export default function HelpPage() {
             <div className="flex gap-4">
               <span className="text-xl w-8 flex-shrink-0">🗂️</span>
               <div>
+                <p className="text-white font-medium">Notes &amp; Lists</p>
+                <p className="text-[var(--muted)] mb-3">Things to remember and checklists like shopping — no dates, no priority, no effort, and never in the backlog. Pin the ones you use most. The voice assistant can add to a list or save a note.</p>
                 <p className="text-white font-medium">Domains</p>
                 <p className="text-[var(--muted)]">Life areas like Work, Health, Finance. Each domain has a priority level that affects how tasks are scored. View as cards or a table. Assign tasks and projects to domains to organize everything.</p>
               </div>
@@ -107,7 +112,7 @@ export default function HelpPage() {
               <span className="text-xl w-8 flex-shrink-0">⚙️</span>
               <div>
                 <p className="text-white font-medium">Settings</p>
-                <p className="text-[var(--muted)]">Download a backup of your data or restore one, configure filter presets for quick planning views, run recurring task resets manually, and toggle the Get Started page.</p>
+                <p className="text-[var(--muted)]">Set your daily energy (optionally per weekday), turn on notifications for each device, download a backup of your data or restore one, configure filter presets for quick planning views, run recurring task resets manually, and toggle the Get Started page.</p>
               </div>
             </div>
           </div>
@@ -293,7 +298,9 @@ export default function HelpPage() {
             </p>
           </div>
           <div className="space-y-3 text-sm text-[var(--muted)]">
-            <p>Tasks and events can recur on a schedule. When a recurring task is marked Done, it stays done until the interval passes, then automatically resets to Backlog (or Planned if it has a planned date).</p>
+            <p>Tasks and events can recur on a schedule. When a recurring task is marked Done, it stays done until the interval passes, then automatically resets to Backlog (or Planned if it has a planned date). Intervals are counted in calendar days — a daily task finished late at night is back the next morning.</p>
+            <p>A repeating task can have an end: <span className="text-white">Repeat until</span> stops it coming back after a date. Something with no end in mind is probably a habit.</p>
+            <p>A recurring event moves on to its next occurrence once the current one has passed, attended or not.</p>
             <p>This check runs automatically when you open the app each day. You can also trigger it manually from Settings.</p>
             <div className="flex flex-wrap gap-2 mt-3">
               {['Daily', 'Weekly', 'Biweekly', 'Monthly', 'Bimonthly', 'Quarterly', 'Half-Yearly', 'Yearly'].map(r => (
@@ -403,13 +410,14 @@ export default function HelpPage() {
                   <p className="text-white font-medium mb-1">Urgency Score <span className="font-normal text-[var(--muted)]">(10–120)</span></p>
                   <p className="font-mono text-white text-xs">Urgency = Urgency Field + Time Pressure</p>
                   <p className="mt-1">Urgency Field: Critical (50), High (40), Normal (30), Low (20), Someday (10)</p>
-                  <p className="mt-2 text-white">Time pressure comes from one of two places:</p>
+                  <p className="mt-2 text-white">Time pressure is the loudest of these (never the sum), plus slips:</p>
                   <p className="mt-1"><span className="text-white">A deadline</span> — due today (+45), tomorrow (+40), this week (+25), a month out (+15), further (+5).</p>
                   <p><span className="text-white">Overdue</span> climbs rather than flattening: +50 the first day late, rising each day to +62 by day five, +65 within the week, +68 within the month, +70 beyond it. Something that has rotted for months outranks something merely late.</p>
-                  <p className="mt-1"><span className="text-white">A cycle</span> — a repeating task with no due date is due by the end of its own interval. "Every two weeks" already says when it is due, so a fortnight after you last did it, it is due today; a day later it is a day late, and it climbs from there.</p>
-                  <p className="mt-1"><span className="text-white">Neglect</span> — pressure from nobody having said when this happens: +5 after two weeks untouched, +10 after a month, +15 after two, +20 after three. It applies whether or not there is a due date, because a deadline three months out does not make a task you have ignored for three months calm.</p>
-                  <p className="mt-1">A <span className="text-white">planned date that has not passed</span> stops neglect accruing — you have committed to a day, so the task is waiting rather than drifting. Miss that day and it starts rotting again.</p>
-                  <p className="mt-1">The two never add up: a task takes whichever reading is louder, so a plan can never mask a real deadline and lateness always wins.</p>
+                  <p className="mt-1"><span className="text-white">A missed cycle</span> — a repeating task with no due date is due by the end of its own interval. Late, it climbs from +36, and every whole cycle missed adds more: three missed waterings is worse than one. It tops out at +49, below any real overdue deadline — your own cadence never outranks a date someone is holding you to.</p>
+                  <p className="mt-1"><span className="text-white">A missed plan</span> — you put it on a day and the day went: +32, rising to +44. You already decided it mattered, so it sits above work nobody has placed.</p>
+                  <p className="mt-1"><span className="text-white">Neglect</span> — pressure from nobody having said when this happens: +5 after two weeks, +10 after a month, +15 after two, +20 after three. Counted from when the task was written (or unblocked, or last came round) — <em>not</em> from the last edit, so renaming it or sliding its plan does not make it look cared for. A planned date that has not passed pauses it.</p>
+                  <p className="mt-1"><span className="text-white">Slips</span> — each time a missed plan is moved again adds +4 (up to +16), on top of everything else. A plan you keep sliding is a plan that is not working, and it should get louder rather than quietly reset.</p>
+                  <p className="mt-1">Blocked work keeps only its real deadline: waiting on someone else is not neglect. When that deadline is within a week it is flagged as pressing on Today and Plan.</p>
                 </div>
                 <div className="bg-[var(--background)] rounded-lg p-3">
                   <p className="text-white font-medium mb-1">Combined Score</p>
@@ -462,6 +470,9 @@ export default function HelpPage() {
             </p>
             <p>
               A goal project has a count and a unit, and you log against it: <span className="text-white">&ldquo;read two pages today&rdquo;</span> adds two. Nothing is tied to completing a task or a habit, which is the point — you did some amount of the thing, and you say so.
+            </p>
+            <p>
+              Give it an optional <span className="text-white">finish by</span> date and the card shows the pace that needs — &ldquo;~3 pages/day to finish by 1 Dec&rdquo; — and whether you are ahead of or behind an even pace from the day you started. It is information only; nothing nags you about it.
             </p>
             <p>
               Tying it to a recurring task was the obvious approach and it did not work: a recurring task is Done only between finishing it and the next rollover, so the bar swung between 0% and 100% instead of adding up. Fifty pages read left the project exactly where it started.
@@ -522,6 +533,22 @@ export default function HelpPage() {
           </div>
         </section>
 
+        {/* Notifications */}
+        <section className="bg-[var(--card-bg)] rounded-lg p-6">
+          <h2 className="text-lg font-medium text-white mb-4">Notifications</h2>
+          <div className="space-y-3 text-sm text-[var(--muted)]">
+            <p>
+              The 🔔 in the top bar lists what needs you right now — overdue work, blocked work with a close deadline, missed plans, follow-ups, captures that have waited through a weekend, yesterday&rsquo;s unticked items, upcoming events, milestones. Dismissing hides a notice for the day; if it is still true tomorrow, it comes back.
+            </p>
+            <p>
+              The Pi can also push to your phone and laptop, whether or not the app is open. Pushes are kept to a few a day on purpose: everything about the state of things is folded into <span className="text-white">one morning brief</span>, and the only others are event reminders, an evening check when habits are left, and the weekly and monthly review. Times and which ones you get are in Settings.
+            </p>
+            <p>
+              Turn them on per device in Settings. On an iPhone they only work from the Home Screen app: Share → Add to Home Screen, open LifeOS from the icon, then turn them on.
+            </p>
+          </div>
+        </section>
+
         {/* Habit history */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
           <h2 className="text-lg font-medium text-white mb-4">Streaks and history</h2>
@@ -537,6 +564,9 @@ export default function HelpPage() {
             </p>
             <p>
               A streak does not break just because today is not done yet — the day is not over. It breaks when a day (or a target week) is genuinely missed.
+            </p>
+            <p>
+              A habit can be limited to <span className="text-white">chosen days</span> — Mon, Wed, Fri — and then only shows, and is only budgeted for, on those. <span className="text-white">Milestones</span> (7-day streak, 100 times, …) are celebrated once when reached, and each card shows how far the next ones are.
             </p>
           </div>
         </section>
@@ -559,10 +589,13 @@ export default function HelpPage() {
 
         {/* Retrospect */}
         <section className="bg-[var(--card-bg)] rounded-lg p-6">
-          <h2 className="text-lg font-medium text-white mb-4">Retrospect</h2>
+          <h2 className="text-lg font-medium text-white mb-4">Review</h2>
           <div className="space-y-3 text-sm text-[var(--muted)]">
             <p>
               Every other page is about what to do next. This one is the only place the app says something about you rather than about your list.
+            </p>
+            <p>
+              <span className="text-white">Week</span> and <span className="text-white">Month</span> look back on one period at a time: things finished and energy spent (against the period before), whether the backlog of one-off work shrank or grew, energy by day, where the effort went by domain (and which domains got nothing), what slipped, how each habit went against how often it was asked for, milestones reached, and what moved on your projects and goals. A notification offers it on Sunday evening and at the end of each month.
             </p>
             <p>
               <span className="text-white">Your days</span> draws the last four weeks as bars, each against the budget you had set for that day, so you can see whether the number you chose has any relationship to the days you actually have. A budget you blow every week is not a budget.

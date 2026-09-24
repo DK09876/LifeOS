@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import EnergySettings from '@/components/EnergySettings';
+import NotificationSettings from '@/components/NotificationSettings';
 import { useFilterPresets, useDomains, createFilterPreset, updateFilterPreset, deleteFilterPreset, toggleFilterPresetVisibility, runRecurrenceCheck, getRecurrenceCheckStatus } from '@/lib/hooks';
 import { FilterPreset } from '@/lib/db';
 import { getTodayString } from '@/lib/dates';
@@ -317,6 +319,10 @@ export default function SettingsPage() {
           />
         </label>
       </div>
+
+      <EnergySettings />
+
+      <NotificationSettings />
 
       {/* Automations */}
       <div className="bg-[var(--card-bg)] rounded-lg p-5 mb-6">

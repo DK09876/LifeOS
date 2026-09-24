@@ -10,7 +10,7 @@ import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
 import { projectOccurrences } from '@/lib/recurrence';
-import { isPressingBlocked } from '@/lib/scoring';
+import { cyclesMissed, isPressingBlocked } from '@/lib/scoring';
 import { needsTriageNag } from '@/lib/notifications';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
@@ -794,6 +794,11 @@ export default function PlanPage() {
             {getDueSoonLabel(task.dueDate) && (
               <span className={`${getDueSoonLabel(task.dueDate)!.color} text-white text-[10px] px-1 py-0.5 rounded font-medium`}>
                 {getDueSoonLabel(task.dueDate)!.label}
+              </span>
+            )}
+            {!task.dueDate && cyclesMissed(task, todayStr) > 0 && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300" title="Recurring cycles gone by without it being done">
+                ↻ {cyclesMissed(task, todayStr)} behind
               </span>
             )}
           </div>

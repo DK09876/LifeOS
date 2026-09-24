@@ -25,6 +25,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
 
   const navItems = [
     { href: '/', icon: '📍', label: 'Today' },
+    { href: '/yesterday', icon: '↩️', label: 'Yesterday' },
     { href: '/week', icon: '📅', label: 'Week' },
     { href: '/plan', icon: '📋', label: 'Plan' },
     { type: 'divider' as const },
@@ -32,8 +33,9 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     { href: '/projects', icon: '📦', label: 'Projects' },
     { href: '/events', icon: '🕐', label: 'Events' },
     { href: '/habits', icon: '🔄', label: 'Habits' },
+    { href: '/notes', icon: '📝', label: 'Notes & Lists' },
     { href: '/domains', icon: '🗂️', label: 'Domains' },
-    { href: '/retrospect', icon: '📈', label: 'Retrospect' },
+    { href: '/retrospect', icon: '📈', label: 'Review' },
     { type: 'divider' as const },
     ...(!hideGetStarted ? [{ href: '/get-started', icon: '🚀', label: 'Get Started' }] : []),
     { href: '/settings', icon: '⚙️', label: 'Settings' },

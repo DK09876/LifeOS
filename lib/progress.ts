@@ -11,7 +11,7 @@
 import type { ProgressEntry, Project, Task } from '@/types';
 import { differenceInCalendarDays } from 'date-fns';
 
-import { getTodayString, parseLocalDate } from './dates';
+import { getTodayString, parseLocalDate, toDateString } from './dates';
 
 export const DEFAULT_TASK_AP = 2;
 
@@ -89,7 +89,8 @@ export function loggingStreak(log: ProgressEntry[] | undefined, today = getToday
   const day = (offset: number) => {
     const d = new Date(today + 'T00:00:00');
     d.setDate(d.getDate() - offset);
-    return d.toISOString().slice(0, 10);
+    // Local date, not toISOString(): that is the UTC day, a day off east of UTC.
+    return toDateString(d);
   };
   // Today not being logged yet does not break a run; the day is not over.
   let offset = days.has(today) ? 0 : 1;

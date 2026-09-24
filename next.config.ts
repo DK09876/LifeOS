@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // node-sqlite3-wasm loads a .wasm file relative to its own package path.
   // Bundling rewrites that path and the file goes missing at runtime, so the
   // package is required from node_modules instead.
-  serverExternalPackages: ['node-sqlite3-wasm'],
+  serverExternalPackages: ['node-sqlite3-wasm', 'web-push'],
   images: {
     remotePatterns: [
       {

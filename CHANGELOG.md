@@ -2,6 +2,55 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.9.0] - 2026-09-24
+
+### Time pressure that means what it says
+- Rot is measured from when a task was written (or unblocked, or last came round), not from its last edit. Renaming a task or sliding its plan to tomorrow used to make it look freshly cared for
+- Moving a plan whose day has gone counts as a **slip**, and each slip adds pressure. A plan you keep sliding gets louder instead of quietly resetting
+- A **missed plan** now carries its own pressure, above plain neglect and below a real overdue deadline — you had decided it mattered
+- **Missed recurring cycles pile up**: every whole cycle gone by adds more. It stays below any real overdue deadline, which always wins
+- Fixed: after a recurring task came back, its cycle was counted from when the task was first written, so undated recurring tasks came back already overdue
+
+### Recurrence
+- Fixed: a daily task finished late in the evening did not come back the next day. The reset counted 24 elapsed hours but only ran once, on the first visit of the day. Resets now count calendar days
+- **Repeat until**: a recurring task can stop after a date — for repeating work with an end in mind
+- **↻ next on**: recurring tasks show when they come round again
+- Later occurrences of recurring tasks show faintly on Week and Plan, and earlier completions stay ticked on Week. Each task keeps a log of the days it was done, so recurring completions no longer vanish from history when the task comes back
+- Recurring events move on to their next occurrence once the current one has passed, attended or not
+
+### Today and Plan
+- Today stays a dashboard: one collapsed **Worth a look** line holds blocked work with a close deadline, captures left without details through a weekend, and yesterday's unticked items
+- Blocked tasks no longer appear on Today's list; blocked work with a deadline within a week is flagged as **pressing** instead
+- Plan has an attention bar that jumps into the right Triage tab; overdue work is pinned in red at the top of Unscheduled; recurring tasks behind on their cycle say how far behind
+- The Triage count no longer counts a task twice when it is both missed and overdue
+- Top priority is labelled **Essential** — priority is how much it matters; "urgent" is urgency's job
+
+### Planning and energy
+- Suggest can plan **next week** as well as this one, and has **Accept all** alongside applying pinned suggestions
+- Suggest places deadline work on the **earliest day with room**, not the deadline day itself; overdue work and missed plans go on the first day with room
+- Missed plans are offered again instead of being skipped for having a date
+- Suggest uses each day's own budget and reserves effort for recurring tasks' later occurrences, alongside habits
+- **Daily energy** in Settings: one default, optionally different per weekday, with a one-tap "use what I actually spend"
+
+### Yesterday
+- A new **Yesterday** page for ticking off what you forgot: tasks, habits, events and goal progress. Anything marked there counts on yesterday — in history, review, streaks and recurrence
+
+### Habits and goals
+- Habits can be limited to **chosen weekdays**; they only show and are only budgeted on those days
+- **Milestones** — streaks of 3, 7, 30, 100 days and totals of 10, 100, 500 — celebrated once, with a lifetime count and the next ones shown on each card
+- Goal projects can have a **finish by** date, showing the pace needed and whether you are ahead or behind. It never nags
+
+### Review
+- Retrospect is now **Review**, with Week and Month views: energy by day, backlog trend, effort by domain (and quiet domains), what slipped, habits against expectation, milestones, project movement and everything finished — compared with the period before
+- History is recorded before recurring tasks reset, and back-filled for the last week if the app was not opened
+
+### Notifications
+- A 🔔 in the top bar lists what needs you right now
+- **Push notifications** from the Pi to phone and laptop: one morning brief, event reminders, an evening habit check and the weekly/monthly review. Set times and which ones you get in Settings. On iPhone, add LifeOS to the Home Screen first
+
+### Notes & Lists
+- A place for shopping lists and things to remember, kept out of the backlog. The voice assistant can add to a list, read it back, or save a note
+
 ## [0.8.0] - 2026-09-23
 
 ### Projects have two shapes

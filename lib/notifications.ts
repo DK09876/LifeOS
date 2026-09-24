@@ -205,7 +205,7 @@ export function buildNotices(input: NoticeInput): Notice[] {
   });
   if (triage.length) out.push({
     key: `triage:${today}`, kind: 'triage', level: 'warn', pushAt: null,
-    title: `${plural(triage.length, 'capture')} still need details`,
+    title: `${plural(triage.length, 'capture')} still ${triage.length === 1 ? 'needs' : 'need'} details`,
     body: names(triage.map(tname)), href: '/plan?view=triage&tab=needsDetails',
   });
   if (backCount) out.push({

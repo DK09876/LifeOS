@@ -315,3 +315,60 @@ describe('suggest', () => {
     expect(result.get('t1')).toBe('2026-09-26');
   });
 });
+
+import { buildReview, expectedCompletions, openBacklogOn, periodFor } from './review';
+
+describe('review', () => {
+  it('bounds weeks Monday to Sunday and months by the calendar', () => {
+    expect(periodFor('week', 0, TODAY)).toMatchObject({ start: '2026-09-21', end: '2026-09-27' });
+    expect(periodFor('week', -1, TODAY)).toMatchObject({ start: '2026-09-14', end: '2026-09-20' });
+    expect(periodFor('month', 0, TODAY)).toMatchObject({ start: '2026-09-01', end: '2026-09-30' });
+  });
+
+  it('counts the open one-off backlog at the end of a day', () => {
+    const tasks = [
+      task({ id: 'a', createdAt: at('2026-09-10') }),
+      task({ id: 'b', createdAt: at('2026-09-22') }),
+      task({ id: 'c', status: 'Done', createdAt: at('2026-09-10'), doneDate: at('2026-09-21') }),
+      task({ id: 'd', recurrence: 'Daily', createdAt: at('2026-09-10') }),
+      task({ id: 'e', createdAt: at('2026-09-10'), deletedAt: at('2026-09-20') }),
+    ];
+    expect(openBacklogOn(tasks, '2026-09-20')).toBe(2); // a, c
+    expect(openBacklogOn(tasks, '2026-09-22')).toBe(2); // a, b
+  });
+
+  it('expects habits by their cadence', () => {
+    const days = ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24'];
+    expect(expectedCompletions(habit(), days)).toBe(4);
+    expect(expectedCompletions(habit({ weekdays: [1, 3] }), days)).toBe(2);
+    expect(expectedCompletions(habit({ targetPerWeek: 7 }), days)).toBe(4);
+  });
+
+  it('counts recurring completions from the log and only days that have happened', () => {
+    const r = buildReview({
+      period: periodFor('week', 0, TODAY),
+      tasks: [task({ recurrence: 'Daily', status: 'Planned', completions: ['2026-09-22', '2026-09-23'] })],
+      habits: [], events: [], projects: [], domains: [], history: {},
+      defaultAP: 2, budgetFor: () => 8, today: TODAY,
+    });
+    expect(r.finished.map((f) => f.day)).toEqual(['2026-09-22', '2026-09-23']);
+    expect(r.days).toHaveLength(4);
+    expect(r.totals).toMatchObject({ finished: 2, spent: 4, capacity: 32 });
+  });
+});
+
+import { isSlip } from './hooks';
+
+describe('slips', () => {
+  it('is moving a plan whose day has gone', () => {
+    const missed = { plannedDate: '2026-09-22', status: 'Planned' as const };
+    expect(isSlip(missed, { plannedDate: TODAY }, TODAY)).toBe(true);
+    expect(isSlip(missed, { plannedDate: null }, TODAY)).toBe(true);
+  });
+
+  it('is not moving a plan that is still ahead, or finishing one', () => {
+    expect(isSlip({ plannedDate: '2026-09-26', status: 'Planned' }, { plannedDate: '2026-09-28' }, TODAY)).toBe(false);
+    expect(isSlip({ plannedDate: '2026-09-22', status: 'Planned' }, { status: 'Done' }, TODAY)).toBe(false);
+    expect(isSlip({ plannedDate: '2026-09-22', status: 'Planned' }, { notes: 'x' }, TODAY)).toBe(false);
+  });
+});

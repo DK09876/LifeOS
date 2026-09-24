@@ -38,14 +38,16 @@ export default function AttentionStrip({ pressingBlocked, triageNag, yesterdayCo
   return (
     <div className="mb-6 rounded-lg border border-[var(--border-color)] bg-[var(--card-bg)]">
       <button onClick={() => setOpen(!open)} aria-expanded={open}
-              className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
-        <span className="text-sm text-white flex-shrink-0">👀 Worth a look</span>
-        <span className="flex flex-wrap gap-1 flex-1 min-w-0">
+              className="w-full px-4 py-2.5 text-left">
+        <span className="flex items-center justify-between">
+          <span className="text-sm text-white">👀 Worth a look</span>
+          <span className="text-xs text-[var(--muted)]">{open ? 'Hide' : 'Show'}</span>
+        </span>
+        <span className="flex flex-wrap gap-1 mt-1.5">
           {chips.map(c => (
             <span key={c.text} className={`text-xs px-2 py-0.5 rounded-full ${c.cls}`}>{c.text}</span>
           ))}
         </span>
-        <span className="text-xs text-[var(--muted)] flex-shrink-0">{open ? 'Hide' : 'Show'}</span>
       </button>
 
       {open && (

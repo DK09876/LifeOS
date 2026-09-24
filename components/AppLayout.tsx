@@ -9,6 +9,7 @@ import { useRecurrenceCheck } from '@/lib/hooks';
 import { ProfileGate } from './ProfileGate';
 import { ProfileSwitcher } from './ProfileSwitcher';
 import QuickAdd from './QuickAdd';
+import NotificationBell from './NotificationBell';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -86,6 +87,7 @@ function AppLayoutInner({ children }: AppLayoutProps) {
             </p>
           </div>
           <QuickAdd />
+          <NotificationBell />
           <ProfileSwitcher />
         </header>
 
