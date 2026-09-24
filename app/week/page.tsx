@@ -26,6 +26,7 @@ export default function WeekPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showPastDays, setShowPastDays] = useState(false);
 
   // Calculate current week
   const currentWeekStart = useMemo(() => {
@@ -182,11 +183,18 @@ export default function WeekPage() {
       </div>
 
       {/* Week Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+        {weekOffset === 0 && (
+          <button onClick={() => setShowPastDays(v => !v)} className="md:hidden text-left text-xs text-[var(--muted)] px-1 py-1">
+            {showPastDays ? '▲ Hide earlier days' : '▼ Show earlier days this week'}
+          </button>
+        )}
         {weekTasks.map(({ date, tasks: dayTasks }) => (
-          <div key={date.toISOString()} className="sm:min-h-[300px]">
+          // On a phone this week starts at today; earlier days are one tap away.
+          <div key={date.toISOString()}
+               className={`md:min-h-[300px] ${weekOffset === 0 && !showPastDays && format(date, 'yyyy-MM-dd') < getTodayString() ? 'hidden md:block' : ''}`}>
             {/* Day Header */}
-            <div className={`p-2 rounded-t-lg flex sm:block items-baseline gap-2 text-left sm:text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
+            <div className={`p-2 rounded-t-lg flex md:block items-baseline gap-2 px-3 md:px-2 text-left md:text-center ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}>
               <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
                 {format(date, 'EEE')}
               </p>
@@ -196,7 +204,7 @@ export default function WeekPage() {
             </div>
 
             {/* Day Tasks */}
-            <div className="group bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 sm:min-h-[250px]">
+            <div className="group bg-[var(--card-bg)] rounded-b-lg p-2 space-y-2 md:min-h-[250px]">
               {/* Events for this day */}
               {events.filter(e => e.date === format(date, 'yyyy-MM-dd')).map(event => (
                 <div

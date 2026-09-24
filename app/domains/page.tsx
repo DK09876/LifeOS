@@ -150,13 +150,13 @@ export default function DomainsPage() {
       </div>
 
       {/* Search + View Controls */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
         <input
           type="text"
           placeholder="Search domains..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="flex-1 max-w-md px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white placeholder-[var(--muted)] focus:outline-none focus:border-blue-500"
+          className="w-full sm:w-auto sm:flex-1 max-w-md px-4 py-2 bg-[var(--card-bg)] border border-[var(--border-color)] rounded text-white placeholder-[var(--muted)] focus:outline-none focus:border-blue-500"
         />
         <FilterButton filters={DOMAIN_FILTERS} values={filterValues} onChange={setFilterValues} />
         <ColumnsButton columns={DOMAIN_COLUMNS} visibleColumns={visibleColumns} onChange={setVisibleColumns} />
@@ -243,7 +243,7 @@ export default function DomainsPage() {
       )}
 
       {/* Table View */}
-      {viewMode === 'list' && <div className="bg-[var(--card-bg)] rounded-lg overflow-hidden">
+      {viewMode === 'list' && <div className="bg-[var(--card-bg)] rounded-lg overflow-hidden overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-[var(--border-color)]">

@@ -15,7 +15,7 @@ import { addDays, format } from 'date-fns';
 import { useToast } from '@/components/Toast';
 import {
   completionDaysOf, logProjectProgress, markEventDone, markHabitDone, markTaskDone, undoEventDone,
-  undoHabitDone, undoTaskDone, useEnergySettings, useEvents, useHabits, useProjects, useTasks,
+  undoHabitDone, undoTaskDone, updateTaskData, useEnergySettings, useEvents, useHabits, useProjects, useTasks,
 } from '@/lib/hooks';
 import { getTodayString, parseLocalDate, toDateString } from '@/lib/dates';
 import { isHabitDueOn, previousEventDate } from '@/lib/recurrence';
@@ -121,6 +121,15 @@ export default function YesterdayPage() {
                   {task.recurrence !== 'None' && ` · ↻ ${task.recurrence}`}
                 </p>
               </div>
+              {/* Missed it, doing it today instead. Still a slip - the plan did
+                  move - but one tap rather than a trip through Plan. */}
+              {!doneOn(task) && task.status !== 'Done' && (
+                <button onClick={() => run(task.id, () => updateTaskData(task.id, { plannedDate: today }))}
+                        disabled={busy === task.id}
+                        className="flex-shrink-0 px-3 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 hover:bg-blue-600/30 text-xs font-medium">
+                  Do it today
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -6,6 +6,7 @@ import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
+import PlanSheet from '@/components/PlanSheet';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
@@ -130,6 +131,10 @@ export default function PlanPage() {
     if (tab && ['needsDetails', 'blocked', 'missed', 'overdue', 'archived'].includes(tab)) setTriageTab(tab as TriageTab);
   }, []);
   const energy = useEnergySettings();
+  // "Plan for…" - the touch-friendly alternative to dragging.
+  const [planTask, setPlanTask] = useState<Task | null>(null);
+  const [unscheduledOpen, setUnscheduledOpen] = useState(true);
+  const [showPastDays, setShowPastDays] = useState(false);
   const [calendarView, setCalendarView] = useState<CalendarView>('week');
   const [dateOffset, setDateOffset] = useState(0);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -777,12 +782,22 @@ export default function PlanPage() {
       <div className="flex items-start gap-2">
         <button
           onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
-          className="w-4 h-4 mt-0.5 rounded border border-[var(--muted)] hover:border-green-500 flex-shrink-0 flex items-center justify-center group"
+          className="w-5 h-5 md:w-4 md:h-4 mt-0.5 rounded border border-[var(--muted)] hover:border-green-500 flex-shrink-0 flex items-center justify-center group"
+          aria-label={`Mark "${task.taskName}" as done`}
         >
           <span className="opacity-0 group-hover:opacity-100 text-green-500 text-xs">✓</span>
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm truncate">{task.taskName}</p>
+          <div className="flex items-start gap-2">
+            <p className="flex-1 min-w-0 text-white text-sm truncate">{task.taskName}</p>
+            <button
+              onClick={(e) => { e.stopPropagation(); setPlanTask(task); }}
+              className="flex-shrink-0 -my-1 px-2 py-1 rounded text-xs text-blue-300 bg-blue-500/10 hover:bg-blue-500/20"
+              aria-label={`Plan "${task.taskName}"`}
+            >
+              📅 Plan
+            </button>
+          </div>
           <div className="flex items-center gap-2 mt-1">
             <span className={`w-2 h-2 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
             {task.domain?.icon && <span className="text-xs">{task.domain.icon}</span>}
@@ -901,12 +916,13 @@ export default function PlanPage() {
       <div className="flex items-start gap-1.5">
         <button
           onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id); }}
-          className="w-3 h-3 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+          className="w-5 h-5 md:w-3 md:h-3 mt-0.5 rounded-full border border-[var(--muted)] hover:border-green-500 flex items-center justify-center flex-shrink-0"
+          aria-label={`Mark "${task.taskName}" as done`}
         >
-          <span className="opacity-0 group-hover:opacity-100 text-green-500 text-[8px]">✓</span>
+          <span className="opacity-0 group-hover:opacity-100 text-green-500 text-[10px] md:text-[8px]">✓</span>
         </button>
         <div className="flex-1 min-w-0">
-          <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
+          <p className="text-white text-sm md:text-xs line-clamp-2">{task.taskName}</p>
           <div className="flex items-center gap-1 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
             {kind === 'due' && (
@@ -915,6 +931,14 @@ export default function PlanPage() {
             {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
           </div>
         </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); setPlanTask(task); }}
+          className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-xs md:text-[10px] px-1 rounded text-[var(--muted)] hover:text-blue-300"
+          aria-label={`Move "${task.taskName}" to another day`}
+          title="Move to another day"
+        >
+          📅
+        </button>
       </div>
     </div>
   );
@@ -929,7 +953,7 @@ export default function PlanPage() {
         </div>
         <button
           onClick={() => handleOpenCreateTask()}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+          className="hidden sm:block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
         >
           + New Task
         </button>
@@ -1000,7 +1024,7 @@ export default function PlanPage() {
       {mainView === 'triage' && (
         <div>
           {/* Triage Tabs */}
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             {[
               { key: 'needsDetails' as const, label: 'Needs Details', count: triageTasks.needsDetails.length, color: 'bg-yellow-600' },
               { key: 'blocked' as const, label: 'Blocked', count: triageTasks.blocked.length, color: 'bg-yellow-600' },
@@ -1071,8 +1095,8 @@ export default function PlanPage() {
                     }`}
                     onClick={() => handleEditTask(task)}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-y-1">
+                      <div className="flex flex-wrap items-center gap-x-3 min-w-0">
                         <span className="text-white">{task.taskName}</span>
                         {task.domain && (
                           <span className="text-xs text-[var(--muted)]">
@@ -1080,7 +1104,7 @@ export default function PlanPage() {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {triageTab === 'blocked' && isPressingBlocked(task, todayStr) && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 font-medium">PRESSING</span>
                         )}
@@ -1132,12 +1156,16 @@ export default function PlanPage() {
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Left: Unscheduled Tasks */}
           <div className="w-full lg:w-72 lg:flex-shrink-0">
-            <div className="bg-[var(--card-bg)] rounded-lg sticky top-20">
+            <div className="bg-[var(--card-bg)] rounded-lg lg:sticky lg:top-20">
               <div className="p-3 border-b border-[var(--border-color)]">
-                <div className="flex items-center justify-between mb-2">
+                <button className="w-full flex items-center justify-between mb-2 text-left lg:pointer-events-none"
+                        onClick={() => setUnscheduledOpen(o => !o)} aria-expanded={unscheduledOpen}>
                   <h3 className="text-sm font-medium text-white">Unscheduled</h3>
-                  <span className="text-xs text-[var(--muted)]">{unscheduledTasks.length} tasks</span>
-                </div>
+                  <span className="text-xs text-[var(--muted)]">
+                    {unscheduledTasks.length} tasks
+                    <span className="lg:hidden ml-2">{unscheduledOpen ? '▲' : '▼'}</span>
+                  </span>
+                </button>
                 <div className="flex items-center gap-2 mb-2">
                   <FilterButton filters={planFilters} values={filterValues} onChange={setFilterValues} />
                   <SortButton columns={PLAN_COLUMNS} sortLevels={sortLevels} onChange={setSortLevels} />
@@ -1183,8 +1211,14 @@ export default function PlanPage() {
                     </button>
                   </div>
                   <div
-                    className="p-2 rounded border-2 border-yellow-500/50 bg-yellow-500/5 hover:bg-yellow-500/10 cursor-pointer transition-colors"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, suggestNextRanked[0].id)}
+                    onDragEnd={handleDragEnd}
+                    className={`p-2 rounded border-2 border-yellow-500/50 bg-yellow-500/5 hover:bg-yellow-500/10 cursor-grab active:cursor-grabbing transition-colors ${
+                      draggedTaskId === suggestNextRanked[0].id ? 'opacity-50' : ''
+                    }`}
                     onClick={() => handleEditTask(suggestNextRanked[0])}
+                    title="Drag onto a day, or use the buttons below"
                   >
                     <p className="text-white text-sm truncate">{suggestNextRanked[0].taskName}</p>
                     <div className="flex items-center gap-2 mt-1">
@@ -1198,7 +1232,19 @@ export default function PlanPage() {
                       <span className="text-[10px] text-[var(--muted)]">AP:{getDisplayAP(suggestNextRanked[0])}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 mt-1.5">
+                  <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                    <button
+                      onClick={() => updateTaskData(suggestNextRanked[0].id, { plannedDate: todayStr })}
+                      className="px-2 py-1 text-xs text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    >
+                      Plan today
+                    </button>
+                    <button
+                      onClick={() => setPlanTask(suggestNextRanked[0])}
+                      className="px-2 py-1 text-xs text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded transition-colors"
+                    >
+                      📅 Plan…
+                    </button>
                     <button
                       onClick={() => setSuggestNextSkipIds(prev => new Set([...prev, suggestNextRanked[0].id]))}
                       className="px-2 py-1 text-xs text-[var(--muted)] hover:text-white bg-[var(--background)] hover:bg-[var(--card-hover)] rounded transition-colors"
@@ -1231,9 +1277,9 @@ export default function PlanPage() {
               <div
                 onDragOver={handleDragOver}
                 onDrop={handleDropOnUnscheduled}
-                className={`p-2 space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto ${
+                className={`p-2 space-y-2 max-h-[50vh] lg:max-h-[calc(100vh-280px)] overflow-y-auto ${
                   draggedTaskId ? 'bg-gray-500/10' : ''
-                }`}
+                } ${unscheduledOpen ? '' : 'hidden lg:block'}`}
               >
                 {unscheduledTasks.length === 0 ? (
                   <div className="p-4 text-center text-[var(--muted)] text-sm">
@@ -1520,11 +1566,22 @@ export default function PlanPage() {
 
             {/* Week View */}
             {calendarView === 'week' && (
-              <div className="overflow-x-auto -mx-1 px-1">
-              <div className="grid grid-cols-7 gap-2 min-w-[640px]">
+              <div className="md:overflow-x-auto md:-mx-1 md:px-1">
+              {/* A phone gets the days as a list: seven squeezed columns
+                  had to be scrolled sideways and could not be read. */}
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-2 md:min-w-[640px]">
+                {calendarDays.some(d => format(d, 'yyyy-MM-dd') < todayStr) && calendarDays.some(d => format(d, 'yyyy-MM-dd') >= todayStr) && (
+                  <button onClick={() => setShowPastDays(v => !v)}
+                          className="md:hidden text-left text-xs text-[var(--muted)] px-1 py-1">
+                    {showPastDays ? '▲ Hide earlier days' : '▼ Show earlier days this week'}
+                  </button>
+                )}
                 {tasksByDay.map(({ date, tasks: dayTasks }) => {
                   const dayStr = format(date, 'yyyy-MM-dd');
                   const dayEvents = events.filter(e => e.date === dayStr);
+                  // On a phone the list starts at today; earlier days are
+                  // behind a toggle so today is not a long scroll away.
+                  const hideOnPhone = !showPastDays && dayStr < todayStr && calendarDays.some(d => format(d, 'yyyy-MM-dd') >= todayStr);
 
                   // Get suggested tasks for this day
                   const suggestedTaskIds: string[] = [];
@@ -1552,20 +1609,21 @@ export default function PlanPage() {
                       key={date.toISOString()}
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDropOnDate(e, date)}
-                      className={`min-h-[300px] ${draggedTaskId ? 'ring-2 ring-blue-500/30 ring-inset' : ''}`}
+                      className={`md:min-h-[300px] ${hideOnPhone ? 'hidden md:block' : ''} ${draggedTaskId ? 'ring-2 ring-blue-500/30 ring-inset' : ''}`}
                     >
                       <button
                         onClick={() => navigateToDay(date)}
-                        className={`w-full p-2 rounded-t-lg text-center cursor-pointer transition-opacity hover:opacity-80 ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}
+                        className={`w-full px-3 py-2 md:p-2 rounded-t-lg flex md:block items-baseline gap-2 text-left md:text-center cursor-pointer transition-opacity hover:opacity-80 ${isToday(date) ? 'bg-blue-600' : 'bg-[var(--card-bg)]'}`}
                       >
-                        <p className={`text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
+                        <p className={`text-sm md:text-xs ${isToday(date) ? 'text-blue-200' : 'text-[var(--muted)]'}`}>
                           {format(date, 'EEE')}
                         </p>
                         <p className="text-lg font-semibold text-white">
                           {format(date, 'd')}
                         </p>
+                        {isToday(date) && <span className="md:hidden text-xs text-blue-200">Today</span>}
                       </button>
-                      <div className="group bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 min-h-[250px]">
+                      <div className="group bg-[var(--card-bg)] rounded-b-lg p-1.5 space-y-1.5 md:min-h-[250px]">
                         {dayEvents.map(event => renderCalendarEvent(event))}
                         {dayTasks.map(({ task, kind }) => renderCalendarTask(task, kind))}
 
@@ -1776,7 +1834,8 @@ export default function PlanPage() {
               })}
             </div>
           </div>
-          <EisenhowerMatrix tasks={filteredActiveTasks} onTaskClick={handleEditTask} />
+          <EisenhowerMatrix
+          onPlan={setPlanTask} tasks={filteredActiveTasks} onTaskClick={handleEditTask} />
         </div>
       )}
 
@@ -1824,6 +1883,7 @@ export default function PlanPage() {
           onCancel={() => { setIsEventModalOpen(false); setEditingEvent(null); setSelectedEventDate(null); }}
         />
       </Modal>
+      <PlanSheet task={planTask} onClose={() => setPlanTask(null)} />
     </div>
   );
 }

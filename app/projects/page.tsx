@@ -109,7 +109,7 @@ export default function ProjectsPage() {
         </div>
         <button
           onClick={() => { setEditingProject(null); setIsProjectModalOpen(true); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+          className="whitespace-nowrap flex-shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
         >
           + New Project
         </button>

@@ -135,7 +135,7 @@ export default function EventsPage() {
         </div>
         <button
           onClick={handleOpenCreate}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+          className="whitespace-nowrap flex-shrink-0 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
         >
           + New Event
         </button>
