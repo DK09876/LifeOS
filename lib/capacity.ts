@@ -8,7 +8,7 @@
  * say so.
  */
 
-import { Task, Event, Habit } from './db';
+import type { Task, Event, Habit } from '@/types';
 import { getTodayString, parseLocalDateTime } from './dates';
 
 /** Per-date overrides, keyed YYYY-MM-DD. Absent means "use the default". */
@@ -44,9 +44,40 @@ export function pruneCapacityMap(map: CapacityMap, today = getTodayString()): Ca
   return out;
 }
 
-export function capacityFor(map: CapacityMap, date: string, fallback: number): number {
+/**
+ * A default per weekday, indexed 0=Sunday. A slot left null uses the single
+ * daily default, so "lighter on Mondays" is one number, not seven.
+ */
+export type WeekdayBudget = Array<number | null>;
+
+export const WEEKDAY_BUDGET_PREF = 'ap.weekdayBudget';
+
+export function parseWeekdayBudget(raw: string | undefined): WeekdayBudget | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length !== 7) return null;
+    const out = parsed.map((v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null));
+    return out.some((v) => v !== null) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a day is allowed to cost: a one-off override for that date, else the
+ * default for its weekday, else the daily default.
+ */
+export function capacityFor(
+  map: CapacityMap,
+  date: string,
+  fallback: number,
+  weekdays?: WeekdayBudget | null,
+): number {
   const override = map[date];
-  return typeof override === 'number' ? override : fallback;
+  if (typeof override === 'number') return override;
+  const byWeekday = weekdays?.[new Date(date + 'T00:00:00').getDay()];
+  return typeof byWeekday === 'number' ? byWeekday : fallback;
 }
 
 /** A task's effort, falling back to the configured default when unestimated. */

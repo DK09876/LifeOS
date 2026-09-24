@@ -25,6 +25,7 @@ export const COLLECTIONS = [
   'events',
   'projects',
   'filterPresets',
+  'notes',
 ] as const;
 
 export type Collection = (typeof COLLECTIONS)[number];
@@ -96,6 +97,7 @@ function project(collection: Collection, record: StoredRecord) {
       asString(record.taskName) ??
       asString(record.habitName) ??
       asString(record.eventName) ??
+      asString(record.title) ??
       asString(record.name),
     status: asString(record.status),
     dueDate: asString(record.dueDate) ?? asString(record.date),

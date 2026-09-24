@@ -7,7 +7,7 @@
  * week, which is both wrong and the opposite of encouraging.
  */
 
-import { getStartOfWeek } from './db';
+import { getStartOfWeek } from './recurrence';
 import { getTodayString, parseLocalDate, toDateString } from './dates';
 
 export interface StreakInfo {

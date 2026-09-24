@@ -8,7 +8,7 @@
  * measuring the state of a task row rather than the work done.
  */
 
-import type { ProgressEntry, Project, Task } from './db';
+import type { ProgressEntry, Project, Task } from '@/types';
 import { getTodayString } from './dates';
 
 export const DEFAULT_TASK_AP = 2;

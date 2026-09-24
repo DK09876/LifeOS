@@ -2,14 +2,16 @@
 
 import { useEffect } from 'react';
 import { useLiveQuery } from './live-query';
-import { db, Task, Domain, Project, FilterPreset, Habit, Event, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, nextEventDate } from './db';
-import { getTodayString } from './dates';
+import { useMemo } from 'react';
+import { db, Task, Domain, Project, FilterPreset, Habit, Event, Note, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, currentEventDate, localDay } from './db';
+import { getTodayString, parseLocalDate } from './dates';
 import { getPreference, savePreference } from './store';
 import { bestStreakSoFar, currentStreak } from './streaks';
 import { logProgress, projectProgress } from './progress';
-import { CAPACITY_PREF, capacityFor, parseCapacityMap } from './capacity';
+import { CAPACITY_PREF, WEEKDAY_BUDGET_PREF, capacityFor, parseCapacityMap, parseWeekdayBudget } from './capacity';
 import { HISTORY_PREF, parseHistory, pruneHistory, recentDays, spentOn } from './history';
-import { DEFAULT_SUGGEST_CONTROLS } from './suggest';
+import { DEFAULT_SUGGEST_CONTROLS, SuggestControls } from './suggest';
+import { Milestone, newMilestones, recordMilestones, totalCompletions } from './milestones';
 
 /** Per-profile marker for the last daily maintenance run. */
 const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
@@ -17,27 +19,17 @@ import { BlockedByEntry } from '@/types';
 
 // Core recurrence check logic - resets recurring tasks that are due
 async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksRescored: number }> {
+  // Close the books on the days just gone *before* anything resets. Resetting
+  // a recurring task clears its doneDate, and recording afterwards meant its
+  // completion had already vanished from the day it happened on.
+  await recordRecentDays();
+
   const allTasks = await db.tasks.toArray();
   let tasksReset = 0;
 
   for (const task of allTasks) {
     if (task.deletedAt) continue;
-    if (checkNeedsReset(task)) {
-      // Roll the dates forward as well as the status. Leaving them on the
-      // previous occurrence brought the task back already overdue, planned
-      // for a day that had passed, where it sat in Triage for good.
-      const { dueDate, plannedDate } = nextRecurrenceDates(task);
-      const newStatus = plannedDate ? 'Planned' : 'Backlog';
-      await db.tasks.update(task.id, {
-        status: newStatus,
-        dueDate,
-        plannedDate,
-        lastCompleted: null,
-        doneDate: null,
-        updatedAt: new Date().toISOString(),
-      });
-      tasksReset++;
-    }
+    if (await resetIfDue(task)) tasksReset++;
   }
 
   // Part of a task's score comes from how close its due date is, so a stored
@@ -77,23 +69,17 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
     tasksRescored++;
   }
 
-  // Check events for recurrence reset
+  // Recurring events move on to their next occurrence once the current one
+  // has passed, attended or not: an appointment that has gone has gone, and
+  // pinning a standing meeting to the one you skipped hid every later one.
+  // lastCompleted is kept - it is the record of the day it was attended.
   const allEvents = await db.events.toArray();
   for (const event of allEvents) {
     if (event.deletedAt) continue;
     if (checkEventNeedsReset(event)) {
-      // Move the occurrence forward as well as clearing lastCompleted.
-      // Clearing alone left a recurring event pinned to its first date, so it
-      // sat in Triage as permanently missed and never reached a future week.
-      const date = nextEventDate(event) ?? event.date;
-      await db.events.update(event.id, { date, lastCompleted: null, updatedAt: new Date().toISOString() });
+      await db.events.update(event.id, { date: currentEventDate(event), updatedAt: new Date().toISOString() });
     }
   }
-
-  // Close yesterday's books. The first run of a new day is the first moment
-  // the previous one is finished and safe to total up, and this check already
-  // runs exactly once a day.
-  await recordYesterday();
 
   // Record when this ran, per profile, so it happens once a day rather than
   // on every page load.
@@ -103,38 +89,90 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
 }
 
 /**
- * Write what yesterday cost into the history.
- *
- * Only completions are recorded; what was planned for a past day cannot be
- * recovered afterwards, and a guess would make the record less trustworthy
- * than no record.
+ * Bring a finished recurring task back for its next occurrence, if it is time.
+ * Returns whether it did.
  */
-async function recordYesterday(): Promise<void> {
-  const yesterday = recentDays(1)[0];
-  const history = pruneHistory(parseHistory(getPreference(HISTORY_PREF)));
-  if (history[yesterday]) return;
+async function resetIfDue(task: Task, today = getTodayString()): Promise<boolean> {
+  if (!checkNeedsReset(task, today)) return false;
+  // Roll the dates forward as well as the status. Leaving them on the
+  // previous occurrence brought the task back already overdue, planned for a
+  // day that had passed, where it sat in Triage for good.
+  const { dueDate, plannedDate } = nextRecurrenceDates(task);
+  await db.tasks.update(task.id, {
+    status: plannedDate ? 'Planned' : 'Backlog',
+    dueDate,
+    plannedDate,
+    // The new cycle started when the last one was finished; its cycle
+    // deadline and its neglect both count from there.
+    rotSince: task.lastCompleted,
+    slipCount: 0,
+    lastCompleted: null,
+    doneDate: null,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
+}
 
-  let controls = DEFAULT_SUGGEST_CONTROLS;
+/** The energy settings as stored: defaults, per-weekday budgets, per-date overrides. */
+export function readEnergySettings() {
+  let controls: SuggestControls = DEFAULT_SUGGEST_CONTROLS;
   try {
     const stored = getPreference('suggest.settings');
     if (stored) controls = { ...DEFAULT_SUGGEST_CONTROLS, ...JSON.parse(stored) };
   } catch { /* fall back to the defaults */ }
-
   const capacityMap = parseCapacityMap(getPreference(CAPACITY_PREF));
+  const weekdayBudget = parseWeekdayBudget(getPreference(WEEKDAY_BUDGET_PREF));
+  return {
+    controls,
+    capacityMap,
+    weekdayBudget,
+    budgetFor: (date: string) => capacityFor(capacityMap, date, controls.dailyAPBudget, weekdayBudget),
+  };
+}
+
+/** The same, reactive: re-reads whenever any of the three preferences change. */
+export function useEnergySettings() {
+  const suggest = useLiveQuery(() => getPreference('suggest.settings'), []);
+  const capacity = useLiveQuery(() => getPreference(CAPACITY_PREF), []);
+  const weekday = useLiveQuery(() => getPreference(WEEKDAY_BUDGET_PREF), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => readEnergySettings(), [suggest, capacity, weekday]);
+}
+
+/**
+ * Write what a day cost into the history.
+ *
+ * Only completions are recorded; what was planned for a past day cannot be
+ * recovered afterwards, and a guess would make the record less trustworthy
+ * than no record. `overwrite` is for corrections - ticking off yesterday
+ * after the fact has to change yesterday's total.
+ */
+export async function recordDay(date: string, overwrite = false): Promise<void> {
+  const history = pruneHistory(parseHistory(getPreference(HISTORY_PREF)));
+  if (history[date] && !overwrite) return;
+
+  const { controls, budgetFor } = readEnergySettings();
   const [tasks, events, habits] = await Promise.all([
     db.tasks.toArray(), db.events.toArray(), db.habits.toArray(),
   ]);
-  const { spent, finished } = spentOn(yesterday, tasks, events, habits, controls.defaultAP);
+  const { spent, finished } = spentOn(date, tasks, events, habits, controls.defaultAP);
 
   // A day nobody touched is not evidence of anything, so it is not recorded.
-  if (spent === 0 && finished === 0) return;
-
-  history[yesterday] = {
-    capacity: capacityFor(capacityMap, yesterday, controls.dailyAPBudget),
-    spent,
-    finished,
-  };
+  if (spent === 0 && finished === 0) {
+    if (!history[date]) return;
+    delete history[date];
+  } else {
+    history[date] = { capacity: budgetFor(date), spent, finished };
+  }
   await savePreference(HISTORY_PREF, JSON.stringify(history));
+}
+
+/**
+ * Record the last week's days that are not yet on record. The app is not
+ * opened every day, and only closing "yesterday" left gaps after a weekend.
+ */
+async function recordRecentDays(): Promise<void> {
+  for (const day of recentDays(7)) await recordDay(day);
 }
 
 // Hook to run daily auto-reset check for recurring tasks (runs once on app load)
@@ -396,28 +434,81 @@ function autoStatus(task: Task): Task['status'] {
   return task.status;
 }
 
-// Task actions
-export async function markTaskDone(taskId: string): Promise<void> {
-  const now = new Date().toISOString();
-  await db.tasks.update(taskId, {
-    status: 'Done',
-    lastCompleted: now,
-    doneDate: now,
-    updatedAt: now,
-  });
-  await checkDependentsOf(taskId);
+/** Days kept in a task's completion log - long enough for a yearly review. */
+const COMPLETION_LOG_DAYS = 400;
+
+/** A moment on a past day, for back-dated completions: midday, clear of any timezone edge. */
+function momentOn(date: string): string {
+  const d = parseLocalDate(date);
+  d.setHours(12, 0, 0, 0);
+  return d.toISOString();
 }
 
-export async function undoTaskDone(taskId: string): Promise<void> {
+// Task actions
+/**
+ * Finish a task - today, or on an earlier day you forgot to tick it off.
+ *
+ * A back-dated completion counts on the day it happened: in the history, the
+ * review, and for a recurring task, the next occurrence is dated from it.
+ */
+export async function markTaskDone(taskId: string, onDate?: string): Promise<void> {
   const task = await db.tasks.get(taskId);
   if (!task) return;
-  const baseStatus = task.plannedDate ? 'Planned' : 'Backlog';
-  const restoredStatus = autoStatus({ ...task, status: baseStatus, doneDate: null });
+  const today = getTodayString();
+  const day = onDate && onDate < today ? onDate : today;
+  const moment = day === today ? new Date().toISOString() : momentOn(day);
+  const completions = pruneCompletionDates(
+    Array.from(new Set([...(task.completions ?? []), day])).sort(), COMPLETION_LOG_DAYS);
   await db.tasks.update(taskId, {
-    status: restoredStatus,
-    doneDate: null,
+    status: 'Done',
+    lastCompleted: moment,
+    doneDate: moment,
+    completions,
     updatedAt: new Date().toISOString(),
   });
+  await checkDependentsOf(taskId);
+
+  // Finished on an earlier day, a recurring task may already be owed again:
+  // a daily one ticked off for yesterday is due today. The daily check has
+  // already run, so bring it back now rather than tomorrow.
+  if (day !== today) {
+    const updated = await db.tasks.get(taskId);
+    if (updated) await resetIfDue(updated, today);
+    await recordDay(day, true);
+  }
+}
+
+/**
+ * Take back a completion. With `onDate`, removes that day's entry even if the
+ * task has since come back for its next occurrence.
+ */
+export async function undoTaskDone(taskId: string, onDate?: string): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (!task) return;
+  const day = onDate ?? localDay(task.doneDate) ?? getTodayString();
+  const completions = (task.completions ?? []).filter(d => d !== day);
+  const doneThatDay = task.status === 'Done' && localDay(task.doneDate) === day;
+  if (!doneThatDay) {
+    await db.tasks.update(taskId, { completions, updatedAt: new Date().toISOString() });
+  } else {
+    const baseStatus = task.plannedDate ? 'Planned' : 'Backlog';
+    const restoredStatus = autoStatus({ ...task, status: baseStatus, doneDate: null });
+    await db.tasks.update(taskId, {
+      status: restoredStatus,
+      doneDate: null,
+      completions,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  if (day !== getTodayString()) await recordDay(day, true);
+}
+
+/** Local days a task was finished on, including any before the log existed. */
+export function completionDaysOf(task: Pick<Task, 'completions' | 'doneDate' | 'status'>): string[] {
+  const days = new Set(task.completions ?? []);
+  const done = task.status === 'Done' ? localDay(task.doneDate) : null;
+  if (done) days.add(done);
+  return Array.from(days).sort();
 }
 
 export async function resetTask(taskId: string): Promise<void> {
@@ -446,6 +537,7 @@ export async function createTask(taskData: {
   projectId?: string | null;
   blockedBy?: BlockedByEntry[];
   followUpDate?: string | null;
+  recurrenceEnd?: string | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -479,6 +571,10 @@ export async function createTask(taskData: {
     projectId: taskData.projectId ?? null,
     blockedBy: taskData.blockedBy ?? [],
     followUpDate: taskData.followUpDate ?? null,
+    recurrenceEnd: taskData.recurrenceEnd ?? null,
+    rotSince: null,
+    slipCount: 0,
+    completions: [],
     deletedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -497,40 +593,47 @@ export async function createTask(taskData: {
   return id;
 }
 
+/**
+ * Whether an edit moves a plan whose day has already gone. That is a slip:
+ * the plan did not happen and is being pushed on, which is exactly the
+ * pattern that should get louder rather than quietly reset.
+ */
+export function isSlip(task: Pick<Task, 'plannedDate' | 'status'>, updates: Partial<Task>, today = getTodayString()): boolean {
+  if (task.status === 'Done' || task.status === 'Archived') return false;
+  if (updates.status === 'Done' || updates.status === 'Archived') return false;
+  if (!task.plannedDate || task.plannedDate >= today) return false;
+  return updates.plannedDate !== undefined && updates.plannedDate !== task.plannedDate;
+}
+
 export async function updateTaskData(taskId: string, updates: Partial<Task>): Promise<void> {
   const task = await db.tasks.get(taskId);
   if (!task) return;
 
-  // Recalculate scores if relevant fields changed
-  let { importanceScore, urgencyScore, taskScore } = { importanceScore: task.importanceScore, urgencyScore: task.urgencyScore, taskScore: task.taskScore };
-  // Compare against undefined, not truthiness: priority and urgency can now
-  // be cleared back to null, and a truthiness test would skip the rescore
-  // and leave the task carrying a score it no longer earns.
-  if (updates.taskPriority !== undefined || updates.urgency !== undefined || updates.dueDate !== undefined || updates.domainId !== undefined || updates.plannedDate !== undefined) {
-    const domainId = updates.domainId !== undefined ? updates.domainId : task.domainId;
-    let domainPriority: string | undefined;
-    if (domainId) {
-      const domain = await db.domains.get(domainId);
-      domainPriority = domain?.priority;
-    }
-    const scores = calculateTaskScores({ ...task, ...updates }, domainPriority);
-    importanceScore = scores.importanceScore;
-    urgencyScore = scores.urgencyScore;
-    taskScore = scores.combinedScore;
-  }
+  const extra: Partial<Task> = {};
+  if (isSlip(task, updates)) extra.slipCount = (task.slipCount ?? 0) + 1;
 
   // Auto-promote/demote based on required fields
-  const merged = { ...task, ...updates, taskScore, importanceScore, urgencyScore };
+  const merged = { ...task, ...updates, ...extra };
   const newStatus = autoStatus(merged);
-
   const finalStatus = updates.status !== undefined ? autoStatus({ ...merged, status: updates.status }) : newStatus;
+
+  // Coming off Blocked restarts the neglect clock: the time spent waiting on
+  // someone else was not time you were ignoring it.
+  if (task.status === 'Blocked' && finalStatus !== 'Blocked') extra.rotSince = new Date().toISOString();
+
+  // Always rescore. Status, slips and the plan all feed the score now, and
+  // a field-by-field guard is how a task ends up carrying a stale one.
+  const domainId = updates.domainId !== undefined ? updates.domainId : task.domainId;
+  const domainPriority = domainId ? (await db.domains.get(domainId))?.priority : undefined;
+  const scores = calculateTaskScores({ ...merged, ...extra, status: finalStatus }, domainPriority);
 
   await db.tasks.update(taskId, {
     ...updates,
+    ...extra,
     status: finalStatus,
-    importanceScore,
-    urgencyScore,
-    taskScore,
+    importanceScore: scores.importanceScore,
+    urgencyScore: scores.urgencyScore,
+    taskScore: scores.combinedScore,
     updatedAt: new Date().toISOString(),
   });
 
@@ -631,49 +734,58 @@ export function useHabitsDueToday() {
   return habits || [];
 }
 
-// Mark a habit as done (sets lastCompleted to now and adds to completionDates)
-export async function markHabitDone(habitId: string): Promise<void> {
+/**
+ * Mark a habit as done - today, or an earlier day you forgot to tick off.
+ * Returns any milestones this completion reached, for the celebration.
+ */
+export async function markHabitDone(habitId: string, onDate?: string): Promise<Milestone[]> {
   const habit = await db.habits.get(habitId);
-  if (!habit) return;
+  if (!habit) return [];
 
-  const now = new Date().toISOString();
   const todayStr = getTodayString();
+  const day = onDate && onDate < todayStr ? onDate : todayStr;
+  if ((habit.completionDates || []).includes(day)) return [];
 
-  // Add today to completionDates if not already there, and prune old entries
-  const completionDates = pruneCompletionDates(habit.completionDates || []);
-  if (!completionDates.includes(todayStr)) {
-    completionDates.push(todayStr);
-  }
+  const completionDates = pruneCompletionDates([...(habit.completionDates || []), day]).sort();
+  const latest = completionDates[completionDates.length - 1];
+  const lastCompleted = latest === todayStr ? new Date().toISOString() : momentOn(latest);
 
   const { current } = currentStreak(completionDates, habit.targetPerWeek, todayStr);
-
-  await db.habits.update(habitId, {
-    lastCompleted: now,
-    completionDates,
-    bestStreak: bestStreakSoFar(habit.bestStreak, current),
-    updatedAt: now,
-  });
-}
-
-// Undo habit completion for today (removes today from completionDates)
-export async function undoHabitDone(habitId: string): Promise<void> {
-  const habit = await db.habits.get(habitId);
-  if (!habit) return;
-
-  const todayStr = getTodayString();
-
-  // Remove today from completionDates
-  const completionDates = (habit.completionDates || []).filter(d => d !== todayStr);
-
-  // Find the most recent completion that's not today for lastCompleted
-  const sortedDates = completionDates.sort().reverse();
-  const lastCompleted = sortedDates.length > 0 ? new Date(sortedDates[0] + 'T12:00:00').toISOString() : null;
+  const total = totalCompletions(habit) + 1;
+  const reached = newMilestones(habit, current, total);
 
   await db.habits.update(habitId, {
     lastCompleted,
     completionDates,
+    totalCompletions: total,
+    bestStreak: bestStreakSoFar(habit.bestStreak, current),
+    milestones: reached.length ? recordMilestones(habit.milestones, reached, todayStr) : habit.milestones ?? [],
     updatedAt: new Date().toISOString(),
   });
+  if (day !== todayStr) await recordDay(day, true);
+  return reached;
+}
+
+// Undo a habit completion for today, or for the given day
+export async function undoHabitDone(habitId: string, onDate?: string): Promise<void> {
+  const habit = await db.habits.get(habitId);
+  if (!habit) return;
+
+  const day = onDate ?? getTodayString();
+  if (!(habit.completionDates || []).includes(day)) return;
+  const completionDates = (habit.completionDates || []).filter(d => d !== day);
+
+  // Find the most recent remaining completion for lastCompleted
+  const sortedDates = [...completionDates].sort().reverse();
+  const lastCompleted = sortedDates.length > 0 ? momentOn(sortedDates[0]) : null;
+
+  await db.habits.update(habitId, {
+    lastCompleted,
+    completionDates,
+    totalCompletions: Math.max(0, totalCompletions(habit) - 1),
+    updatedAt: new Date().toISOString(),
+  });
+  if (day !== getTodayString()) await recordDay(day, true);
 }
 
 // Hook to get habits completed today (for showing in Today view's completed section)
@@ -694,6 +806,7 @@ export async function createHabit(habitData: {
   habitName: string;
   recurrence?: Habit['recurrence'];
   targetPerWeek?: number | null;
+  weekdays?: number[] | null;
   actionPoints?: string | null;
   notes?: string;
   icon?: string | null;
@@ -710,6 +823,9 @@ export async function createHabit(habitData: {
     targetPerWeek: habitData.targetPerWeek ?? null,
     actionPoints: habitData.actionPoints ?? null,
     completionDates: [],
+    weekdays: habitData.weekdays?.length ? habitData.weekdays : null,
+    totalCompletions: 0,
+    milestones: [],
     bestStreak: 0,
     notes: habitData.notes || '',
     icon: habitData.icon ?? null,
@@ -854,20 +970,23 @@ export async function updateEventData(eventId: string, updates: Partial<Event>):
   });
 }
 
-// Mark an event as done (set lastCompleted to today)
-export async function markEventDone(eventId: string): Promise<void> {
+// Mark an event as attended - today, or on an earlier day
+export async function markEventDone(eventId: string, onDate?: string): Promise<void> {
+  const day = onDate ?? getTodayString();
   await db.events.update(eventId, {
-    lastCompleted: getTodayString(),
+    lastCompleted: day,
     updatedAt: new Date().toISOString(),
   });
+  if (day !== getTodayString()) await recordDay(day, true);
 }
 
 // Undo marking an event as done
-export async function undoEventDone(eventId: string): Promise<void> {
+export async function undoEventDone(eventId: string, onDate?: string): Promise<void> {
   await db.events.update(eventId, {
     lastCompleted: null,
     updatedAt: new Date().toISOString(),
   });
+  if (onDate && onDate !== getTodayString()) await recordDay(onDate, true);
 }
 
 // Delete an event
@@ -927,11 +1046,11 @@ export function useProjects() {
  * target is that you log what you actually did - two pages, four, none - and
  * the count goes up by that much.
  */
-export async function logProjectProgress(projectId: string, amount: number, note?: string): Promise<void> {
+export async function logProjectProgress(projectId: string, amount: number, note?: string, onDate?: string): Promise<void> {
   const project = await db.projects.get(projectId);
   if (!project) return;
   await db.projects.update(projectId, {
-    progressLog: logProgress(project.progressLog, amount, note),
+    progressLog: logProgress(project.progressLog, amount, note, onDate),
     updatedAt: new Date().toISOString(),
   });
 }
@@ -946,6 +1065,7 @@ export async function createProject(projectData: {
   kind?: Project['kind'];
   targetCount?: number | null;
   targetUnit?: string | null;
+  targetDate?: string | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -960,6 +1080,7 @@ export async function createProject(projectData: {
     kind: projectData.kind ?? 'bundle',
     targetCount: projectData.targetCount ?? null,
     targetUnit: projectData.targetUnit ?? null,
+    targetDate: projectData.targetDate ?? null,
     progressLog: [],
     deletedAt: null,
     createdAt: now,
@@ -982,4 +1103,50 @@ export async function updateProjectData(projectId: string, updates: Partial<Proj
 export async function deleteProject(projectId: string): Promise<void> {
   const now = new Date().toISOString();
   await db.projects.update(projectId, { deletedAt: now, updatedAt: now });
+}
+
+// --- Notes and lists -------------------------------------------------------
+
+export function useNotes() {
+  const notes = useLiveQuery(async () => {
+    const all = (await db.notes.toArray()).filter(n => !n.deletedAt);
+    // Pinned first, then most recently touched.
+    return all.sort((a, b) =>
+      Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt));
+  }, []);
+  return notes || [];
+}
+
+export async function createNote(data: {
+  title: string;
+  kind: Note['kind'];
+  body?: string;
+  items?: Note['items'];
+  pinned?: boolean;
+  domainId?: string | null;
+}): Promise<string> {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  await db.notes.add({
+    id,
+    title: data.title,
+    kind: data.kind,
+    body: data.body ?? '',
+    items: data.items ?? [],
+    pinned: data.pinned ?? false,
+    domainId: data.domainId ?? null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function updateNote(noteId: string, updates: Partial<Note>): Promise<void> {
+  await db.notes.update(noteId, { ...updates, updatedAt: new Date().toISOString() });
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.notes.update(noteId, { deletedAt: now, updatedAt: now });
 }

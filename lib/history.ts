@@ -10,7 +10,7 @@
  * finished and safe to total up.
  */
 
-import { Event, Habit, Task } from './db';
+import type { Event, Habit, Task } from '@/types';
 import { getTodayString, parseLocalDate, parseLocalDateTime, toDateString } from './dates';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
 
@@ -83,8 +83,12 @@ export function spentOn(
   let finished = 0;
 
   for (const task of tasks) {
-    if (task.deletedAt || task.status !== 'Done') continue;
-    if (dayOf(task.doneDate) !== date) continue;
+    if (task.deletedAt) continue;
+    // The completion log is what survives a recurring task coming back; the
+    // doneDate covers anything finished before the log existed.
+    const doneThatDay = (task.status === 'Done' && dayOf(task.doneDate) === date)
+      || (task.completions ?? []).includes(date);
+    if (!doneThatDay) continue;
     spent += apOf(task, defaultAP);
     finished += 1;
   }

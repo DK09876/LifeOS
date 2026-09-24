@@ -10,7 +10,7 @@
  * this reserves their effort rather than placing them.
  */
 
-import type { Habit } from './db';
+import type { Habit } from '@/types';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
 
 /**
