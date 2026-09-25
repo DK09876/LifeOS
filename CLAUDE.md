@@ -290,6 +290,20 @@ new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
 - Back-dated completion: `markTaskDone(id, date)`, `markHabitDone(id, date)` — they
   re-record that day's history and reset a recurring task if already owed
 - Push subscriptions and the sent log live in their own tables, not preferences
+- Repeating tasks have a kind (`recurrenceKind`): `lapsing` (Daily / named weekdays, no due:
+  missed days lapse - no cycle pressure, rot, missed plan or slips), `cycle` (from completion;
+  pile up), `fixed` (schedule-anchored with a due date). Occurrences after the live one come
+  from `upcomingOccurrences`; per-occurrence plans/skips live in `occurrencePlans` and are
+  applied by `comeBack` when the series reaches them (cycle plans re-keyed by position)
+- A day's AP only includes what is planned on it; unplanned occurrences reserve nothing
+- Suggest candidates are keyed by task id or `${taskId}@${due}` for occurrences
+  (`occurrenceKey`); apply with `planOccurrence`
+- Tasks in a target project log `progressAmount ?? 1` to it on completion (reversed on undo)
+- Blocked must have a task blocker or a followUpDate (TaskForm enforces); a due follow-up
+  scores like a deadline
+- Saves are field patches checked against the client's `updatedAt` (`patchRecord`, 409 on
+  a stale copy); the client re-hydrates on visibility change
+- Every number on the help page is asserted in `lib/scenarios.test.ts` - change both together
 - `recurrenceAnchor: 'schedule'` dates the next occurrence from the previous
   `dueDate` rather than from completion, and reopens when that date passes
 - Plan's calendar deliberately shows less than Week's: commitments and overdue

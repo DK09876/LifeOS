@@ -167,7 +167,7 @@ export function calculateTaskScores(
     else if (age >= 14) neglect = 5;
   }
 
-  const slips = waiting ? 0 : Math.min(PRESSURE.slipCap, (task.slipCount ?? 0) * PRESSURE.slipEach);
+  const slips = waiting || lapsing ? 0 : Math.min(PRESSURE.slipCap, (task.slipCount ?? 0) * PRESSURE.slipEach);
 
   const timePressure = Math.max(deadline, cycle, missedPlan, neglect) + slips;
   const urgencyScore = (urgencyFieldScores[task.urgency || '3 - Normal'] || 30) + timePressure;

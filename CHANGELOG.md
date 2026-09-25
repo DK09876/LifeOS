@@ -2,6 +2,26 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.10.0] - 2026-09-25
+
+### Repeating tasks
+- Three kinds, behaving differently: **daily or named days** (each day's occurrence belongs to its day; a missed one simply lapses — no pressure, no rot, not a missed plan, not a slip), **every so often from when you last did it** (moves when done early or late; missed cycles pile up) and **on a fixed period** (a real deadline that never moves)
+- Upcoming occurrences (↻) can each be **planned or skipped** — tap one on Plan, or drag it. A daily one can only be planned on its own day. Planned ones are drawn solid and count against their day
+- Effort is only taken from a day by what is planned on it: unplanned occurrences cost nothing, and a daily task's plan no longer carries forward to the next day on its own
+- **Suggest plans occurrences**: daily ones on their own day if there is room, the others anywhere in their window
+
+### Goals
+- A task in a goal project **adds to the goal each time it is done** — 1 by default, adjustable per task — and undoing takes it back. When a goal with a total is reached, its repeating tasks stop coming back. Open-ended goals just keep tallying
+
+### Blocked
+- Setting a task to Blocked now needs a task it waits on or a day to chase it up — otherwise nothing would ever bring it back
+- On its chase day blocked work scores like a deadline, and goes overdue if left; the strip shows how overdue
+- A task that is holding others up shows "Unblocks: …"; blocked tasks with nothing to chase are flagged on Today and Plan
+- Fixed: "Unblock" on the chase strip cleared the blockers but left the task Blocked
+
+### How it works
+- Rewritten shorter, with **worked examples** for each kind of situation — a bill with a deadline, something undated, a plan that keeps sliding, waiting on a task or a person, reading every day towards a book, watering plants every two weeks, rent on the 1st, gym on named days, energy per weekday. Every number in them is checked by the test suite
+
 ## [0.9.2] - 2026-09-25
 
 ### Sync

@@ -726,6 +726,9 @@ export async function createTask(taskData: {
 export function isSlip(task: Pick<Task, 'plannedDate' | 'status'>, updates: Partial<Task>, today = getTodayString()): boolean {
   if (task.status === 'Done' || task.status === 'Archived') return false;
   if (updates.status === 'Done' || updates.status === 'Archived') return false;
+  // A daily or named-day task's missed day lapses; moving it is not sliding it.
+  if (recurrenceKind({ recurrence: (task as Task).recurrence ?? 'None', recurrenceAnchor: (task as Task).recurrenceAnchor ?? null,
+    recurrenceWeekdays: (task as Task).recurrenceWeekdays ?? null, dueDate: (task as Task).dueDate ?? null }) === 'lapsing') return false;
   if (!task.plannedDate || task.plannedDate >= today) return false;
   return updates.plannedDate !== undefined && updates.plannedDate !== task.plannedDate;
 }
