@@ -12,6 +12,7 @@ import type { Domain, Event, Habit, Project, Task } from '@/types';
 import { getTodayString, parseLocalDate, toDateString } from './dates';
 import { getStartOfWeek, localDay } from './recurrence';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
+import { isMissedPlan } from './scoring';
 import type { History } from './history';
 
 export type PeriodKind = 'week' | 'month';
@@ -176,7 +177,7 @@ export function buildReview(input: {
 
   const open = tasks.filter((t) => t.status !== 'Done' && t.status !== 'Archived');
   const slipped = open.filter((t) => (t.slipCount ?? 0) > 0).sort((a, b) => (b.slipCount ?? 0) - (a.slipCount ?? 0));
-  const stillMissed = open.filter((t) => t.plannedDate && inPeriod(t.plannedDate) && t.plannedDate < today);
+  const stillMissed = open.filter((t) => isMissedPlan(t, today) && inPeriod(t.plannedDate));
   const overdue = open.filter((t) => t.dueDate && t.dueDate < today && t.dueDate <= period.end);
 
   const habitRows = habits.filter((h) => h.isActive).map((habit) => ({

@@ -21,7 +21,7 @@ import { savePreference } from '@/lib/store';
 import { CAPACITY_PREF, dayLoad, pruneCapacityMap } from '@/lib/capacity';
 import { useEvents } from '@/lib/hooks';
 import { isOnToday } from '@/lib/schedule';
-import { isPressingBlocked } from '@/lib/scoring';
+import { isMissedPlan, isPressingBlocked, isStrandedBlocked } from '@/lib/scoring';
 import { needsTriageNag, unfinishedOn } from '@/lib/notifications';
 import { getTaskPriorityBorder, levelRank } from '@/lib/colors';
 import { parseLocalDate } from '@/lib/dates';
@@ -78,6 +78,7 @@ export default function TodayPage() {
     [tasks, todayStr],
   );
   const triageNag = useMemo(() => tasks.filter(t => needsTriageNag(t, todayStr)), [tasks, todayStr]);
+  const stranded = useMemo(() => tasks.filter(t => isStrandedBlocked(t)), [tasks]);
   const yesterdayCount = useMemo(() => {
     const y = new Date(parseLocalDate(todayStr).getTime() - 86400000);
     const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
@@ -88,10 +89,7 @@ export default function TodayPage() {
 
   // Plans whose day has passed. Not overdue deadlines - those stay in Plan.
   const missedPlans = useMemo(() => {
-    return tasks.filter(t =>
-      t.status !== 'Done' && t.status !== 'Archived' && !t.deletedAt &&
-      !!t.plannedDate && t.plannedDate < todayStr
-    ).sort((a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''));
+    return tasks.filter(t => isMissedPlan(t, todayStr)).sort((a, b) => (a.plannedDate || '').localeCompare(b.plannedDate || ''));
   }, [tasks, todayStr]);
 
   async function rescheduleMissed(taskId: string, date: string | null) {
@@ -125,7 +123,10 @@ export default function TodayPage() {
   }
   async function unblockTask(taskId: string) {
     // Clearing the blockers lets autoStatus put the task back where it belongs.
-    try { await updateTaskData(taskId, { blockedBy: [], followUpDate: null }); }
+    // Status is set explicitly: autoStatus never moves a task out of Blocked
+    // by itself, so clearing the blockers alone left it blocked.
+    const task = tasks.find(t => t.id === taskId);
+    try { await updateTaskData(taskId, { blockedBy: [], followUpDate: null, status: task?.plannedDate ? 'Planned' : 'Backlog' }); }
     catch { showToast('Could not unblock that task', 'error'); }
   }
 
@@ -299,6 +300,7 @@ export default function TodayPage() {
         pressingBlocked={pressingBlocked}
         triageNag={triageNag}
         yesterdayCount={yesterdayCount}
+        stranded={stranded}
         onEdit={handleEditTask}
       />
 

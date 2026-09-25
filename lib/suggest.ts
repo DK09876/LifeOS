@@ -1,7 +1,7 @@
 import { Task, Event } from '@/types';
 import { getTodayString, parseLocalDate } from './dates';
 import { startOfDay, differenceInCalendarDays } from 'date-fns';
-import { cycleDueDate } from './recurrence';
+import { cycleDueDate, liveOccurrenceDue, recurrenceKind, upcomingOccurrences } from './recurrence';
 
 // --- Types ---
 
@@ -111,13 +111,15 @@ function normalizeWeights(controls: SuggestControls): { w_score: number; w_deadl
  */
 export function placeBy(task: Task, today = getTodayString()): string | null {
   if (task.dueDate) return task.dueDate;
+  // A daily or named-day occurrence has its own day, not a deadline to race.
+  if (recurrenceKind(task) === 'lapsing') return null;
   if (task.plannedDate && task.plannedDate < today) return task.plannedDate;
   return cycleDueDate(task);
 }
 
 /** Deadline pressure: how urgently a task needs scheduling relative to target day */
-function deadlinePressure(task: Task, targetDay: Date): number {
-  const by = placeBy(task);
+function deadlinePressure(task: Task, targetDay: Date, byOverride?: string | null): number {
+  const by = byOverride !== undefined ? byOverride : placeBy(task);
   if (!by) return 0.1;
   const due = parseLocalDate(by);
   const daysUntil = differenceInCalendarDays(due, targetDay);
@@ -155,11 +157,12 @@ export function computeSuggestionScore(
   task: Task,
   controls: SuggestControls,
   context: ScoringContext,
+  byOverride?: string | null,
 ): number {
   const weights = normalizeWeights(controls);
 
   const baseScore = normalize(task.taskScore, 2, 80);
-  const deadline = deadlinePressure(task, context.targetDay);
+  const deadline = deadlinePressure(task, context.targetDay, byOverride);
   const balance = domainBalanceBonus(task, context.scheduledDomainCounts);
   const efficiency = effortMatch(task, context.remainingAP, controls.defaultAP);
 
@@ -241,178 +244,171 @@ export interface WeekDayInfo {
    */
   habitAP?: number;
   /**
-   * Effort owed to the later occurrences of recurring tasks - the ones that
-   * exist only as projections. Reserved the same way as habits.
+   * Effort of later occurrences of recurring tasks that have been planned
+   * onto this day. Unplanned occurrences cost nothing: effort is only taken
+   * from a day once something is planned on it.
    */
   recurringAP?: number;
   /** This day's budget, when it differs from the default. */
   capacity?: number;
 }
 
+/**
+ * Something the suggester can place: a task, or one occurrence of a
+ * repeating task. `key` is the task id for the task itself, and
+ * `${taskId}@${due}` for a later occurrence (see planOccurrence).
+ */
+interface Candidate {
+  key: string;
+  task: Task;
+  /** The days it may go on. */
+  allowed: (dateStr: string) => boolean;
+  /** Date to place it by, or null for no deadline pressure. */
+  by: string | null;
+}
+
+export function occurrenceKey(key: string): { taskId: string; due: string | null } {
+  const at = key.indexOf('@');
+  return at < 0 ? { taskId: key, due: null } : { taskId: key.slice(0, at), due: key.slice(at + 1) };
+}
+
+function buildCandidates(tasks: Task[], weekDays: WeekDayInfo[], taken: Set<string>, todayStr: string): Candidate[] {
+  const first = weekDays[0]?.dateStr ?? todayStr;
+  const last = weekDays[weekDays.length - 1]?.dateStr ?? todayStr;
+  const out: Candidate[] = [];
+  const workable = (t: Task) => t.status !== 'Archived' && t.status !== 'Needs Details' && t.status !== 'Blocked';
+
+  for (const task of tasks) {
+    if (task.deletedAt || !workable(task)) continue;
+    const kind = recurrenceKind(task);
+
+    // The task itself: unplanned, or a plan already missed.
+    if (task.status !== 'Done' && (!task.plannedDate || task.plannedDate < todayStr) && !taken.has(task.id)) {
+      if (kind === 'lapsing') {
+        // Today's (or the next named day's) occurrence goes on its own day or not at all.
+        const day = liveOccurrenceDue(task, todayStr);
+        out.push({ key: task.id, task, allowed: (d) => d === day, by: null });
+      } else {
+        out.push({ key: task.id, task, allowed: () => true, by: placeBy(task, todayStr) });
+      }
+    }
+
+    // Later occurrences that fall due inside the range and have no plan yet.
+    if (kind === 'none') continue;
+    for (const occ of upcomingOccurrences(task, last, todayStr)) {
+      if (occ.skipped || occ.plannedDate || occ.due > last || occ.due < first || taken.has(occ.key)) continue;
+      if (kind === 'lapsing') {
+        out.push({ key: occ.key, task, allowed: (d) => d === occ.due, by: null });
+      } else {
+        // Anywhere in its window: after the one before it, by its due date.
+        const from = occ.windowStart > todayStr ? occ.windowStart : todayStr;
+        out.push({ key: occ.key, task, allowed: (d) => d >= from && d <= occ.due, by: occ.due });
+      }
+    }
+  }
+  return out;
+}
+
 export function suggestWeekSchedule(
   tasks: Task[],
   weekDays: WeekDayInfo[],
   controls: SuggestControls,
-  pinnedAssignments: Map<string, string>,  // taskId -> dateStr
-  excludedPlacements?: Set<string>,        // "taskId:dateStr" pairs to skip
-): Map<string, string> {  // taskId -> dateStr
+  pinnedAssignments: Map<string, string>,  // key -> dateStr
+  excludedPlacements?: Set<string>,        // "key:dateStr" pairs to skip
+): Map<string, string> {  // key -> dateStr
   const assignments = new Map<string, string>();
+  const taskOf = (key: string) => tasks.find(t => t.id === occurrenceKey(key).taskId);
 
-  // Initialize remaining AP per day
   const remainingAP = new Map<string, number>();
-  const dayDomainCounts = new Map<string, Map<string, number>>();  // dateStr -> (domainId -> count)
+  const dayDomainCounts = new Map<string, Map<string, number>>();
 
   for (const day of weekDays) {
     const existingAP = day.existingTasks.reduce((sum, t) => sum + getTaskAP(t, controls.defaultAP), 0);
     const eventsAP = day.events.reduce((sum, e) => sum + getEventAP(e, controls.defaultAP), 0);
-    const habitAP = (day.habitAP ?? 0) + (day.recurringAP ?? 0);
+    const reserved = (day.habitAP ?? 0) + (day.recurringAP ?? 0);
 
-    // Deduct pinned AP
     let pinnedAP = 0;
-    for (const [taskId, dateStr] of pinnedAssignments) {
-      if (dateStr === day.dateStr) {
-        const task = tasks.find(t => t.id === taskId);
-        if (task) {
-          pinnedAP += getTaskAP(task, controls.defaultAP);
-          assignments.set(taskId, dateStr);
-        }
-      }
-    }
-
-    const budget = day.capacity ?? controls.dailyAPBudget;
-    remainingAP.set(day.dateStr, Math.max(0, budget - existingAP - eventsAP - habitAP - pinnedAP));
-
-    // Track domain counts from existing + pinned
     const domainCounts = new Map<string, number>();
     for (const t of day.existingTasks) {
       if (t.domainId) domainCounts.set(t.domainId, (domainCounts.get(t.domainId) || 0) + 1);
     }
-    for (const [taskId, dateStr] of pinnedAssignments) {
-      if (dateStr === day.dateStr) {
-        const task = tasks.find(t => t.id === taskId);
-        if (task?.domainId) domainCounts.set(task.domainId, (domainCounts.get(task.domainId) || 0) + 1);
-      }
+    for (const [key, dateStr] of pinnedAssignments) {
+      if (dateStr !== day.dateStr) continue;
+      const task = taskOf(key);
+      if (!task) continue;
+      pinnedAP += getTaskAP(task, controls.defaultAP);
+      assignments.set(key, dateStr);
+      if (task.domainId) domainCounts.set(task.domainId, (domainCounts.get(task.domainId) || 0) + 1);
     }
+
+    const budget = day.capacity ?? controls.dailyAPBudget;
+    remainingAP.set(day.dateStr, Math.max(0, budget - existingAP - eventsAP - reserved - pinnedAP));
     dayDomainCounts.set(day.dateStr, domainCounts);
   }
 
-  // Get unscheduled, unassigned candidates
-  const pinnedIds = new Set(pinnedAssignments.keys());
-  const scheduledIds = new Set(
-    weekDays.flatMap(d => d.existingTasks.map(t => t.id))
-  );
-
-  // A plan whose day has gone is back on the table: you meant to do it, so
-  // it should be placed again rather than left out because it has a date.
   const todayStr = getTodayString();
-  let candidates = tasks.filter(t =>
-    (!t.plannedDate || t.plannedDate < todayStr) &&
-    t.status !== 'Done' &&
-    t.status !== 'Archived' &&
-    t.status !== 'Needs Details' &&
-    t.status !== 'Blocked' &&
-    !pinnedIds.has(t.id) &&
-    !scheduledIds.has(t.id)
-  );
-
-  // Apply domain focus
+  const taken = new Set<string>([
+    ...pinnedAssignments.keys(),
+    ...weekDays.flatMap(d => d.existingTasks.map(t => t.id)),
+  ]);
+  let candidates = buildCandidates(tasks, weekDays, taken, todayStr);
   if (controls.domainFocus.length > 0) {
-    candidates = candidates.filter(t =>
-      t.domainId && controls.domainFocus.includes(t.domainId)
-    );
+    candidates = candidates.filter(c => c.task.domainId && controls.domainFocus.includes(c.task.domainId));
   }
+
+  const place = (c: Candidate, day: string) => {
+    assignments.set(c.key, day);
+    remainingAP.set(day, (remainingAP.get(day) || 0) - getTaskAP(c.task, controls.defaultAP));
+    if (c.task.domainId) {
+      const dc = dayDomainCounts.get(day)!;
+      dc.set(c.task.domainId, (dc.get(c.task.domainId) || 0) + 1);
+    }
+  };
+  const openDays = (c: Candidate) => weekDays.filter(day =>
+    c.allowed(day.dateStr) &&
+    getTaskAP(c.task, controls.defaultAP) <= (remainingAP.get(day.dateStr) || 0) &&
+    !excludedPlacements?.has(`${c.key}:${day.dateStr}`));
 
   // --- Pass 1: anything with a date to meet, most pressing first ---
   //
   // Deadlines, recurring cycles and missed plans. Each goes on the earliest
   // day with room, and on the deadline day itself only if nothing earlier
   // fits: leaving a Friday deadline for Friday is how it gets missed the
-  // moment Friday goes wrong.
+  // moment Friday goes wrong. A deadline beyond the range is flexible work
+  // this week, not a date to meet.
+  const lastDay = weekDays[weekDays.length - 1]?.dateStr ?? todayStr;
   const dated = candidates
-    .map(t => ({ task: t, by: placeBy(t, todayStr) }))
-    .filter((c): c is { task: Task; by: string } => c.by !== null)
-    // Only what falls due inside the range (or already has): a deadline next
-    // month is flexible work this week, not a date to meet.
-    .filter(c => c.by <= weekDays[weekDays.length - 1]?.dateStr)
+    .filter((c): c is Candidate & { by: string } => c.by !== null && c.by <= lastDay)
     .sort((a, b) => a.by.localeCompare(b.by) || b.task.taskScore - a.task.taskScore);
+  const placed = new Set<string>();
 
-  const placedIds = new Set<string>();
-
-  for (const { task, by } of dated) {
-    const ap = getTaskAP(task, controls.defaultAP);
-
-    const open = weekDays.filter(day =>
-      ap <= (remainingAP.get(day.dateStr) || 0) &&
-      // Skip excluded placements (user removed this task from this day)
-      !excludedPlacements?.has(`${task.id}:${day.dateStr}`));
-
-    // Already late: the first day with room is the best there is.
-    const late = by < (weekDays[0]?.dateStr ?? by);
-    const before = open.find(day => day.dateStr < by);
-    const onTheDay = open.find(day => day.dateStr === by);
-    const bestDay = (late ? open[0] : before ?? onTheDay)?.dateStr ?? null;
-
-    if (bestDay) {
-      assignments.set(task.id, bestDay);
-      remainingAP.set(bestDay, (remainingAP.get(bestDay) || 0) - ap);
-      if (task.domainId) {
-        const dc = dayDomainCounts.get(bestDay)!;
-        dc.set(task.domainId, (dc.get(task.domainId) || 0) + 1);
-      }
-      placedIds.add(task.id);
-    }
+  for (const c of dated) {
+    const open = openDays(c);
+    const late = c.by < (weekDays[0]?.dateStr ?? c.by);
+    const before = open.find(day => day.dateStr < c.by);
+    const onTheDay = open.find(day => day.dateStr === c.by);
+    const best = (late ? open[0] : before ?? onTheDay)?.dateStr;
+    if (best) { place(c, best); placed.add(c.key); }
   }
 
-  // --- Pass 2: Flexible tasks (by score descending) ---
-  const flexibleTasks = candidates.filter(t => !placedIds.has(t.id));
-
-  // Pre-score each task against each day, pick best combo greedily
-  // Sort by a rough score first (using first day as reference)
+  // --- Pass 2: everything else, by score, each on its best allowed day ---
   const today = startOfDay(new Date());
-  const roughContext: ScoringContext = {
-    targetDay: today,
-    scheduledDomainCounts: new Map(),
-    remainingAP: controls.dailyAPBudget,
-  };
-  flexibleTasks.sort((a, b) =>
-    computeSuggestionScore(b, controls, roughContext) -
-    computeSuggestionScore(a, controls, roughContext)
-  );
+  const roughContext: ScoringContext = { targetDay: today, scheduledDomainCounts: new Map(), remainingAP: controls.dailyAPBudget };
+  const flexible = candidates.filter(c => !placed.has(c.key))
+    .sort((a, b) => computeSuggestionScore(b.task, controls, roughContext, b.by) - computeSuggestionScore(a.task, controls, roughContext, a.by));
 
-  for (const task of flexibleTasks) {
-    const ap = getTaskAP(task, controls.defaultAP);
-
+  for (const c of flexible) {
     let bestDay: string | null = null;
     let bestScore = -1;
-
-    for (const day of weekDays) {
-      const dayRemaining = remainingAP.get(day.dateStr) || 0;
-      if (ap > dayRemaining) continue;
-
-      // Skip excluded placements
-      if (excludedPlacements?.has(`${task.id}:${day.dateStr}`)) continue;
-
-      const context: ScoringContext = {
+    for (const day of openDays(c)) {
+      const score = computeSuggestionScore(c.task, controls, {
         targetDay: day.date,
         scheduledDomainCounts: dayDomainCounts.get(day.dateStr) || new Map(),
-        remainingAP: dayRemaining,
-      };
-      const score = computeSuggestionScore(task, controls, context);
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestDay = day.dateStr;
-      }
+        remainingAP: remainingAP.get(day.dateStr) || 0,
+      }, c.by);
+      if (score > bestScore) { bestScore = score; bestDay = day.dateStr; }
     }
-
-    if (bestDay) {
-      assignments.set(task.id, bestDay);
-      remainingAP.set(bestDay, (remainingAP.get(bestDay) || 0) - ap);
-      if (task.domainId) {
-        const dc = dayDomainCounts.get(bestDay)!;
-        dc.set(task.domainId, (dc.get(task.domainId) || 0) + 1);
-      }
-    }
+    if (bestDay) place(c, bestDay);
   }
 
   return assignments;

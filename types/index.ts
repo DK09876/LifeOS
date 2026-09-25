@@ -53,12 +53,28 @@ export interface Task {
   // when it comes back, so without this its completions vanished from every
   // record of what you did.
   completions?: string[] | null;
+  // Plans for occurrences after the one in hand, keyed by the date each
+  // falls due. Lets one day of a repeating task be moved or skipped without
+  // touching the rest. Applied when the series reaches that occurrence.
+  occurrencePlans?: OccurrencePlan[] | null;
+  // In a goal project: how much each completion counts towards it
+  // (1 page, 5 km). Null means 1.
+  progressAmount?: number | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Computed fields (not stored, calculated at runtime)
   domain?: Domain | null;
   domainPriority?: string | null;
+}
+
+export interface OccurrencePlan {
+  /** The date this occurrence falls due on its own schedule. */
+  due: string;
+  /** The day it is planned for, or null for "not planned yet". */
+  plannedDate: string | null;
+  /** Skipped: this occurrence is not happening. */
+  skipped?: boolean;
 }
 
 export interface Domain {

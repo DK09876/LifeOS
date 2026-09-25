@@ -8,7 +8,7 @@ import { differenceInCalendarDays } from 'date-fns';
 
 import type { Task } from '@/types';
 import { getTodayString, parseLocalDate } from './dates';
-import { cycleDueDate, intervalDays, localDay } from './recurrence';
+import { cycleDueDate, intervalDays, localDay, recurrenceKind } from './recurrence';
 
 /**
  * How time pressure is ranked, loudest first:
@@ -80,11 +80,23 @@ function cycleLadder(days: number, cyclesMissed: number): number {
 
 /** How many whole cycles have gone by since a cycle fell due. */
 export function cyclesMissed(task: Partial<Task>, today = getTodayString()): number {
+  // A daily or named-day task does not owe its missed days; they lapse.
+  if (isLapsing(task)) return 0;
   const due = cycleDueDate(task);
   if (!due || due >= today) return 0;
   const late = differenceInCalendarDays(parseLocalDate(today), parseLocalDate(due));
   const interval = intervalDays(task.recurrence ?? 'None', task.recurrenceWeekdays) || 1;
   return 1 + Math.floor(late / interval);
+}
+
+function isLapsing(task: Partial<Task>): boolean {
+  if (!task.recurrence || task.recurrence === 'None') return false;
+  return recurrenceKind({
+    recurrence: task.recurrence,
+    recurrenceAnchor: task.recurrenceAnchor ?? null,
+    recurrenceWeekdays: task.recurrenceWeekdays ?? null,
+    dueDate: task.dueDate ?? null,
+  }) === 'lapsing';
 }
 
 export function calculateTaskScores(
@@ -113,10 +125,21 @@ export function calculateTaskScores(
   const waiting = task.status === 'Blocked';
   const daysTo = (date: string) => differenceInCalendarDays(parseLocalDate(date), parseLocalDate(today));
 
-  const deadline = task.dueDate ? dueLadder(daysTo(task.dueDate)) : 0;
+  let deadline = task.dueDate ? dueLadder(daysTo(task.dueDate)) : 0;
+
+  // Blocked work that has reached its follow-up day: chasing it is now due,
+  // and a chase left undone goes overdue like anything else.
+  if (waiting && task.followUpDate && task.followUpDate <= today) {
+    deadline = Math.max(deadline, dueLadder(daysTo(task.followUpDate)));
+  }
+
+  // Daily and named-day tasks: each day's occurrence is optional practice,
+  // not a debt. No cycle pressure, no rot, and a plan for a day that has gone
+  // simply lapses.
+  const lapsing = isLapsing(task);
 
   let cycle = 0;
-  if (!task.dueDate && !waiting) {
+  if (!task.dueDate && !waiting && !lapsing) {
     const due = cycleDueDate(task);
     if (due) cycle = cycleLadder(daysTo(due), cyclesMissed(task, today));
   }
@@ -124,7 +147,7 @@ export function calculateTaskScores(
   // A plan whose day has gone. You already decided this mattered enough to
   // put on a day, so it outranks work nobody has placed yet.
   let missedPlan = 0;
-  if (!waiting && task.plannedDate && task.plannedDate < today) {
+  if (!waiting && !lapsing && task.plannedDate && task.plannedDate < today) {
     const missed = -daysTo(task.plannedDate);
     missedPlan = Math.min(PRESSURE.missedPlanCap, 30 + 2 * Math.min(missed, 7));
   }
@@ -136,7 +159,7 @@ export function calculateTaskScores(
   const stillPlanned = !!task.plannedDate && task.plannedDate >= today;
   let neglect = 0;
   const since = localDay(task.rotSince ?? task.createdAt);
-  if (!stillPlanned && !waiting && since) {
+  if (!stillPlanned && !waiting && !lapsing && since) {
     const age = -daysTo(since);
     if (age >= 90) neglect = 20;
     else if (age >= 60) neglect = 15;
@@ -169,4 +192,20 @@ export const PRESSING_BLOCKED_DAYS = 7;
 export function isPressingBlocked(task: Pick<Task, 'dueDate' | 'status' | 'deletedAt'>, today = getTodayString()): boolean {
   if (task.status !== 'Blocked' || task.deletedAt || !task.dueDate) return false;
   return differenceInCalendarDays(parseLocalDate(task.dueDate), parseLocalDate(today)) <= PRESSING_BLOCKED_DAYS;
+}
+
+/**
+ * A plan whose day went by without it - the "plans you missed" list. Daily
+ * and named-day tasks are left out: their missed day lapses instead.
+ */
+export function isMissedPlan(task: Task, today = getTodayString()): boolean {
+  if (task.deletedAt || task.status === 'Done' || task.status === 'Archived' || task.status === 'Blocked') return false;
+  if (!task.plannedDate || task.plannedDate >= today) return false;
+  return !isLapsing(task);
+}
+
+/** Blocked with nothing that will ever bring it back: no task to wait on, no date to chase. */
+export function isStrandedBlocked(task: Pick<Task, 'status' | 'deletedAt' | 'blockedBy' | 'followUpDate'>): boolean {
+  if (task.status !== 'Blocked' || task.deletedAt) return false;
+  return !task.followUpDate && !(task.blockedBy ?? []).some((b) => b.type === 'task');
 }

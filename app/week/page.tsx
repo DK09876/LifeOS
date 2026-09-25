@@ -10,7 +10,7 @@ import { useTasks, useDomains, useProjects, useEvents, markTaskDone, createTask,
 import { Task } from '@/types';
 import { getPriorityDotColor, levelRank } from '@/lib/colors';
 import { tasksForDay } from '@/lib/schedule';
-import { projectOccurrences } from '@/lib/recurrence';
+import { upcomingOccurrences } from '@/lib/recurrence';
 import { getTodayString } from '@/lib/dates';
 import { Event } from '@/types';
 
@@ -63,15 +63,18 @@ export default function WeekPage() {
   // ones ahead (faint), and earlier completions behind (from the completion
   // log, since the row itself has moved on). The Week is a record, so both.
   const recurringByDay = useMemo(() => {
-    const map = new Map<string, Array<{ task: Task; kind: 'ahead' | 'done' }>>();
+    const map = new Map<string, Array<{ task: Task; kind: 'ahead' | 'planned' | 'done' }>>();
     const from = format(weekDays[0], 'yyyy-MM-dd');
     const to = format(weekDays[6], 'yyyy-MM-dd');
     const today = getTodayString();
-    const add = (day: string, task: Task, kind: 'ahead' | 'done') =>
+    const add = (day: string, task: Task, kind: 'ahead' | 'planned' | 'done') =>
       map.set(day, [...(map.get(day) ?? []), { task, kind }]);
     for (const task of tasks) {
       if (task.recurrence === 'None') continue;
-      for (const day of projectOccurrences(task, from, to, today)) if (day >= today) add(day, task, 'ahead');
+      for (const occ of upcomingOccurrences(task, to, today)) {
+        if (occ.skipped || occ.date < from || occ.date > to || occ.date < today) continue;
+        add(occ.date, task, occ.plannedDate ? 'planned' : 'ahead');
+      }
       for (const day of task.completions ?? []) {
         if (day < from || day > to) continue;
         // Skip the day it is already drawn on as a finished row.
@@ -273,11 +276,13 @@ export default function WeekPage() {
                 <div
                   key={`${kind}-${task.id}`}
                   onClick={() => handleEditTask(task)}
-                  title={kind === 'ahead' ? 'A later occurrence of a recurring task' : 'Done that day'}
+                  title={kind === 'ahead' ? 'An upcoming occurrence, not planned yet' : kind === 'planned' ? 'A planned occurrence' : 'Done that day'}
                   className={`rounded p-2 cursor-pointer text-sm ${
                     kind === 'ahead'
                       ? 'border border-dotted border-cyan-500/40 opacity-60 text-cyan-200'
-                      : 'bg-[var(--background)]/40 opacity-50 text-[var(--muted)] line-through'
+                      : kind === 'planned'
+                        ? 'bg-cyan-500/10 border border-cyan-500/50 text-cyan-200'
+                        : 'bg-[var(--background)]/40 opacity-50 text-[var(--muted)] line-through'
                   }`}
                 >
                   {kind === 'done' ? '✓ ' : '↻ '}{task.taskName}

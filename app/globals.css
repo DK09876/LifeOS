@@ -163,3 +163,8 @@ body {
 /* Room for the phone's home indicator under fixed bottom bars. */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .pt-safe { padding-top: env(safe-area-inset-top); }
+
+/* Anything scrolled into view (focus, links) stops above the phone tab bar. */
+@media (max-width: 767px) {
+  html { scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom)); scroll-padding-top: 4rem; }
+}

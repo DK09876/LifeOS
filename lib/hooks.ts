@@ -3,7 +3,9 @@
 import { useEffect } from 'react';
 import { useLiveQuery } from './live-query';
 import { useMemo } from 'react';
-import { db, Task, Domain, Project, FilterPreset, Habit, Event, Note, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, nextRecurrenceDates, currentEventDate, localDay } from './db';
+import { db, Task, Domain, Project, FilterPreset, Habit, Event, Note, checkNeedsReset, calculateTaskScores, isHabitDueToday, pruneCompletionDates, checkEventNeedsReset, currentEventDate, localDay } from './db';
+import { comeBack, liveOccurrenceDue, recurrenceKind } from './recurrence';
+import type { OccurrencePlan } from '@/types';
 import { getTodayString, parseLocalDate } from './dates';
 import { getPreference, savePreference } from './store';
 import { bestStreakSoFar, currentStreak } from './streaks';
@@ -32,6 +34,7 @@ async function runRecurrenceCheckCore(): Promise<{ tasksReset: number; tasksResc
   for (const task of allTasks) {
     if (task.deletedAt) continue;
     if (await resetIfDue(task)) tasksReset++;
+    else await lapseIfPassed(task);
   }
 
   // Part of a task's score comes from how close its due date is, so a stored
@@ -99,20 +102,102 @@ async function resetIfDue(task: Task, today = getTodayString()): Promise<boolean
   // Roll the dates forward as well as the status. Leaving them on the
   // previous occurrence brought the task back already overdue, planned for a
   // day that had passed, where it sat in Triage for good.
-  const { dueDate, plannedDate } = nextRecurrenceDates(task);
+  // A task that counts towards a goal stops coming back once the goal is met.
+  if (task.projectId) {
+    const project = await db.projects.get(task.projectId);
+    if (project && project.kind === 'target') {
+      const progress = projectProgress(project, []);
+      if (progress.complete) return false;
+    }
+  }
+  // Plans made for this occurrence (moved, or skipped) are applied here.
+  const { dueDate, plannedDate, occurrencePlans, rotSince } = comeBack(task);
+  const domainPriority = task.domainId ? (await db.domains.get(task.domainId))?.priority : undefined;
+  const status: Task['status'] = plannedDate ? 'Planned' : 'Backlog';
+  const scores = calculateTaskScores({ ...task, status, dueDate, plannedDate, rotSince, slipCount: 0, lastCompleted: null }, domainPriority);
   await db.tasks.update(task.id, {
-    status: plannedDate ? 'Planned' : 'Backlog',
+    status,
     dueDate,
     plannedDate,
+    occurrencePlans,
     // The new cycle started when the last one was finished; its cycle
     // deadline and its neglect both count from there.
-    rotSince: task.lastCompleted,
+    rotSince,
     slipCount: 0,
+    importanceScore: scores.importanceScore,
+    urgencyScore: scores.urgencyScore,
+    taskScore: scores.combinedScore,
     lastCompleted: null,
     doneDate: null,
     updatedAt: new Date().toISOString(),
   });
   return true;
+}
+
+/**
+ * A daily or named-day task whose day went by undone: that occurrence lapses.
+ * Its plan for the gone day is dropped (not a missed plan, not a slip) and
+ * the plan for the occurrence now in hand, if one was made, takes its place.
+ */
+async function lapseIfPassed(task: Task, today = getTodayString()): Promise<void> {
+  if (recurrenceKind(task) !== 'lapsing') return;
+  if (task.status === 'Done' || task.status === 'Archived' || task.status === 'Blocked') return;
+  const live = liveOccurrenceDue(task, today);
+  const stalePlan = !!task.plannedDate && task.plannedDate < today;
+  const stalePlans = (task.occurrencePlans ?? []).some(p => p.due <= (live ?? today));
+  if (!stalePlan && !stalePlans) return;
+  const current = (task.occurrencePlans ?? []).find(p => p.due === live);
+  const plannedDate = current?.plannedDate ?? (stalePlan ? null : task.plannedDate);
+  await db.tasks.update(task.id, {
+    plannedDate,
+    status: task.status === 'Needs Details' ? task.status : plannedDate ? 'Planned' : 'Backlog',
+    occurrencePlans: (task.occurrencePlans ?? []).filter(p => live !== null && p.due > live),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Plan (or skip, or unplan) one occurrence of a repeating task.
+ *
+ * The occurrence in hand is the task itself, so planning it sets the task's
+ * planned date as usual. Later ones are kept as plans on the series and
+ * applied when it reaches them - one day moved without touching the rest.
+ */
+export async function planOccurrence(
+  taskId: string,
+  due: string,
+  change: { plannedDate?: string | null; skipped?: boolean },
+): Promise<void> {
+  const task = await db.tasks.get(taskId);
+  if (!task) return;
+  const live = liveOccurrenceDue(task);
+  if (due === live && task.status !== 'Done') {
+    if (!change.skipped) {
+      await updateTaskData(taskId, { plannedDate: change.plannedDate ?? null });
+      return;
+    }
+    // Skipping the occurrence in hand: the series moves straight on to the
+    // next one, as if this one had been dealt with - without recording it
+    // as done.
+    const next = comeBack({ ...task, status: 'Done', lastCompleted: `${due}T12:00:00` });
+    await db.tasks.update(taskId, {
+      status: next.plannedDate ? 'Planned' : 'Backlog',
+      dueDate: next.dueDate,
+      plannedDate: next.plannedDate,
+      occurrencePlans: next.occurrencePlans,
+      rotSince: recurrenceKind(task) === 'lapsing' ? task.rotSince ?? null : `${due}T12:00:00`,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  const others = (task.occurrencePlans ?? []).filter(p => p.due !== due);
+  const plan: OccurrencePlan = { due, plannedDate: change.plannedDate ?? null, ...(change.skipped ? { skipped: true } : {}) };
+  // A plan with nothing in it is the same as no plan.
+  const keep = plan.skipped || plan.plannedDate ? [...others, plan] : others;
+  await db.tasks.update(taskId, {
+    occurrencePlans: keep.sort((a, b) => a.due.localeCompare(b.due)),
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 const CYCLE_MIGRATION = 'migration.cycleStart';
@@ -487,6 +572,7 @@ export async function markTaskDone(taskId: string, onDate?: string): Promise<voi
     updatedAt: new Date().toISOString(),
   });
   await checkDependentsOf(taskId);
+  await logTowardsGoal(task, day, 1);
 
   // Finished on an earlier day, a recurring task may already be owed again:
   // a daily one ticked off for yesterday is due today. The daily check has
@@ -506,7 +592,9 @@ export async function undoTaskDone(taskId: string, onDate?: string): Promise<voi
   const task = await db.tasks.get(taskId);
   if (!task) return;
   const day = onDate ?? localDay(task.doneDate) ?? getTodayString();
+  const wasLogged = (task.completions ?? []).includes(day) || (task.status === 'Done' && localDay(task.doneDate) === day);
   const completions = (task.completions ?? []).filter(d => d !== day);
+  if (wasLogged) await logTowardsGoal(task, day, -1);
   const doneThatDay = task.status === 'Done' && localDay(task.doneDate) === day;
   if (!doneThatDay) {
     await db.tasks.update(taskId, { completions, updatedAt: new Date().toISOString() });
@@ -521,6 +609,21 @@ export async function undoTaskDone(taskId: string, onDate?: string): Promise<voi
     });
   }
   if (day !== getTodayString()) await recordDay(day, true);
+}
+
+/**
+ * A task in a goal project moves the goal when it is done: "read a page"
+ * adds a page to "Read a Book". Undoing takes it back off.
+ */
+async function logTowardsGoal(task: Task, day: string, sign: 1 | -1): Promise<void> {
+  if (!task.projectId) return;
+  const project = await db.projects.get(task.projectId);
+  if (!project || project.deletedAt || project.kind !== 'target') return;
+  const amount = (task.progressAmount && task.progressAmount > 0 ? task.progressAmount : 1) * sign;
+  await db.projects.update(project.id, {
+    progressLog: logProgress(project.progressLog, amount, task.taskName, day),
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 /** Local days a task was finished on, including any before the log existed. */
@@ -558,6 +661,7 @@ export async function createTask(taskData: {
   blockedBy?: BlockedByEntry[];
   followUpDate?: string | null;
   recurrenceEnd?: string | null;
+  progressAmount?: number | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -592,6 +696,7 @@ export async function createTask(taskData: {
     blockedBy: taskData.blockedBy ?? [],
     followUpDate: taskData.followUpDate ?? null,
     recurrenceEnd: taskData.recurrenceEnd ?? null,
+    progressAmount: taskData.progressAmount ?? null,
     rotSince: null,
     slipCount: 0,
     completions: [],

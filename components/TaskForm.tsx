@@ -33,6 +33,7 @@ export interface TaskFormData {
   projectId: string | null;
   blockedBy: BlockedByEntry[];
   followUpDate: string | null;
+  progressAmount: number | null;
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
@@ -64,7 +65,9 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     projectId: null,
     blockedBy: [],
     followUpDate: null,
+    progressAmount: null,
   });
+  const [blockedError, setBlockedError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
@@ -114,6 +117,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         projectId: task.projectId,
         blockedBy: task.blockedBy || [],
         followUpDate: task.followUpDate,
+        progressAmount: task.progressAmount ?? null,
       });
     }
   }, [task]);
@@ -121,6 +125,14 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.taskName.trim() || submitting) return;
+    // Blocked work is hidden from every calendar, so it needs something that
+    // will bring it back: a task that unblocks it when done, or a day to chase.
+    if (formData.status === 'Blocked' &&
+        !formData.blockedBy.some(b => b.type === 'task') && !formData.followUpDate) {
+      setBlockedError('Pick a task it is waiting on, or a day to chase it up — otherwise nothing brings it back.');
+      return;
+    }
+    setBlockedError(null);
     setSubmitting(true);
     try {
       await onSubmit(formData);
@@ -406,6 +418,20 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
               </option>
             ))}
           </select>
+          {(() => {
+            const goal = activeProjects.find(p => p.id === formData.projectId && p.kind === 'target');
+            if (!goal) return null;
+            return (
+              <div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted)]">
+                <span>Each time it is done, it adds</span>
+                <input type="number" min={1} aria-label="Amount each completion adds"
+                       value={formData.progressAmount ?? 1}
+                       onChange={(e) => setFormData(prev => ({ ...prev, progressAmount: Math.max(1, parseInt(e.target.value) || 1) }))}
+                       className="w-16 px-2 py-1 bg-[var(--background)] border border-[var(--border-color)] rounded text-center text-white" />
+                <span>{goal.targetUnit || 'done'} to {goal.name}</span>
+              </div>
+            );
+          })()}
         </div>
 
       {/* Recurrence */}
@@ -503,10 +529,24 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         )}
       </div>
 
+      {/* What this one unblocks - the other side of "blocked by". Knowing a
+          task is holding something else up is a reason to get it done. */}
+      {task && (() => {
+        const unblocks = allTasks.filter(t => !t.deletedAt && t.status === 'Blocked' &&
+          (t.blockedBy || []).some(b => b.type === 'task' && b.taskId === task.id));
+        if (!unblocks.length) return null;
+        return (
+          <p className="text-sm text-amber-300">
+            Unblocks: {unblocks.map(t => t.taskName).join(', ')}
+          </p>
+        );
+      })()}
+
       {/* Blocked By */}
       {showBlockedBySection && (
         <div>
           <label className={labelClass}>Blocked By</label>
+          {blockedError && <p className="text-sm text-red-400 mb-2" role="alert">{blockedError}</p>}
           <div className="mb-2">
             <label htmlFor="followUpDate" className="block text-xs text-[var(--muted)] mb-1">
               Chase it up on

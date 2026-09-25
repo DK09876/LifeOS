@@ -318,13 +318,21 @@ describe('a repeating task is due by the end of its cycle', () => {
   // Missed cycles pile up: a daily task three days behind is further behind
   // than a fortnightly one three days behind.
   it('grows with each missed cycle', () => {
-    const daily = pressure({ recurrence: 'Daily', lastCompleted: daysAgo(3) });
-    const biweekly = pressure({ recurrence: 'Biweekly', lastCompleted: daysAgo(16) });
-    expect(daily).toBeGreaterThan(biweekly);
+    const oneBehind = pressure({ recurrence: 'Weekly', lastCompleted: daysAgo(9) });
+    const twoBehind = pressure({ recurrence: 'Weekly', lastCompleted: daysAgo(16) });
+    expect(twoBehind).toBeGreaterThan(oneBehind);
+  });
+
+  // A daily task's missed days lapse: reading yesterday's page is not owed.
+  it('does not pile up for a daily or named-day task', () => {
+    expect(pressure({ recurrence: 'Daily', lastCompleted: daysAgo(5) })).toBe(0);
+    expect(pressure({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], lastCompleted: daysAgo(9) })).toBe(0);
+    expect(pressure({ recurrence: 'Daily', createdAt: daysAgo(200) })).toBe(0);
+    expect(pressure({ recurrence: 'Daily', plannedDate: dueIn(-2) })).toBe(0);
   });
 
   it('outgrows neglect but never a real overdue deadline', () => {
-    const behind = pressure({ recurrence: 'Daily', lastCompleted: daysAgo(30) });
+    const behind = pressure({ recurrence: 'Weekly', lastCompleted: daysAgo(60) });
     expect(behind).toBe(49);
     expect(behind).toBeGreaterThan(pressure({ createdAt: daysAgo(400) }));
     expect(behind).toBeLessThan(pressure({ dueDate: dueIn(-1) }));

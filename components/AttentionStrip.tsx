@@ -20,18 +20,21 @@ interface Props {
   pressingBlocked: Task[];
   triageNag: Task[];
   yesterdayCount: number;
+  /** Blocked with no task to wait on and no date to chase: nothing will bring these back. */
+  stranded?: Task[];
   onEdit: (task: Task) => void;
 }
 
-export default function AttentionStrip({ pressingBlocked, triageNag, yesterdayCount, onEdit }: Props) {
+export default function AttentionStrip({ pressingBlocked, triageNag, yesterdayCount, stranded = [], onEdit }: Props) {
   const [open, setOpen] = useState(false);
-  if (!pressingBlocked.length && !triageNag.length && !yesterdayCount) return null;
+  if (!pressingBlocked.length && !triageNag.length && !yesterdayCount && !stranded.length) return null;
 
   // Today is a dashboard for today, so this stays one line until opened:
   // a chip per kind of thing, coloured by how much it matters.
   const chips = [
     pressingBlocked.length ? { text: `${pressingBlocked.length} blocked & pressing`, cls: 'bg-red-500/15 text-red-300' } : null,
     triageNag.length ? { text: `${triageNag.length} to triage`, cls: 'bg-yellow-500/15 text-yellow-300' } : null,
+    stranded.length ? { text: `${stranded.length} blocked, nothing to chase`, cls: 'bg-yellow-500/15 text-yellow-300' } : null,
     yesterdayCount ? { text: `${yesterdayCount} from yesterday`, cls: 'bg-[var(--card-hover)] text-[var(--muted)]' } : null,
   ].filter((c): c is { text: string; cls: string } => c !== null);
 
@@ -63,6 +66,20 @@ export default function AttentionStrip({ pressingBlocked, triageNag, yesterdayCo
                     <span className="text-xs text-red-300 flex-shrink-0">
                       due {format(parseLocalDate(task.dueDate!), 'EEE d MMM')}
                     </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {stranded.length > 0 && (
+            <div>
+              <p className="text-xs text-yellow-300 mb-1">Blocked with no task to wait on and no follow-up date — give each one, or unblock it</p>
+              <div className="space-y-1">
+                {stranded.map(task => (
+                  <button key={task.id} onClick={() => onEdit(task)}
+                          className="w-full rounded bg-[var(--background)] px-2 py-1.5 text-left text-sm text-white hover:bg-[var(--card-hover)] truncate">
+                    {task.taskName}
                   </button>
                 ))}
               </div>
