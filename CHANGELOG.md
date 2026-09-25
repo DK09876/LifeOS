@@ -2,6 +2,15 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.9.2] - 2026-09-25
+
+### Sync
+- Fixed a device with an out-of-date copy silently undoing changes made elsewhere. A save sent the whole record from whatever copy the device held, so a phone waking from the background could, for example, put a just-finished task back in the backlog. Saves now send only what changed and are refused if the record has changed since the device last saw it; the app then shows the latest and asks you to try again
+- The app refreshes as soon as it comes back into view, instead of waiting for its next poll
+
+### Today
+- Unplanning a missed plan can be undone from the toast — the buttons sit close together on a phone
+
 ## [0.9.1] - 2026-09-24
 
 ### On a phone

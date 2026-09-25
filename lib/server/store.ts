@@ -389,3 +389,34 @@ export function markPushed(userId: string, key: string) {
 export function prunePushed(olderThanIso: string) {
   connect().run('DELETE FROM push_sent WHERE sentAt < ?', [olderThanIso]);
 }
+
+export type PatchResult = 'ok' | 'missing' | 'conflict';
+
+/**
+ * Merge changed fields into one stored record.
+ *
+ * Clients used to send the whole record, built from whatever copy they held.
+ * A phone waking from the background with an old copy could then overwrite
+ * newer changes it had never seen - a task finished on one device quietly
+ * un-finished by another. Now only the changed fields travel, and `base` is
+ * the updatedAt the client's copy had: if the stored record has moved on
+ * since, the patch is refused and the client refreshes instead.
+ */
+export function patchRecord(
+  userId: string,
+  collection: Collection,
+  id: string,
+  changes: Record<string, unknown>,
+  base: string | null | undefined,
+): PatchResult {
+  const conn = connect();
+  const row = conn.get(
+    'SELECT data, updatedAt FROM records WHERE userId=? AND collection=? AND id=?',
+    [userId, collection, id],
+  ) as { data: string; updatedAt: string | null } | undefined;
+  if (!row) return 'missing';
+  if (base !== undefined && (row.updatedAt ?? null) !== (base ?? null)) return 'conflict';
+  const merged = { ...(JSON.parse(row.data) as StoredRecord), ...changes, id } as StoredRecord;
+  putRecord(userId, collection, merged);
+  return 'ok';
+}

@@ -173,3 +173,31 @@ describe('preferences', () => {
     expect(store.listUsers().map((u) => u.id)).not.toContain('_system');
   });
 });
+
+describe('patchRecord', () => {
+  // The bug: a phone waking with an old copy wrote the whole record back and
+  // un-finished a task that had just been finished on the server.
+  it('merges only the changed fields into the stored record', () => {
+    store.putRecord('dk', 'tasks', task('a', { notes: 'keep me', status: 'Done' }));
+    expect(store.patchRecord('dk', 'tasks', 'a', { plannedDate: '2026-09-26', updatedAt: '2026-08-02T00:00:00.000Z' }, '2026-08-01T00:00:00.000Z')).toBe('ok');
+    const [row] = store.readPayload('dk').tasks!;
+    expect(row).toMatchObject({ notes: 'keep me', status: 'Done', plannedDate: '2026-09-26', updatedAt: '2026-08-02T00:00:00.000Z' });
+  });
+
+  it('refuses a patch made against a copy that has since changed', () => {
+    store.putRecord('dk', 'tasks', task('a', { status: 'Done', updatedAt: '2026-08-05T00:00:00.000Z' }));
+    expect(store.patchRecord('dk', 'tasks', 'a', { status: 'Backlog' }, '2026-08-01T00:00:00.000Z')).toBe('conflict');
+    expect(store.readPayload('dk').tasks![0].status).toBe('Done');
+  });
+
+  it('accepts a patch that does not bump updatedAt, like the daily rescore', () => {
+    store.putRecord('dk', 'tasks', task('a'));
+    expect(store.patchRecord('dk', 'tasks', 'a', { taskScore: 40 }, '2026-08-01T00:00:00.000Z')).toBe('ok');
+    expect(store.patchRecord('dk', 'tasks', 'a', { taskScore: 41 }, '2026-08-01T00:00:00.000Z')).toBe('ok');
+  });
+
+  it('keeps profiles apart and reports missing records', () => {
+    store.putRecord('dk', 'tasks', task('a'));
+    expect(store.patchRecord('haley', 'tasks', 'a', { status: 'Done' }, null)).toBe('missing');
+  });
+});

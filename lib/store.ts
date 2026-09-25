@@ -128,8 +128,19 @@ export async function hydrate(): Promise<void> {
  * is a single request whose body matches the last one, so it costs one
  * round trip and nothing else.
  */
+let onVisible: (() => void) | null = null;
+
 export function startLiveUpdates(intervalMs = 2000): () => void {
   stopLiveUpdates();
+  // Coming back to the app - especially a phone waking the Home Screen app -
+  // refresh at once. Waiting for the next tick left a window where a tap was
+  // acted on against whatever the screen showed when it went to sleep.
+  if (typeof document !== 'undefined') {
+    onVisible = () => { if (!document.hidden && writesInFlight === 0) hydrate().catch(() => {}); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+  }
   pollTimer = setInterval(() => {
     // Skip while hidden (nobody is looking) or mid-write (the optimistic
     // change is newer than anything the server can tell us).
@@ -144,6 +155,12 @@ export function stopLiveUpdates() {
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
+  }
+  if (onVisible && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', onVisible);
+    window.removeEventListener('pageshow', onVisible);
+    onVisible = null;
   }
 }
 
@@ -172,6 +189,63 @@ async function writeRecords(collection: CollectionName, records: Row[], clear = 
     throw error;
   } finally {
     writesInFlight--;
+  }
+  if (!response.ok) {
+    cache[collection] = previous;
+    notify();
+    throw new Error(`Save failed (HTTP ${response.status})`);
+  }
+  // The next poll must not restore the pre-write body from cache.
+  lastBody = '';
+}
+
+/** A save refused because the record changed on another device first. */
+export class StaleCopyError extends Error {
+  constructor() {
+    super('That changed on another device — refreshed, please try again.');
+    this.name = 'StaleCopyError';
+  }
+}
+
+/**
+ * Send only what changed, against the version this device last saw.
+ *
+ * See patchRecord on the server: a whole-record write from an out-of-date
+ * copy used to silently undo changes made elsewhere. On a conflict the copy
+ * is refreshed and the caller told, rather than guessing whose change wins.
+ */
+async function patchRecordOnServer(collection: CollectionName, existing: Row, changes: Record<string, unknown>) {
+  const profile = getProfile();
+  if (!profile) throw new Error('No profile selected');
+
+  const previous = cache[collection] ? [...cache[collection]] : [];
+  applyLocally(collection, [{ ...existing, ...changes } as Row], false);
+
+  writesInFlight++;
+  let response: Response;
+  try {
+    response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collection,
+        patch: { id: existing.id, changes, base: (existing.updatedAt as string | null | undefined) ?? null },
+      }),
+    });
+  } catch (error) {
+    cache[collection] = previous;
+    notify();
+    throw error;
+  } finally {
+    writesInFlight--;
+  }
+  if (response.status === 409) {
+    cache[collection] = previous;
+    lastBody = '';
+    await hydrate().catch(() => {});
+    notify();
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('lifeos:stale'));
+    throw new StaleCopyError();
   }
   if (!response.ok) {
     cache[collection] = previous;
@@ -283,8 +357,7 @@ export function makeTable<T extends HasId>(collection: CollectionName): Table<T>
     async update(id, changes) {
       const existing = rows().find((row) => row.id === id);
       if (!existing) return 0;
-      // Whole-record write: the server replaces rows, so send the merge.
-      await writeRecords(collection, [{ ...existing, ...changes } as unknown as Row]);
+      await patchRecordOnServer(collection, existing as unknown as Row, changes as Record<string, unknown>);
       return 1;
     },
     async delete(id) {

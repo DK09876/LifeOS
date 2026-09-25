@@ -68,6 +68,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // A save refused because another device changed the same thing first
+  // (see patchRecordOnServer). Said once, here, whichever page it came from.
+  useEffect(() => {
+    const onStale = () => showToast('That changed on another device. The latest is showing now — try again.', 'info', { duration: 5000 });
+    window.addEventListener('lifeos:stale', onStale);
+    return () => window.removeEventListener('lifeos:stale', onStale);
+  }, [showToast]);
+
   const typeStyles: Record<ToastType, string> = {
     success: 'bg-green-600 text-white',
     error: 'bg-red-600 text-white',

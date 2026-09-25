@@ -95,7 +95,20 @@ export default function TodayPage() {
   }, [tasks, todayStr]);
 
   async function rescheduleMissed(taskId: string, date: string | null) {
-    try { await updateTaskData(taskId, { plannedDate: date }); }
+    const before = tasks.find(t => t.id === taskId);
+    try {
+      await updateTaskData(taskId, { plannedDate: date });
+      // These buttons sit close together on a phone; unplanning is the one
+      // whose effect you would not notice, so it can be taken back.
+      if (date === null && before) {
+        showToast(`Unplanned “${before.taskName}”`, 'info', {
+          action: {
+            label: 'Undo',
+            onClick: () => { void updateTaskData(taskId, { plannedDate: before.plannedDate, slipCount: before.slipCount ?? 0 }); },
+          },
+        });
+      }
+    }
     catch { showToast('Could not move that task', 'error'); }
   }
   // Blocked work whose chase-up day has arrived.

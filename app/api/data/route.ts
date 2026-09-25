@@ -18,6 +18,7 @@ import {
   clearCollection,
   replaceAllForUser,
   deleteRecord,
+  patchRecord,
   putRecords,
   readPayload,
   setPreference,
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
     clear?: boolean;
     clearAll?: boolean;
     replaceAll?: Partial<Record<Collection, StoredRecord[]>>;
+    patch?: { id?: string; changes?: Record<string, unknown>; base?: string | null };
   };
   try {
     body = await request.json();
@@ -85,6 +87,16 @@ export async function POST(request: Request) {
     if (body.collection) {
       if (!isCollection(body.collection)) {
         return NextResponse.json({ error: 'unknown collection' }, { status: 400 });
+      }
+      if (body.patch) {
+        const { id, changes, base } = body.patch;
+        if (!id || !changes || typeof changes !== 'object') {
+          return NextResponse.json({ error: 'patch needs id and changes' }, { status: 400 });
+        }
+        const result = patchRecord(profile, body.collection, id, changes, base);
+        if (result === 'conflict') return NextResponse.json({ error: 'changed elsewhere' }, { status: 409 });
+        if (result === 'missing') return NextResponse.json({ error: 'not found' }, { status: 404 });
+        return NextResponse.json({ ok: true });
       }
       if (body.clear) clearCollection(profile, body.collection);
       if (body.records?.length) putRecords(profile, body.collection, body.records);
