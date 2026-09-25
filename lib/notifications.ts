@@ -17,10 +17,10 @@ import { addDays, differenceInCalendarDays, endOfMonth, format } from 'date-fns'
 import type { Event, Habit, Task } from '@/types';
 import { getTodayString, parseLocalDate, toDateString } from './dates';
 import {
-  checkNeedsReset, currentEventDate, getStartOfWeek, isHabitDueOn, localDay, nextRecurrenceDates,
+  checkNeedsReset, comeBack, currentEventDate, getStartOfWeek, isHabitDueOn, localDay,
 } from './recurrence';
 import { isOnToday } from './schedule';
-import { isOverdue, isPressingBlocked } from './scoring';
+import { isMissedPlan, isOverdue, isPressingBlocked } from './scoring';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
 import { milestoneLabel } from './milestones';
 
@@ -120,8 +120,8 @@ export function needsTriageNag(task: Pick<Task, 'status' | 'createdAt' | 'delete
 export function rolledOver<T extends Task>(tasks: T[], today = getTodayString()): T[] {
   return tasks.map((task) => {
     if (task.deletedAt || !checkNeedsReset(task, today)) return task;
-    const { dueDate, plannedDate } = nextRecurrenceDates(task);
-    return { ...task, status: plannedDate ? 'Planned' : 'Backlog', dueDate, plannedDate, doneDate: null, lastCompleted: null };
+    const { dueDate, plannedDate, occurrencePlans } = comeBack(task);
+    return { ...task, status: plannedDate ? 'Planned' : 'Backlog', dueDate, plannedDate, occurrencePlans, doneDate: null, lastCompleted: null };
   });
 }
 
@@ -174,9 +174,7 @@ export function buildNotices(input: NoticeInput): Notice[] {
   // --- the state of things this morning --------------------------------
   const overdue = tasks.filter((t) => isOverdue(t, today) && t.status !== 'Blocked')
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''));
-  const missed = tasks.filter((t) =>
-    t.status !== 'Done' && t.status !== 'Archived' && t.status !== 'Blocked' &&
-    !!t.plannedDate && t.plannedDate < today && !(t.dueDate && t.dueDate < today));
+  const missed = tasks.filter((t) => isMissedPlan(t, today) && !(t.dueDate && t.dueDate < today));
   const followUps = tasks.filter((t) => t.status === 'Blocked' && !!t.followUpDate && t.followUpDate <= today);
   const pressing = tasks.filter((t) => isPressingBlocked(t, today));
   const triage = tasks.filter((t) => needsTriageNag(t, today));

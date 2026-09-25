@@ -6,12 +6,14 @@ import Modal from '@/components/Modal';
 import TaskForm, { TaskFormData } from '@/components/TaskForm';
 import EventForm, { EventFormData } from '@/components/EventForm';
 import EisenhowerMatrix from '@/components/EisenhowerMatrix';
-import PlanSheet from '@/components/PlanSheet';
+import PlanSheet, { PlanTarget } from '@/components/PlanSheet';
+import { useToast } from '@/components/Toast';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
-import { createEvent, createTask, deleteEvent, markTaskDone, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
-import { projectOccurrences } from '@/lib/recurrence';
-import { cyclesMissed, isPressingBlocked } from '@/lib/scoring';
+import { createEvent, createTask, deleteEvent, markTaskDone, planOccurrence, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
+import { liveOccurrenceDue, recurrenceKind, upcomingOccurrences, Occurrence } from '@/lib/recurrence';
+import { occurrenceKey } from '@/lib/suggest';
+import { cyclesMissed, isMissedPlan, isPressingBlocked, isStrandedBlocked } from '@/lib/scoring';
 import { needsTriageNag } from '@/lib/notifications';
 import { Task, Event } from '@/types';
 import { FilterPreset } from '@/lib/db';
@@ -131,8 +133,24 @@ export default function PlanPage() {
     if (tab && ['needsDetails', 'blocked', 'missed', 'overdue', 'archived'].includes(tab)) setTriageTab(tab as TriageTab);
   }, []);
   const energy = useEnergySettings();
+  const { showToast } = useToast();
   // "Plan for…" - the touch-friendly alternative to dragging.
-  const [planTask, setPlanTask] = useState<Task | null>(null);
+  const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
+  // A daily or named-day task is planned one day's occurrence at a time, so
+  // its sheet is for the occurrence in hand rather than for the whole task.
+  const setPlanTask = (task: Task | null) => {
+    if (!task) { setPlanTarget(null); return; }
+    if (recurrenceKind(task) === 'lapsing' && task.status !== 'Done') {
+      const due = liveOccurrenceDue(task) ?? getTodayString();
+      setPlanTarget({ task, occurrence: { due, windowStart: due, plannedDate: task.plannedDate, skipped: false } });
+      return;
+    }
+    setPlanTarget({ task });
+  };
+  const planOcc = (occ: Occurrence) => setPlanTarget({
+    task: occ.task,
+    occurrence: { due: occ.due, windowStart: occ.windowStart, plannedDate: occ.plannedDate, skipped: occ.skipped },
+  });
   const [unscheduledOpen, setUnscheduledOpen] = useState(true);
   const [showPastDays, setShowPastDays] = useState(false);
   const [calendarView, setCalendarView] = useState<CalendarView>('week');
@@ -279,10 +297,7 @@ export default function PlanPage() {
     return {
       needsDetails: tasks.filter(t => t.status === 'Needs Details'),
       blocked: tasks.filter(t => t.status === 'Blocked'),
-      missed: activeTasks.filter(t => {
-        if (!t.plannedDate) return false;
-        return isBefore(startOfDay(new Date(t.plannedDate + 'T00:00:00')), today);
-      }),
+      missed: activeTasks.filter(t => isMissedPlan(t, todayStr)),
       missedEvents: events.filter(e => {
         if (e.date >= todayStr) return false;
         // Event is missed if lastCompleted doesn't match its date
@@ -451,6 +466,7 @@ export default function PlanPage() {
     missed: triageTasks.missed.length,
     pressing: tasks.filter(t => isPressingBlocked(t, todayStr)).length,
     followUps: tasks.filter(t => t.status === 'Blocked' && !!t.followUpDate && t.followUpDate <= todayStr).length,
+    stranded: tasks.filter(t => isStrandedBlocked(t)).length,
     needsDetails: triageTasks.needsDetails.length,
     nagging: tasks.filter(t => needsTriageNag(t, todayStr)).length,
   }), [triageTasks, tasks, todayStr]);
@@ -487,18 +503,19 @@ export default function PlanPage() {
   const setSuggestRange = (update: (r: { from: number; to: number }) => { from: number; to: number }) =>
     setRangeByWeek(prev => ({ ...prev, [suggestWeek ?? 0]: update(suggestRange) }));
 
-  // Recurring tasks: every later occurrence of each, by day, for the days on
-  // screen. Drawn faintly, and reserved against the suggester's budget.
+  // Recurring tasks: every later occurrence of each, by the day it sits on,
+  // for the days on screen. Unplanned ones are drawn faintly and cost
+  // nothing; planned ones count against their day like any task.
   const ghostsByDay = useMemo(() => {
-    const map = new Map<string, Task[]>();
+    const map = new Map<string, Occurrence[]>();
     if (!calendarDays.length) return map;
     const from = toDateString(calendarDays[0]);
     const to = toDateString(calendarDays[calendarDays.length - 1]);
     for (const task of tasks) {
       if (task.recurrence === 'None') continue;
-      for (const day of projectOccurrences(task, from, to, todayStr)) {
-        if (day < todayStr) continue;
-        map.set(day, [...(map.get(day) ?? []), task]);
+      for (const occ of upcomingOccurrences(task, to, todayStr)) {
+        if (occ.date < from || occ.date > to || occ.date < todayStr) continue;
+        map.set(occ.date, [...(map.get(occ.date) ?? []), occ]);
       }
     }
     return map;
@@ -515,11 +532,13 @@ export default function PlanPage() {
     const habitAPByDay = habitLoadByDay(habits, span, start);
     const rangeFrom = toDateString(start);
     const rangeTo = toDateString(addDays(weekStartDate, to));
+    // Only occurrences someone has planned take effort from their day.
     const recurringAP = new Map<string, number>();
     for (const task of tasks) {
       if (task.recurrence === 'None') continue;
-      for (const day of projectOccurrences(task, rangeFrom, rangeTo, todayStr)) {
-        recurringAP.set(day, (recurringAP.get(day) ?? 0) + (parseInt(task.actionPoints || '0') || suggestControls.defaultAP));
+      for (const occ of upcomingOccurrences(task, rangeTo, todayStr)) {
+        if (!occ.plannedDate || occ.skipped || occ.plannedDate < rangeFrom || occ.plannedDate > rangeTo) continue;
+        recurringAP.set(occ.plannedDate, (recurringAP.get(occ.plannedDate) ?? 0) + (parseInt(task.actionPoints || '0') || suggestControls.defaultAP));
       }
     }
 
@@ -591,16 +610,32 @@ export default function PlanPage() {
     if (!draggedTaskId) return;
 
     const plannedDate = format(date, 'yyyy-MM-dd');
-    await updateTaskData(draggedTaskId, { plannedDate });
+    const { taskId, due } = occurrenceKey(draggedTaskId);
     setDraggedTaskId(null);
+    const task = tasks.find(t => t.id === taskId);
+    if (!due) {
+      if (task && recurrenceKind(task) === 'lapsing' && task.status !== 'Done' && plannedDate !== liveOccurrenceDue(task)) {
+        showToast('A daily occurrence belongs to its own day — plan or skip it there.', 'info');
+        return;
+      }
+      await updateTaskData(taskId, { plannedDate });
+      return;
+    }
+    if (task && recurrenceKind(task) === 'lapsing' && plannedDate !== due) {
+      showToast('A daily occurrence belongs to its own day — plan or skip it there.', 'info');
+      return;
+    }
+    await planOccurrence(taskId, due, { plannedDate });
   };
 
   const handleDropOnUnscheduled = async (e: DragEvent) => {
     e.preventDefault();
     if (!draggedTaskId) return;
 
-    await updateTaskData(draggedTaskId, { plannedDate: null });
+    const { taskId, due } = occurrenceKey(draggedTaskId);
     setDraggedTaskId(null);
+    if (due) await planOccurrence(taskId, due, { plannedDate: null });
+    else await updateTaskData(taskId, { plannedDate: null });
   };
 
   const handleDragEnd = () => {
@@ -717,9 +752,16 @@ export default function PlanPage() {
   };
 
   // Accept the whole proposal at once; pinning is for keeping some of it.
+  // A suggestion is a task, or one occurrence of a repeating one ("id@due").
+  const applySuggestion = async (key: string, dateStr: string) => {
+    const { taskId, due } = occurrenceKey(key);
+    if (due) await planOccurrence(taskId, due, { plannedDate: dateStr });
+    else await updateTaskData(taskId, { plannedDate: dateStr });
+  };
+
   const handleAcceptAllSuggestions = async () => {
-    for (const [taskId, dateStr] of suggestedAssignments) {
-      await updateTaskData(taskId, { plannedDate: dateStr });
+    for (const [key, dateStr] of suggestedAssignments) {
+      await applySuggestion(key, dateStr);
     }
     setSuggestedAssignments(new Map());
     setPinnedTaskIds(new Set());
@@ -727,11 +769,9 @@ export default function PlanPage() {
   };
 
   const handleApplySuggestions = async () => {
-    for (const taskId of pinnedTaskIds) {
-      const dateStr = suggestedAssignments.get(taskId);
-      if (dateStr) {
-        await updateTaskData(taskId, { plannedDate: dateStr });
-      }
+    for (const key of pinnedTaskIds) {
+      const dateStr = suggestedAssignments.get(key);
+      if (dateStr) await applySuggestion(key, dateStr);
     }
     setSuggestedAssignments(new Map());
     setPinnedTaskIds(new Set());
@@ -960,7 +1000,7 @@ export default function PlanPage() {
       </div>
 
       {/* Attention bar: what Triage holds that should not wait to be found */}
-      {(attention.overdue + attention.missed + attention.pressing + attention.followUps + attention.nagging) > 0 && (
+      {(attention.overdue + attention.missed + attention.pressing + attention.followUps + attention.nagging + attention.stranded) > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {attention.overdue > 0 && (
             <button onClick={() => openTriage('overdue')} className="px-2.5 py-1 rounded-full text-xs bg-red-500/15 text-red-300 hover:bg-red-500/25">
@@ -975,6 +1015,11 @@ export default function PlanPage() {
           {attention.missed > 0 && (
             <button onClick={() => openTriage('missed')} className="px-2.5 py-1 rounded-full text-xs bg-orange-500/15 text-orange-300 hover:bg-orange-500/25">
               {attention.missed} missed {attention.missed === 1 ? 'plan' : 'plans'}
+            </button>
+          )}
+          {attention.stranded > 0 && (
+            <button onClick={() => openTriage('blocked')} className="px-2.5 py-1 rounded-full text-xs bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25">
+              {attention.stranded} blocked with nothing to chase
             </button>
           )}
           {attention.followUps > 0 && (
@@ -1584,13 +1629,13 @@ export default function PlanPage() {
                   const hideOnPhone = !showPastDays && dayStr < todayStr && calendarDays.some(d => format(d, 'yyyy-MM-dd') >= todayStr);
 
                   // Get suggested tasks for this day
-                  const suggestedTaskIds: string[] = [];
-                  for (const [taskId, dateStr] of suggestedAssignments) {
-                    if (dateStr === dayStr) suggestedTaskIds.push(taskId);
+                  const suggestedTasks: Array<Task & { suggestionKey: string; isOccurrence: boolean }> = [];
+                  for (const [key, dateStr] of suggestedAssignments) {
+                    if (dateStr !== dayStr) continue;
+                    const { taskId, due } = occurrenceKey(key);
+                    const task = tasks.find(t => t.id === taskId);
+                    if (task) suggestedTasks.push({ ...task, suggestionKey: key, isOccurrence: !!due });
                   }
-                  const suggestedTasks = suggestedTaskIds
-                    .map(id => tasks.find(t => t.id === id))
-                    .filter(Boolean) as Task[];
 
                   // Calculate AP for footer
                   const taskAP = dayTasks.reduce((sum, t) => sum + getDisplayAP(t.task), 0);
@@ -1627,23 +1672,34 @@ export default function PlanPage() {
                         {dayEvents.map(event => renderCalendarEvent(event))}
                         {dayTasks.map(({ task, kind }) => renderCalendarTask(task, kind))}
 
-                        {/* Later occurrences of recurring tasks: not tasks of
-                            their own, so faint and not draggable. */}
-                        {ghosts.map(task => (
-                          <div key={`ghost-${task.id}`}
-                               onClick={() => handleEditTask(task)}
-                               title="A later occurrence of a recurring task"
-                               className="rounded p-1.5 border border-dotted border-cyan-500/40 opacity-60 cursor-pointer hover:opacity-90">
-                            <p className="text-cyan-200 text-xs line-clamp-2">↻ {task.taskName}</p>
+                        {/* Later occurrences of repeating tasks. Unplanned ones
+                            are faint and cost nothing; planned ones are solid
+                            and count against the day. Drag or 📅 to plan one. */}
+                        {ghosts.map(occ => (
+                          <div key={occ.key}
+                               draggable={!occ.skipped}
+                               onDragStart={(e) => handleDragStart(e, occ.key)}
+                               onDragEnd={handleDragEnd}
+                               onClick={() => planOcc(occ)}
+                               title={occ.skipped ? 'Skipped' : occ.plannedDate ? 'A planned occurrence of a repeating task' : 'An upcoming occurrence — tap to plan or skip it'}
+                               className={`group/ghost rounded p-1.5 cursor-pointer flex items-start gap-1 ${
+                                 occ.skipped ? 'border border-dotted border-[var(--border-color)] opacity-40'
+                                 : occ.plannedDate ? 'bg-cyan-500/10 border border-cyan-500/50'
+                                 : 'border border-dotted border-cyan-500/40 opacity-60 hover:opacity-90'
+                               } ${draggedTaskId === occ.key ? 'opacity-30' : ''}`}>
+                            <p className={`flex-1 text-sm md:text-xs line-clamp-2 ${occ.skipped ? 'line-through text-[var(--muted)]' : 'text-cyan-200'}`}>
+                              ↻ {occ.task.taskName}
+                            </p>
+                            {!occ.skipped && !occ.plannedDate && <span className="text-[10px] text-cyan-300/80 flex-shrink-0">plan</span>}
                           </div>
                         ))}
 
                         {/* Suggested tasks (inline with dashed green border) */}
                         {suggestedTasks.map(task => {
-                          const isPinned = pinnedTaskIds.has(task.id);
+                          const isPinned = pinnedTaskIds.has(task.suggestionKey);
                           return (
                             <div
-                              key={task.id}
+                              key={task.suggestionKey}
                               className={`rounded p-1.5 transition-colors ${
                                 isPinned
                                   ? 'border-2 border-green-500 bg-green-500/10'
@@ -1652,7 +1708,7 @@ export default function PlanPage() {
                             >
                               <div className="flex items-start gap-1">
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-white text-xs line-clamp-2">{task.taskName}</p>
+                                  <p className="text-white text-xs line-clamp-2">{task.recurrence !== 'None' ? '↻ ' : ''}{task.taskName}</p>
                                   <div className="flex items-center gap-1 mt-0.5">
                                     <span className={`w-1.5 h-1.5 rounded-full ${getPriorityDotColor(task.taskPriority)}`}></span>
                                     {task.domain?.icon && <span className="text-[10px]">{task.domain.icon}</span>}
@@ -1660,7 +1716,7 @@ export default function PlanPage() {
                                 </div>
                                 <div className="flex items-center gap-0.5 flex-shrink-0">
                                   <button
-                                    onClick={() => handleTogglePin(task.id)}
+                                    onClick={() => handleTogglePin(task.suggestionKey)}
                                     className={`p-0.5 rounded text-[10px] transition-colors ${
                                       isPinned
                                         ? 'text-green-400 hover:text-green-300'
@@ -1671,7 +1727,7 @@ export default function PlanPage() {
                                     &#x1f4cc;
                                   </button>
                                   <button
-                                    onClick={() => handleRemoveSuggestion(task.id)}
+                                    onClick={() => handleRemoveSuggestion(task.suggestionKey)}
                                     className="p-0.5 rounded text-[10px] text-[var(--muted)] hover:text-red-400 transition-colors"
                                     title="Remove suggestion"
                                   >
@@ -1708,7 +1764,7 @@ export default function PlanPage() {
                             <span title="Reserved for habits"> +{habitAPForDay}h</span>
                           )}
                           {recurringAPForDay > 0 && (
-                            <span title="Reserved for later occurrences of recurring tasks"> +{recurringAPForDay}↻</span>
+                            <span title="Planned occurrences of repeating tasks"> +{recurringAPForDay}↻</span>
                           )}
                         </div>
                       )}
@@ -1883,7 +1939,7 @@ export default function PlanPage() {
           onCancel={() => { setIsEventModalOpen(false); setEditingEvent(null); setSelectedEventDate(null); }}
         />
       </Modal>
-      <PlanSheet task={planTask} onClose={() => setPlanTask(null)} />
+      <PlanSheet target={planTarget} onClose={() => setPlanTarget(null)} />
     </div>
   );
 }

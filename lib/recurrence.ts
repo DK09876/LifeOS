@@ -9,7 +9,7 @@
 
 import { addDays, addMonths, addYears, differenceInCalendarDays } from 'date-fns';
 
-import type { Event, Habit, Task } from '@/types';
+import type { Event, Habit, OccurrencePlan, Task } from '@/types';
 import { getTodayString, parseLocalDate, parseLocalDateTime, toDateString } from './dates';
 
 /** The local day a stored timestamp or date-only string falls on. */
@@ -173,6 +173,7 @@ export function nextOnDate(task: Task): string | null {
     if (seriesEnded(task)) return null;
     return followingOccurrence(task);
   }
+  if (recurrenceKind(task) === 'lapsing') return task.plannedDate ?? liveOccurrenceDue(task);
   return task.plannedDate ?? task.dueDate ?? cycleDueDate(task);
 }
 
@@ -224,41 +225,191 @@ export function checkNeedsReset(task: Task, today = getTodayString()): boolean {
 }
 
 /**
- * The later occurrences of a repeating task that fall inside [from, to].
+ * The three ways a task can repeat, and why they behave differently.
  *
- * A recurring task is one row that resets, so every planning view used to see
- * a single occurrence: "read a page" daily looked like one page a week to the
- * planner. These are the rest - drawn faintly and reserved against the day's
- * energy, but not separate tasks you can lose track of.
- *
- * The occurrence in hand is excluded (it is the real task and is drawn as
- * one). Overdue work is projected as if done today, which is the soonest the
- * next one could follow it.
+ *   fixed    - a real deadline on a fixed period: rent on the 1st, a
+ *              fortnightly return. Counted from the due date, never moves,
+ *              and a late one is overdue like any deadline.
+ *   cycle    - "every two weeks, from when I last did it": water the plants.
+ *              Due one interval after the last time; do it early and the
+ *              next one moves earlier with it. Missed cycles pile up.
+ *   lapsing  - every day, or on named days: read a page, gym prep Mon/Wed/Fri.
+ *              Each occurrence belongs to its day. Miss one and it is simply
+ *              gone - tomorrow's is a new one, not a debt.
  */
-export function projectOccurrences(task: Task, from: string, to: string, today = getTodayString()): string[] {
-  if (task.deletedAt || task.recurrence === 'None' || task.status === 'Archived') return [];
-  if (task.status === 'Blocked') return [];
+export type RecurrenceKind = 'none' | 'lapsing' | 'cycle' | 'fixed';
 
+export function recurrenceKind(
+  task: Pick<Task, 'recurrence' | 'recurrenceAnchor' | 'recurrenceWeekdays' | 'dueDate'>,
+): RecurrenceKind {
+  if (task.recurrence === 'None') return 'none';
+  if (task.recurrenceAnchor === 'schedule' && task.dueDate) return 'fixed';
+  if (task.dueDate) return 'cycle';
+  if (task.recurrence === 'Daily' || (task.recurrence === 'Weekly' && task.recurrenceWeekdays?.length)) return 'lapsing';
+  return 'cycle';
+}
+
+function planFor(plans: OccurrencePlan[] | null | undefined, due: string): OccurrencePlan | undefined {
+  return (plans ?? []).find((p) => p.due === due);
+}
+
+/**
+ * The first day on or after `day` that a lapsing task lands on. With
+ * `pastSkips`, skipped days are passed over - for finding the occurrence in
+ * hand; listings keep them so a skip can be seen and undone.
+ */
+function lapsingDayFrom(
+  task: Pick<Task, 'recurrence' | 'recurrenceWeekdays' | 'occurrencePlans'>,
+  day: string,
+  pastSkips = false,
+): string {
+  let cursor = day;
+  for (let guard = 0; guard < 60; guard++) {
+    const onDay = task.recurrence === 'Daily' || (task.recurrenceWeekdays ?? []).includes(parseLocalDate(cursor).getDay());
+    if (onDay && !(pastSkips && planFor(task.occurrencePlans, cursor)?.skipped)) return cursor;
+    cursor = toDateString(addDays(parseLocalDate(cursor), 1));
+  }
+  return cursor;
+}
+
+/**
+ * The date the occurrence in hand falls due on its own schedule (not when it
+ * is planned). Null for a finished or non-repeating task.
+ */
+export function liveOccurrenceDue(task: Task, today = getTodayString()): string | null {
+  if (task.recurrence === 'None' || task.status === 'Done' || task.status === 'Archived') return null;
+  const kind = recurrenceKind(task);
+  if (kind === 'lapsing') return lapsingDayFrom(task, today, true);
+  return task.dueDate ?? cycleDueDate(task) ?? today;
+}
+
+/** When the occurrence after a finished one falls due. */
+function nextNaturalAfterDone(task: Task): string | null {
+  const kind = recurrenceKind(task);
+  const doneDay = task.lastCompleted ? localDay(task.lastCompleted)! : getTodayString();
+  if (kind === 'lapsing') return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(doneDay), 1)));
+  if (task.dueDate) return nextRecurrenceDates(task).dueDate;
+  const next = advanceDate(parseLocalDate(doneDay), task.recurrence, task.recurrenceWeekdays);
+  return next ? toDateString(next) : null;
+}
+
+function advanceNatural(task: Task, due: string): string | null {
+  if (recurrenceKind(task) === 'lapsing') return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(due), 1)));
+  const next = advanceDate(parseLocalDate(due), task.recurrence, task.recurrenceWeekdays);
+  return next ? toDateString(next) : null;
+}
+
+export interface Occurrence {
+  /** `${taskId}@${due}` - how an occurrence is addressed when planned. */
+  key: string;
+  task: Task;
+  due: string;
+  plannedDate: string | null;
+  skipped: boolean;
+  /** Where it sits on a calendar: its plan, else its own day. */
+  date: string;
+  /** The first day it can be done in: the day after the one before it. */
+  windowStart: string;
+}
+
+/**
+ * The occurrences of a repeating task after the one in hand, with any plans
+ * made for them. The occurrence in hand is the task itself and is excluded.
+ */
+export function upcomingOccurrences(task: Task, until: string, today = getTodayString()): Occurrence[] {
+  if (task.deletedAt || task.recurrence === 'None' || task.status === 'Archived' || task.status === 'Blocked') return [];
+  const out: Occurrence[] = [];
+  let previous: string;
   let cursor: string | null;
-  const out: string[] = [];
   if (task.status === 'Done') {
     if (seriesEnded(task)) return [];
-    cursor = followingOccurrence(task);
-    if (cursor && cursor >= from && cursor <= to && (!task.recurrenceEnd || cursor <= task.recurrenceEnd)) out.push(cursor);
+    previous = task.lastCompleted ? localDay(task.lastCompleted)! : today;
+    cursor = nextNaturalAfterDone(task);
   } else {
-    const base = task.plannedDate ?? task.dueDate ?? cycleDueDate(task) ?? today;
-    cursor = base < today ? today : base;
+    previous = liveOccurrenceDue(task, today)!;
+    cursor = advanceNatural(task, previous);
   }
-
   for (let guard = 0; cursor && guard < 400; guard++) {
-    const next = advanceDate(parseLocalDate(cursor), task.recurrence, task.recurrenceWeekdays);
-    if (!next) break;
-    cursor = toDateString(next);
-    if (cursor > to) break;
     if (task.recurrenceEnd && cursor > task.recurrenceEnd) break;
-    if (cursor >= from) out.push(cursor);
+    const plan = planFor(task.occurrencePlans, cursor);
+    const date = plan?.plannedDate ?? cursor;
+    if (cursor > until && date > until) break;
+    out.push({
+      key: `${task.id}@${cursor}`,
+      task,
+      due: cursor,
+      plannedDate: plan?.plannedDate ?? null,
+      skipped: !!plan?.skipped,
+      date,
+      windowStart: toDateString(addDays(parseLocalDate(previous), 1)),
+    });
+    previous = cursor;
+    cursor = advanceNatural(task, cursor);
   }
   return out;
+}
+
+/**
+ * The later occurrences whose day falls inside [from, to], skipped ones left
+ * out - what the calendars draw faintly after the real task.
+ */
+export function projectOccurrences(task: Task, from: string, to: string, today = getTodayString()): string[] {
+  return upcomingOccurrences(task, to, today)
+    .filter((o) => !o.skipped && o.date >= from && o.date <= to && o.date >= today)
+    .map((o) => o.date);
+}
+
+/**
+ * What a recurring task becomes when it comes back: its new dates, the plans
+ * still ahead of it, and - for a cycle whose occurrence was skipped - where
+ * the new cycle counts from.
+ */
+export function comeBack(task: Task): {
+  dueDate: string | null;
+  plannedDate: string | null;
+  occurrencePlans: OccurrencePlan[];
+  rotSince: string | null;
+} {
+  const kind = recurrenceKind(task);
+  const carried = nextRecurrenceDates(task);
+  let natural = nextNaturalAfterDone(task);
+  let plans = [...(task.occurrencePlans ?? [])].sort((a, b) => a.due.localeCompare(b.due));
+  let rotSince = task.lastCompleted;
+
+  // A cycle counted from completion moves when you finish early or late, so
+  // its plans follow by position - "the next one on Saturday" stays the next
+  // one - rather than by a date that no longer exists.
+  if (kind === 'cycle' && !task.dueDate && natural && plans.length) {
+    const seq: string[] = [natural];
+    while (seq.length < plans.length) {
+      const next = advanceNatural(task, seq[seq.length - 1]);
+      if (!next) break;
+      seq.push(next);
+    }
+    plans = plans.map((p, i) => ({ ...p, due: seq[i] ?? p.due }));
+  }
+
+  let plannedDate = kind === 'lapsing' ? null : carried.plannedDate;
+  let dueDate = task.dueDate ? natural : null;
+  for (let guard = 0; natural && guard < 60; guard++) {
+    const plan = planFor(plans, natural);
+    plans = plans.filter((p) => p.due > natural!);
+    if (plan?.skipped) {
+      rotSince = `${natural}T12:00:00`;
+      natural = advanceNatural(task, natural);
+      if (task.dueDate) dueDate = natural;
+      if (kind !== 'lapsing' && carried.plannedDate && natural && carried.dueDate) {
+        // keep the planned-before-due gap
+        const gap = differenceInCalendarDays(parseLocalDate(carried.dueDate), parseLocalDate(carried.plannedDate));
+        plannedDate = toDateString(addDays(parseLocalDate(natural), -gap));
+      }
+      continue;
+    }
+    if (plan) plannedDate = plan.plannedDate;
+    break;
+  }
+  if (kind === 'lapsing') dueDate = null;
+  return { dueDate, plannedDate, occurrencePlans: plans, rotSince };
 }
 
 // --- events ----------------------------------------------------------------

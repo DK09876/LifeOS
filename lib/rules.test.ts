@@ -110,8 +110,8 @@ describe('projected occurrences', () => {
 
   it('follows named weekdays', () => {
     const mwf = task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], plannedDate: '2026-09-21' });
-    // Planned Monday (missed); projected as if done today, Thursday.
-    expect(projectOccurrences(mwf, '2026-09-21', '2026-09-30', TODAY)).toEqual(['2026-09-25', '2026-09-28', '2026-09-30']);
+    // Monday's was missed and lapsed; the one in hand is Friday's, then Mon and Wed.
+    expect(projectOccurrences(mwf, '2026-09-21', '2026-09-30', TODAY)).toEqual(['2026-09-28', '2026-09-30']);
   });
 
   it('projects nothing for one-off or blocked work', () => {
@@ -284,8 +284,11 @@ describe('notices', () => {
   it('applies the recurring rollover before judging the day', () => {
     const doneLastNight = task({ recurrence: 'Daily', status: 'Done', lastCompleted: at('2026-09-23', 21), plannedDate: '2026-09-23' });
     const [rolled] = rolledOver([doneLastNight], TODAY);
-    expect(rolled.status).toBe('Planned');
-    expect(rolled.plannedDate).toBe(TODAY);
+    // Back for today, unplanned: each day of a daily task is planned on its own.
+    expect(rolled.status).toBe('Backlog');
+    expect(rolled.plannedDate).toBeNull();
+    const withPlan = rolledOver([{ ...doneLastNight, occurrencePlans: [{ due: TODAY, plannedDate: TODAY }] }], TODAY)[0];
+    expect(withPlan.status).toBe('Planned');
   });
 });
 
@@ -370,5 +373,105 @@ describe('slips', () => {
     expect(isSlip({ plannedDate: '2026-09-26', status: 'Planned' }, { plannedDate: '2026-09-28' }, TODAY)).toBe(false);
     expect(isSlip({ plannedDate: '2026-09-22', status: 'Planned' }, { status: 'Done' }, TODAY)).toBe(false);
     expect(isSlip({ plannedDate: '2026-09-22', status: 'Planned' }, { notes: 'x' }, TODAY)).toBe(false);
+  });
+});
+
+import { comeBack, liveOccurrenceDue, recurrenceKind, upcomingOccurrences } from './recurrence';
+import { isMissedPlan, isStrandedBlocked } from './scoring';
+
+describe('kinds of repeating task', () => {
+  it('tells fixed, cycle and lapsing apart', () => {
+    expect(recurrenceKind(task({ recurrence: 'Monthly', recurrenceAnchor: 'schedule', dueDate: '2026-10-17' }))).toBe('fixed');
+    expect(recurrenceKind(task({ recurrence: 'Biweekly' }))).toBe('cycle');
+    expect(recurrenceKind(task({ recurrence: 'Daily' }))).toBe('lapsing');
+    expect(recurrenceKind(task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5] }))).toBe('lapsing');
+  });
+
+  it('never lists a lapsing task as a missed plan', () => {
+    expect(isMissedPlan(task({ recurrence: 'Daily', status: 'Planned', plannedDate: '2026-09-23' }), TODAY)).toBe(false);
+    expect(isMissedPlan(task({ status: 'Planned', plannedDate: '2026-09-23' }), TODAY)).toBe(true);
+  });
+});
+
+describe('planning single occurrences', () => {
+  const reading = task({ recurrence: 'Daily', status: 'Backlog' });
+
+  it('lists each later day of a daily task with its own window of one day', () => {
+    const occ = upcomingOccurrences(reading, '2026-09-27', TODAY);
+    expect(occ.map((o) => o.due)).toEqual(['2026-09-25', '2026-09-26', '2026-09-27']);
+    expect(occ[0].windowStart).toBe('2026-09-25');
+  });
+
+  it('shows a planned or skipped occurrence as planned', () => {
+    const planned = { ...reading, occurrencePlans: [{ due: '2026-09-26', plannedDate: '2026-09-26' }, { due: '2026-09-27', plannedDate: null, skipped: true }] };
+    const occ = upcomingOccurrences(planned, '2026-09-27', TODAY);
+    expect(occ.find((o) => o.due === '2026-09-26')?.plannedDate).toBe('2026-09-26');
+    expect(occ.find((o) => o.due === '2026-09-27')?.skipped).toBe(true);
+  });
+
+  it('gives a cycle occurrence a window from the day after the one before', () => {
+    const plants = task({ recurrence: 'Weekly', rotSince: at('2026-09-20') }); // due 27th
+    const [next] = upcomingOccurrences(plants, '2026-10-05', TODAY);
+    expect(next).toMatchObject({ due: '2026-10-04', windowStart: '2026-09-28' });
+  });
+
+  it('applies a skip when a lapsing task comes back', () => {
+    const done = task({ recurrence: 'Daily', status: 'Done', lastCompleted: at(TODAY), occurrencePlans: [{ due: '2026-09-25', plannedDate: null, skipped: true }] });
+    // Friday skipped: the next one is Saturday.
+    expect(liveOccurrenceDue({ ...done, status: 'Backlog', lastCompleted: null }, '2026-09-25')).toBe('2026-09-26');
+    expect(comeBack(done).occurrencePlans).toEqual([]);
+  });
+
+  it('keeps "the next one" when a cycle moves because it was done early', () => {
+    // Weekly from completion; the next one (due Oct 1) was planned for Sep 30.
+    const plants = task({ recurrence: 'Weekly', status: 'Done', lastCompleted: at('2026-09-22'), occurrencePlans: [{ due: '2026-10-01', plannedDate: '2026-09-30' }] });
+    const back = comeBack(plants);
+    expect(back.plannedDate).toBe('2026-09-30');
+    expect(back.occurrencePlans).toEqual([]);
+  });
+
+  it('never moves a fixed period', () => {
+    const rent = task({ recurrence: 'Monthly', recurrenceAnchor: 'schedule', dueDate: '2026-10-01', status: 'Done', lastCompleted: at('2026-09-24') });
+    expect(comeBack(rent).dueDate).toBe('2026-11-01');
+  });
+});
+
+describe('blocked', () => {
+  it('flags a blocked task with nothing to bring it back', () => {
+    expect(isStrandedBlocked(task({ status: 'Blocked' }))).toBe(true);
+    expect(isStrandedBlocked(task({ status: 'Blocked', followUpDate: '2026-09-30' }))).toBe(false);
+    expect(isStrandedBlocked(task({ status: 'Blocked', blockedBy: [{ type: 'task', taskId: 'x' }] }))).toBe(false);
+  });
+});
+
+describe('suggest places occurrences', () => {
+  const days: WeekDayInfo[] = ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].map((d) => ({
+    date: parseLocalDate(d), dateStr: d, existingTasks: [], events: [],
+  }));
+
+  it('puts each daily occurrence on its own day only', () => {
+    const reading = task({ recurrence: 'Daily', actionPoints: '1' });
+    const result = suggestWeekSchedule([reading], days, DEFAULT_SUGGEST_CONTROLS, new Map());
+    expect(result.get('t1')).toBe(TODAY);
+    expect(result.get('t1@2026-09-26')).toBe('2026-09-26');
+  });
+
+  it('places a cycle occurrence inside its window, as early as it has room', () => {
+    const plants = task({ recurrence: 'Weekly', status: 'Planned', plannedDate: TODAY, rotSince: at('2026-09-20'), actionPoints: '1' });
+    const wide = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'].map((d) => ({
+      date: parseLocalDate(d), dateStr: d, existingTasks: [], events: [],
+    }));
+    const result = suggestWeekSchedule([plants], wide, DEFAULT_SUGGEST_CONTROLS, new Map());
+    expect(result.get('t1@2026-10-04')).toBe('2026-09-28');
+  });
+
+  it('does not take effort for occurrences nobody planned', () => {
+    // A daily 5 AP task fills nothing until placed; a 6-AP one-off still fits alongside.
+    const heavy = task({ id: 'h', recurrence: 'Daily', actionPoints: '5', status: 'Done', lastCompleted: at(TODAY) });
+    const oneOff = task({ id: 'o', actionPoints: '5' });
+    const one = [days[1]];
+    const result = suggestWeekSchedule([oneOff], one, DEFAULT_SUGGEST_CONTROLS, new Map());
+    expect(result.get('o')).toBe('2026-09-25');
+    void heavy;
   });
 });

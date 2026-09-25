@@ -60,6 +60,11 @@ export default function FollowUpStrip({ tasks, onDefer, onUnblock, onEdit }: Pro
                   {waitingOn && (
                     <span className="ml-2 text-xs text-[var(--muted)]">waiting on {waitingOn}</span>
                   )}
+                  {task.followUpDate && task.followUpDate < today && (
+                    <span className="ml-2 text-xs text-red-400">
+                      chase overdue {Math.round((parseLocalDate(today).getTime() - parseLocalDate(task.followUpDate).getTime()) / DAY)}d
+                    </span>
+                  )}
                 </button>
                 <div className="flex items-center gap-1 text-xs">
                   <Action label="Chased — a week" onClick={() => onDefer(task.id, plus(7))} />
