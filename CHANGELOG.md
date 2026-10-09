@@ -2,6 +2,19 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.11.0] - 2026-10-09
+
+### Today
+- **Add to today**: type a name and press Enter and it is planned for today. Effort can be tapped in; anything still missing shows as "needs details" on the card instead of hiding the task in Triage
+- If the name matches something you already have, it offers that instead — "↺ Do again today" for a finished chore, "📅 Plan for today" for an open task — so a regular chore stays one task
+- **Do again**: tick "Show in Do again" on a task you do regularly but not on a schedule (dishes, laundry). Once done it waits on Today; tapping it asks whether it is for today or just back on your list. Every completion stays in its history
+
+### Tasks
+- **When** — Today, Tomorrow, a date, or Not yet — is now in the main part of the task form instead of under More options
+
+### Notifications
+- Fixed: Apple rejected every push (403) because of the sender address the Pi used, and the failures were recorded as sent. Pushes now go out with the app's own address, a failed one is retried a few times, and Settings shows the result of the last push — delivered, or why not
+
 ## [0.10.0] - 2026-09-25
 
 ### Repeating tasks

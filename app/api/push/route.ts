@@ -9,8 +9,8 @@
 
 import { NextResponse } from 'next/server';
 
-import { deletePushSubscription, listPushSubscriptions, savePushSubscription } from '@/lib/server/store';
-import { pushToProfile, vapidPublicKey } from '@/lib/server/push';
+import { deletePushSubscription, getPreferences, listPushSubscriptions, savePushSubscription } from '@/lib/server/store';
+import { PUSH_RESULT_PREF, pushToProfile, vapidPublicKey } from '@/lib/server/push';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,9 @@ export async function GET(request: Request) {
   if (!profile) return NextResponse.json({ error: 'profile required' }, { status: 400 });
   try {
     const devices = listPushSubscriptions(profile).map((row) => ({ endpoint: row.endpoint, label: row.label }));
-    return NextResponse.json({ publicKey: vapidPublicKey(), devices });
+    let lastResult = null;
+    try { lastResult = JSON.parse(getPreferences(profile)[PUSH_RESULT_PREF] ?? 'null'); } catch { /* none */ }
+    return NextResponse.json({ publicKey: vapidPublicKey(), devices, lastResult });
   } catch (error) {
     console.error('[push] read failed', error);
     return NextResponse.json({ error: 'read failed' }, { status: 500 });

@@ -626,6 +626,22 @@ async function logTowardsGoal(task: Task, day: string, sign: 1 | -1): Promise<vo
   });
 }
 
+/**
+ * Bring a finished "do again" task back - planned for today, or just into
+ * the backlog. Same task, so every earlier completion stays in its history.
+ */
+export async function reopenTask(taskId: string, toToday: boolean): Promise<void> {
+  const plannedDate = toToday ? getTodayString() : null;
+  await updateTaskData(taskId, {
+    status: plannedDate ? 'Planned' : 'Backlog',
+    plannedDate,
+    doneDate: null,
+    // A fresh start: it was not neglected while it sat finished.
+    rotSince: new Date().toISOString(),
+    slipCount: 0,
+  });
+}
+
 /** Local days a task was finished on, including any before the log existed. */
 export function completionDaysOf(task: Pick<Task, 'completions' | 'doneDate' | 'status'>): string[] {
   const days = new Set(task.completions ?? []);
@@ -662,6 +678,7 @@ export async function createTask(taskData: {
   followUpDate?: string | null;
   recurrenceEnd?: string | null;
   progressAmount?: number | null;
+  repeatable?: boolean | null;
 }): Promise<string> {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -697,6 +714,7 @@ export async function createTask(taskData: {
     followUpDate: taskData.followUpDate ?? null,
     recurrenceEnd: taskData.recurrenceEnd ?? null,
     progressAmount: taskData.progressAmount ?? null,
+    repeatable: taskData.repeatable ?? null,
     rotSince: null,
     slipCount: 0,
     completions: [],

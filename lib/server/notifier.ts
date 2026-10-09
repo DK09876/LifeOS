@@ -60,10 +60,21 @@ async function tickProfile(userId: string, now: Date): Promise<number> {
   let pushed = 0;
   for (const notice of notices) {
     if (!isDueToPush(notice, now) || wasPushed(userId, notice.key)) continue;
-    // Recorded first: a send that half-fails must not repeat every minute.
-    markPushed(userId, notice.key);
+    const attemptKey = `${userId}:${notice.key}`;
+    const tries = (attempts.get(attemptKey) ?? 0) + 1;
+    attempts.set(attemptKey, tries);
     const result = await pushToProfile(userId, { title: notice.title, body: notice.body, url: notice.href, tag: notice.key });
     pushed += result.sent;
+    // Delivered, or tried enough: never again. A failure used to be marked as
+    // sent too, so a week of rejected pushes looked exactly like a week of
+    // delivered ones. Now a failure gets a few more tries a few minutes apart.
+    if (result.sent > 0 || result.failed === 0 || tries >= MAX_TRIES) {
+      markPushed(userId, notice.key);
+      attempts.delete(attemptKey);
+    }
   }
   return pushed;
 }
+
+const MAX_TRIES = 3;
+const attempts = new Map<string, number>();
