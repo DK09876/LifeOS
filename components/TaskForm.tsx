@@ -1,5 +1,7 @@
 'use client';
 
+import { addDays } from 'date-fns';
+import { getTodayString, parseLocalDate, toDateString } from '@/lib/dates';
 import { levelLabel } from '@/lib/colors';
 import { useState, useEffect } from 'react';
 import { Task, Domain, BlockedByEntry, Project } from '@/types';
@@ -34,6 +36,7 @@ export interface TaskFormData {
   blockedBy: BlockedByEntry[];
   followUpDate: string | null;
   progressAmount: number | null;
+  repeatable: boolean;
 }
 
 const STATUS_OPTIONS: Task['status'][] = ['Needs Details', 'Backlog', 'Planned', 'Blocked', 'Done', 'Archived'];
@@ -66,16 +69,19 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
     blockedBy: [],
     followUpDate: null,
     progressAmount: null,
+    repeatable: false,
   });
   const [blockedError, setBlockedError] = useState<string | null>(null);
+  const todayISO = getTodayString();
+  const tomorrowISO = toDateString(addDays(parseLocalDate(todayISO), 1));
   const [submitting, setSubmitting] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
   // How many of the optional fields this task actually uses. Shown on the
   // collapsed toggle so nothing set earlier can hide behind it unnoticed.
   const extrasInUse = [
-    formData.plannedDate,
     formData.projectId,
+    formData.repeatable ? 'repeatable' : null,
     formData.recurrence !== 'None' ? formData.recurrence : null,
     formData.blockedBy.length ? 'blocked' : null,
     formData.notes?.trim() ? 'notes' : null,
@@ -88,7 +94,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
   // that populates the form, so formData is still empty at this point.
   useEffect(() => {
     const usesExtras = !!task && (
-      !!task.plannedDate || !!task.projectId ||
+      !!task.repeatable || !!task.projectId ||
       task.recurrence !== 'None' || (task.blockedBy?.length ?? 0) > 0 ||
       !!task.notes?.trim()
     );
@@ -118,6 +124,7 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         blockedBy: task.blockedBy || [],
         followUpDate: task.followUpDate,
         progressAmount: task.progressAmount ?? null,
+        repeatable: !!task.repeatable,
       });
     }
   }, [task]);
@@ -281,6 +288,41 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
         </div>
       </div>
 
+      {/* When - the planned day. Kept up here rather than under More options:
+          it is the field you reach for most after the name. */}
+      <div>
+        <label className={labelClass}>When</label>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { label: 'Today', value: todayISO },
+            { label: 'Tomorrow', value: tomorrowISO },
+          ].map(opt => (
+            <button key={opt.label} type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, plannedDate: prev.plannedDate === opt.value ? null : opt.value }))}
+                    className={`px-3 py-1.5 rounded text-sm ${formData.plannedDate === opt.value ? 'bg-blue-600 text-white' : 'bg-[var(--card-hover)] text-[var(--muted)] hover:text-white'}`}>
+              {opt.label}
+            </button>
+          ))}
+          <input
+            type="date"
+            id="plannedDate"
+            name="plannedDate"
+            aria-label="Planned date"
+            value={formData.plannedDate || ''}
+            onChange={handleChange}
+            className={`flex-1 min-w-[9rem] px-3 py-1.5 bg-[var(--background)] border rounded text-sm text-[var(--foreground)] ${
+              formData.plannedDate && formData.plannedDate !== todayISO && formData.plannedDate !== tomorrowISO ? 'border-blue-500' : 'border-[var(--border-color)]'
+            }`}
+          />
+          {formData.plannedDate && (
+            <button type="button" onClick={() => setFormData(prev => ({ ...prev, plannedDate: null }))}
+                    className="px-3 py-1.5 rounded text-sm bg-[var(--card-hover)] text-[var(--muted)] hover:text-white">
+              Not yet
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Due date */}
       <div>
         <div>
@@ -382,21 +424,18 @@ export default function TaskForm({ task, domains, allTasks = [], projects = [], 
           </select>
         </div>
 
-        {/* Planned date */}
-        <div>
-
-          <label htmlFor="plannedDate" className={labelClass}>
-            Planned Date
+        {/* Do again */}
+        {formData.recurrence === 'None' && (
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={formData.repeatable}
+                   onChange={(e) => setFormData(prev => ({ ...prev, repeatable: e.target.checked }))}
+                   className="mt-1 w-4 h-4" />
+            <span>
+              <span className="block text-sm text-white">Show in &ldquo;Do again&rdquo;</span>
+              <span className="block text-xs text-[var(--muted)]">For something you do regularly but not on a schedule — dishes, laundry. Once done it waits on Today to be reopened, instead of you writing it out again.</span>
+            </span>
           </label>
-          <input
-            type="date"
-            id="plannedDate"
-            name="plannedDate"
-            value={formData.plannedDate || ''}
-            onChange={handleChange}
-            className={inputClass}
-          />
-        </div>
+        )}
 
         {/* Project */}
         <div>

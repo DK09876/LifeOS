@@ -12,9 +12,11 @@ import DayCapacity from '@/components/DayCapacity';
 import MissedStrip from '@/components/MissedStrip';
 import FollowUpStrip from '@/components/FollowUpStrip';
 import AttentionStrip from '@/components/AttentionStrip';
+import AddToToday from '@/components/AddToToday';
+import DoAgain from '@/components/DoAgain';
 import RecurrenceBadge from '@/components/RecurrenceBadge';
 import { useToast } from '@/components/Toast';
-import { useTasks, useDomains, useProjects, useHabits, useEnergySettings, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
+import { useTasks, useDomains, useProjects, useHabits, useEnergySettings, useHabitsDueToday, useHabitsCompletedToday, useEventsToday, useEventsCompletedToday, reopenTask, markTaskDone, undoTaskDone, createTask, updateTaskData, deleteTask, markHabitDone, undoHabitDone, createHabit, updateHabitData, deleteHabit, createEvent, updateEventData, deleteEvent, markEventDone, undoEventDone } from '@/lib/hooks';
 import { Task, Habit, Event } from '@/types';
 import { getTodayString, parseLocalDateTime } from '@/lib/dates';
 import { savePreference } from '@/lib/store';
@@ -143,6 +145,11 @@ export default function TodayPage() {
       // long-neglected task leads among equals.
       levelRank(a.taskPriority) - levelRank(b.taskPriority) || b.taskScore - a.taskScore);
   }, [tasks]);
+
+  // Chores marked "Show in Do again" that are finished and waiting.
+  const doAgain = useMemo(() => tasks
+    .filter(t => t.repeatable && t.status === 'Done' && t.recurrence === 'None' && !t.deletedAt)
+    .sort((a, b) => (a.doneDate || '').localeCompare(b.doneDate || '')), [tasks]);
 
   // Completed today
   const completedToday = useMemo(() => {
@@ -405,6 +412,22 @@ export default function TodayPage() {
           </button>
         </div>
 
+        <AddToToday
+          tasks={tasks}
+          onCreate={async (name, ap) => {
+            try { await createTask({ taskName: name, plannedDate: todayStr, actionPoints: ap }); }
+            catch { showToast('Could not add that', 'error'); }
+          }}
+          onReopen={async (task) => {
+            try { await reopenTask(task.id, true); showToast(`↺ ${task.taskName} is on today`, 'success'); }
+            catch { showToast('Could not reopen that', 'error'); }
+          }}
+          onPlanToday={async (task) => {
+            try { await updateTaskData(task.id, { plannedDate: todayStr }); }
+            catch { showToast('Could not plan that', 'error'); }
+          }}
+        />
+
         {todayTasks.length === 0 ? (
           <div className="bg-[var(--card-bg)] rounded-lg p-8 text-center">
             <p className="text-[var(--muted)] mb-4">No tasks planned for today</p>
@@ -446,6 +469,9 @@ export default function TodayPage() {
                       </span>
                     )}
                     <RecurrenceBadge task={task} />
+                    {task.status === 'Needs Details' && (
+                      <span className="text-yellow-300" title="Missing priority, urgency, domain or effort — tap to fill in">needs details</span>
+                    )}
                     {(task.slipCount ?? 0) > 0 && (
                       <span className="text-orange-400" title="Times this plan was missed and moved">
                         ↷ slipped {task.slipCount}×
@@ -465,6 +491,14 @@ export default function TodayPage() {
           </div>
         )}
       </div>
+
+      <DoAgain
+        tasks={doAgain}
+        onReopen={async (task, toToday) => {
+          try { await reopenTask(task.id, toToday); }
+          catch { showToast('Could not reopen that', 'error'); }
+        }}
+      />
 
       {/* Completed Today */}
       {(completedToday.length > 0 || habitsCompletedToday.length > 0 || eventsCompletedToday.length > 0) && (

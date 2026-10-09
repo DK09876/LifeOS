@@ -60,6 +60,10 @@ export interface Task {
   // In a goal project: how much each completion counts towards it
   // (1 page, 5 km). Null means 1.
   progressAmount?: number | null;
+  // A chore you do regularly but not on a schedule (dishes, laundry): once
+  // done it waits in Today's "Do again" list to be reopened, rather than a
+  // new copy being written each time.
+  repeatable?: boolean | null;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;

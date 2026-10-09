@@ -101,6 +101,28 @@ export default function HelpPage() {
           <p>On a phone the tab bar along the bottom has Today, Plan, Week and Yesterday; everything else is under More.</p>
         </Section>
 
+        <Section title="Adding to today, and chores you do again">
+          <p>
+            The <W>Add to today</W> box at the top of Today&rsquo;s tasks plans a new task for today in one line. Tap an
+            effort if you like; whatever is still missing shows as &ldquo;needs details&rdquo; on the card, and the task stays on Today.
+          </p>
+          <p>
+            For something you do regularly but not on a schedule, tick <W>Show in Do again</W> in its form. Once done it
+            waits in Today&rsquo;s <W>Do again</W> list; tap it and choose <W>Add to today</W> or <W>Just reopen</W>. It is the
+            same task each time, so its history shows every time you did it. A habit is for things you mean to do on a
+            cadence; Do again is for things you do when they need doing.
+          </p>
+          <Example
+            title="the dishes"
+            setup="“Dishes” is marked Show in Do again, last done Monday."
+            steps={[
+              ['Thursday', <>It sits in Do again (&ldquo;done 3 days ago&rdquo;). Tap it → Add to today: it is planned for today.</>],
+              ['Or', <>Type &ldquo;dish&rdquo; in Add to today: it offers &ldquo;↺ Dishes — Do again today&rdquo; instead of a new task.</>],
+              ['Done', <>Back in Do again, with Monday and Thursday both in its history.</>],
+            ]}
+          />
+        </Section>
+
         <Section title="Capturing and triage">
           <p>
             A task stays in <W>Needs Details</W> until it has all four of: <W>priority</W> (how much it matters),

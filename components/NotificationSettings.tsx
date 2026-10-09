@@ -40,6 +40,7 @@ export default function NotificationSettings() {
   const [status, setStatus] = useState<string>('');
   const [subscribed, setSubscribed] = useState<boolean | null>(null);
   const [devices, setDevices] = useState<Array<{ endpoint: string; label: string | null }>>([]);
+  const [lastResult, setLastResult] = useState<{ at: string; sent: number; failed: number; reason?: string; title?: string } | null>(null);
 
   const supported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const iosNeedsInstall = typeof window !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) &&
@@ -52,8 +53,9 @@ export default function NotificationSettings() {
     if (!profile) return;
     try {
       const res = await fetch(`/api/push?profile=${encodeURIComponent(profile)}`, { cache: 'no-store' });
-      const body = await res.json() as { devices: Array<{ endpoint: string; label: string | null }> };
+      const body = await res.json() as { devices: Array<{ endpoint: string; label: string | null }>; lastResult?: typeof lastResult };
       setDevices(body.devices ?? []);
+      setLastResult(body.lastResult ?? null);
       if (supported) {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
@@ -109,8 +111,11 @@ export default function NotificationSettings() {
     const res = await fetch(`/api/push?profile=${encodeURIComponent(getProfile())}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test' }),
     });
-    const body = await res.json() as { sent?: number };
-    setStatus(body.sent ? `Sent to ${body.sent} device${body.sent === 1 ? '' : 's'}.` : 'No device received it — turn notifications on first.');
+    const body = await res.json() as { sent?: number; failed?: number; reason?: string };
+    setStatus(body.sent
+      ? `Sent to ${body.sent} device${body.sent === 1 ? '' : 's'}.`
+      : body.failed ? `Could not deliver: ${body.reason ?? 'unknown reason'}` : 'No device received it — turn notifications on first.');
+    void refresh();
   }
 
   const toggle = (key: keyof NoticeSettings['push'], label: string, hint: string) => (
@@ -156,6 +161,12 @@ export default function NotificationSettings() {
           </div>
         )}
         {status && <p className="text-xs text-[var(--muted)] mt-2">{status}</p>}
+        {lastResult && (
+          <p className={`text-xs mt-2 ${lastResult.failed && !lastResult.sent ? 'text-red-400' : 'text-[var(--muted)]'}`}>
+            Last push {new Date(lastResult.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}:{' '}
+            {lastResult.sent ? `delivered${lastResult.title ? ` (“${lastResult.title}”)` : ''}` : `failed — ${lastResult.reason ?? 'unknown reason'}`}
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 mb-4">
