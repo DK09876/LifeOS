@@ -2,6 +2,17 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.12.0] - 2026-10-09
+
+### Voice
+- LifeOS has an **assistant API** for the voice assistant (pantry), running the app's own actions on the Pi so a spoken "I did laundry" does exactly what ticking it does
+- It understands: what's on today (and on any day, or this week), what to do next, adding tasks (only what you said — the rest waits in Needs Details), planning and moving tasks, "do the dishes again", marking tasks and habits done (today or yesterday), logging goal progress, energy left and changing today's budget, what's overdue or missed, blocking with a chase day and what you're waiting on, this week's review, habit streaks, lists, notes, and **undo**
+- Names are matched loosely ("the dishes", "meditation"), and when a name could be two things it asks instead of guessing
+- A `/api/voice` endpoint lets an iOS Shortcut talk to pantry over the tailnet — Siri, Apple Watch, AirPods and CarPlay
+
+### Internals
+- The app's actions now live in `lib/actions.ts` and run against either the browser's copy of the data or the Pi's database
+
 ## [0.11.0] - 2026-10-09
 
 ### Today

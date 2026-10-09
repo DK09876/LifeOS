@@ -60,7 +60,11 @@ Browser                          Raspberry Pi
 | `lib/milestones.ts` | Habit milestone ladders |
 | `lib/server/notifier.ts` | Once-a-minute clock on the Pi that pushes due notices (started from `instrumentation.ts`) |
 | `lib/server/push.ts` | Web Push: VAPID keys (generated, stored in `_system` prefs), sending |
-| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, `useHabits()`, `useEvents()`, `useProjects()`, action functions |
+| `lib/actions.ts` | Every action (`createActions({db, getPreference, savePreference})`): runs in the browser and on the server |
+| `lib/hooks.ts` | React hooks: `useTasks()`, `useDomains()`, … and the actions bound to the browser store |
+| `lib/server/db.ts` | The same `Db` tables backed by SQLite, with before-image logging for undo |
+| `lib/server/assistant.ts` | Voice intents (`runAssistant`), served at `/api/assistant`; `/api/voice` proxies Siri text to pantry |
+| `lib/assistant-text.ts` | Pure: loose name matching and spoken-day parsing for voice |
 | `lib/store.ts` | Client store: hydrate, poll, read/write against `/api/data` |
 | `lib/server/store.ts` | Server store: SQLite schema, per-profile reads and writes |
 | `lib/schedule.ts` | Where a task sits on a calendar: planned date, else due date, once |
@@ -304,6 +308,8 @@ new Date().toISOString().slice(0, 10)  // → UTC date, WRONG in US timezones!
 - Saves are field patches checked against the client's `updatedAt` (`patchRecord`, 409 on
   a stale copy); the client re-hydrates on visibility change
 - Every number on the help page is asserted in `lib/scenarios.test.ts` - change both together
+- New actions go in `lib/actions.ts` (not hooks.ts) so voice can use them; add an intent in
+  `lib/server/assistant.ts` and a pantry tool if it should be spoken
 - `recurrenceAnchor: 'schedule'` dates the next occurrence from the previous
   `dueDate` rather than from completion, and reopens when that date passes
 - Plan's calendar deliberately shows less than Week's: commitments and overdue
