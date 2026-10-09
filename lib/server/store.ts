@@ -97,6 +97,14 @@ function migrate(conn: Database) {
       PRIMARY KEY (userId, endpoint)
     );
 
+    -- What the voice assistant last changed, so "undo that" can put it back.
+    CREATE TABLE IF NOT EXISTS assistant_undo (
+      userId TEXT NOT NULL,
+      at     TEXT NOT NULL,
+      label  TEXT NOT NULL,
+      data   TEXT NOT NULL
+    );
+
     -- What has been pushed, so a restart or a second tick never repeats one.
     CREATE TABLE IF NOT EXISTS push_sent (
       userId TEXT NOT NULL,
@@ -419,4 +427,45 @@ export function patchRecord(
   const merged = { ...(JSON.parse(row.data) as StoredRecord), ...changes, id } as StoredRecord;
   putRecord(userId, collection, merged);
   return 'ok';
+}
+
+// --- single-collection reads (the assistant's database shim) ---------------
+
+export function readCollection(userId: string, collection: Collection): StoredRecord[] {
+  const rows = connect().all(
+    'SELECT data FROM records WHERE userId=? AND collection=?', [userId, collection],
+  ) as unknown as Array<{ data: string }>;
+  return rows.map((row) => JSON.parse(row.data) as StoredRecord);
+}
+
+export function readRecord(userId: string, collection: Collection, id: string): StoredRecord | undefined {
+  const row = connect().get(
+    'SELECT data FROM records WHERE userId=? AND collection=? AND id=?', [userId, collection, id],
+  ) as { data: string } | undefined;
+  return row ? (JSON.parse(row.data) as StoredRecord) : undefined;
+}
+
+// --- assistant undo log ---------------------------------------------------
+
+const UNDO_KEEP = 20;
+
+export function pushUndo(userId: string, label: string, data: string) {
+  const conn = connect();
+  conn.run('INSERT INTO assistant_undo (userId, at, label, data) VALUES (?, ?, ?, ?)',
+    [userId, new Date().toISOString(), label, data]);
+  conn.run(
+    `DELETE FROM assistant_undo WHERE userId = ? AND rowid NOT IN (
+       SELECT rowid FROM assistant_undo WHERE userId = ? ORDER BY at DESC LIMIT ?)`,
+    [userId, userId, UNDO_KEEP],
+  );
+}
+
+export function popUndo(userId: string): { label: string; data: string } | null {
+  const conn = connect();
+  const row = conn.get(
+    'SELECT rowid AS id, label, data FROM assistant_undo WHERE userId = ? ORDER BY at DESC LIMIT 1', [userId],
+  ) as { id: number; label: string; data: string } | undefined;
+  if (!row) return null;
+  conn.run('DELETE FROM assistant_undo WHERE rowid = ?', [row.id]);
+  return { label: row.label, data: row.data };
 }
