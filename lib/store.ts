@@ -127,7 +127,7 @@ export async function hydrate(): Promise<void> {
   });
   if (!response.ok) throw new Error(`Could not load data (HTTP ${response.status})`);
 
-  if (reloadIfOutdated(response.headers.get('x-lifeos-build'))) return;
+  if (reloadIfOutdated(response.headers?.get?.('x-lifeos-build') ?? null)) return;
 
   const text = await response.text();
   if (hydrated && unchanged(text, lastBody)) return; // nothing moved
