@@ -56,10 +56,12 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
   const cost = apOf(task, energy.controls.defaultAP);
   const kind = recurrenceKind(task);
   const current = occurrence ? occurrence.plannedDate : task.plannedDate;
-  // A daily or named-day occurrence belongs to its own day: it is planned
-  // (or skipped) there, not moved - moving it would just double up another day.
-  const fixedDay = occurrence && kind === 'lapsing' ? occurrence.due : null;
+  // A daily occurrence belongs to its own day - moving it would just double
+  // up another day. A named-day one ("every Sunday") can go anywhere from the
+  // day after the previous one up to its own day.
   const earliest = occurrence ? (occurrence.windowStart > today ? occurrence.windowStart : today) : today;
+  const latest = occurrence && kind === 'lapsing' ? occurrence.due : null;
+  const fixedDay = latest && earliest >= latest ? latest : null;
 
   async function plan(date: string | null) {
     try {
@@ -86,7 +88,7 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
   const title = occurrence
     ? `Plan “${task.taskName}” — ${format(parseLocalDate(occurrence.due), 'EEE d MMM')}`
     : `Plan “${task.taskName}”`;
-  const shown = days.filter(d => (fixedDay ? d.date === fixedDay : d.date >= earliest));
+  const shown = days.filter(d => d.date >= earliest && (!latest || d.date <= latest));
 
   return (
     <Modal isOpen={!!target} onClose={onClose} title={title} maxWidth="sm">
@@ -100,8 +102,11 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
         <p className="text-sm text-[var(--muted)] mb-3">This one is skipped.</p>
       ) : (
         <div className="space-y-1.5">
-          {shown.length === 0 && fixedDay && (
-            <p className="text-sm text-[var(--muted)]">{format(parseLocalDate(fixedDay), 'EEEE d MMM')} is more than a week out — plan it nearer the time.</p>
+          {shown.length === 0 && latest && (
+            <p className="text-sm text-[var(--muted)]">{format(parseLocalDate(latest), 'EEEE d MMM')} is more than a week out — plan it nearer the time.</p>
+          )}
+          {latest && !fixedDay && shown.length > 0 && (
+            <p className="text-xs text-[var(--muted)]">This one can be done any day up to {format(parseLocalDate(latest), 'EEEE d MMM')}.</p>
           )}
           {shown.map(({ date, load, budget }) => {
             const i = days.findIndex(d => d.date === date);
@@ -135,7 +140,7 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
         </div>
       )}
 
-      {!fixedDay && !occurrence?.skipped && (
+      {!latest && !occurrence?.skipped && (
         <div className="flex gap-2 mt-3">
           <input type="date" value={custom} min={earliest} onChange={(e) => setCustom(e.target.value)}
                  aria-label="Another day"

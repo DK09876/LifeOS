@@ -11,7 +11,7 @@ import { useToast } from '@/components/Toast';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { createEvent, createTask, deleteEvent, markTaskDone, planOccurrence, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
-import { liveOccurrenceDue, recurrenceKind, upcomingOccurrences, Occurrence } from '@/lib/recurrence';
+import { liveOccurrenceDue, occurrenceWindowStart, recurrenceKind, upcomingOccurrences, Occurrence } from '@/lib/recurrence';
 import { occurrenceKey } from '@/lib/suggest';
 import { cyclesMissed, isMissedPlan, isPressingBlocked, isStrandedBlocked } from '@/lib/scoring';
 import { needsTriageNag } from '@/lib/notifications';
@@ -142,7 +142,7 @@ export default function PlanPage() {
     if (!task) { setPlanTarget(null); return; }
     if (recurrenceKind(task) === 'lapsing' && task.status !== 'Done') {
       const due = liveOccurrenceDue(task) ?? getTodayString();
-      setPlanTarget({ task, occurrence: { due, windowStart: due, plannedDate: task.plannedDate, skipped: false } });
+      setPlanTarget({ task, occurrence: { due, windowStart: occurrenceWindowStart(task, due), plannedDate: task.plannedDate, skipped: false } });
       return;
     }
     setPlanTarget({ task });
@@ -614,15 +614,22 @@ export default function PlanPage() {
     setDraggedTaskId(null);
     const task = tasks.find(t => t.id === taskId);
     if (!due) {
-      if (task && recurrenceKind(task) === 'lapsing' && task.status !== 'Done' && plannedDate !== liveOccurrenceDue(task)) {
-        showToast('A daily occurrence belongs to its own day — plan or skip it there.', 'info');
-        return;
+      if (task && recurrenceKind(task) === 'lapsing' && task.status !== 'Done') {
+        const due = liveOccurrenceDue(task);
+        if (due && (plannedDate > due || plannedDate < occurrenceWindowStart(task, due))) {
+          showToast(task.recurrence === 'Daily'
+            ? 'A daily occurrence belongs to its own day — plan or skip it there.'
+            : 'That is outside this one’s week — it can go any day up to its own day.', 'info');
+          return;
+        }
       }
       await updateTaskData(taskId, { plannedDate });
       return;
     }
-    if (task && recurrenceKind(task) === 'lapsing' && plannedDate !== due) {
-      showToast('A daily occurrence belongs to its own day — plan or skip it there.', 'info');
+    if (task && recurrenceKind(task) === 'lapsing' && (plannedDate > due || plannedDate < occurrenceWindowStart(task, due))) {
+      showToast(task.recurrence === 'Daily'
+        ? 'A daily occurrence belongs to its own day — plan or skip it there.'
+        : 'That is outside this one’s week — it can go any day up to its own day.', 'info');
       return;
     }
     await planOccurrence(taskId, due, { plannedDate });

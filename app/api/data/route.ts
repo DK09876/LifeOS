@@ -42,7 +42,9 @@ export async function GET(request: Request) {
   const profile = profileOf(request);
   if (!profile) return NextResponse.json({ error: 'profile required' }, { status: 400 });
   try {
-    return NextResponse.json(readPayload(profile));
+    return NextResponse.json(readPayload(profile), {
+      headers: { 'x-lifeos-build': process.env.NEXT_PUBLIC_LIFEOS_BUILD ?? '' },
+    });
   } catch (error) {
     console.error('[data] read failed', error);
     return NextResponse.json({ error: 'read failed' }, { status: 500 });

@@ -1,7 +1,7 @@
 import { Task, Event } from '@/types';
 import { getTodayString, parseLocalDate } from './dates';
 import { startOfDay, differenceInCalendarDays } from 'date-fns';
-import { cycleDueDate, liveOccurrenceDue, recurrenceKind, upcomingOccurrences } from './recurrence';
+import { cycleDueDate, liveOccurrenceDue, occurrenceWindowStart, recurrenceKind, upcomingOccurrences } from './recurrence';
 
 // --- Types ---
 
@@ -286,8 +286,11 @@ function buildCandidates(tasks: Task[], weekDays: WeekDayInfo[], taken: Set<stri
     if (task.status !== 'Done' && (!task.plannedDate || task.plannedDate < todayStr) && !taken.has(task.id)) {
       if (kind === 'lapsing') {
         // Today's (or the next named day's) occurrence goes on its own day or not at all.
-        const day = liveOccurrenceDue(task, todayStr);
-        out.push({ key: task.id, task, allowed: (d) => d === day, by: null });
+        // The occurrence in hand: its own day for a daily task, anywhere in its
+        // week up to its day for a named-day one.
+        const day = liveOccurrenceDue(task, todayStr)!;
+        const from = occurrenceWindowStart(task, day);
+        out.push({ key: task.id, task, allowed: (d) => d >= from && d >= todayStr && d <= day, by: null });
       } else {
         out.push({ key: task.id, task, allowed: () => true, by: placeBy(task, todayStr) });
       }
@@ -298,7 +301,7 @@ function buildCandidates(tasks: Task[], weekDays: WeekDayInfo[], taken: Set<stri
     for (const occ of upcomingOccurrences(task, last, todayStr)) {
       if (occ.skipped || occ.plannedDate || occ.due > last || occ.due < first || taken.has(occ.key)) continue;
       if (kind === 'lapsing') {
-        out.push({ key: occ.key, task, allowed: (d) => d === occ.due, by: null });
+        out.push({ key: occ.key, task, allowed: (d) => d >= occ.windowStart && d >= todayStr && d <= occ.due, by: null });
       } else {
         // Anywhere in its window: after the one before it, by its due date.
         const from = occ.windowStart > todayStr ? occ.windowStart : todayStr;

@@ -27,6 +27,8 @@ import { BlockedByEntry } from '@/types';
 /** The tables an action needs. The browser's store and the server shim both provide these. */
 /** Per-profile marker for the last daily maintenance run. */
 export const RECURRENCE_LAST_RUN = 'recurrenceCheck.lastRun';
+/** The build that last ran it: a new build rescored with new rules runs it again. */
+export const RECURRENCE_LAST_BUILD = 'recurrenceCheck.build';
 
 export interface Db {
   tasks: Table<Task>;
@@ -119,6 +121,7 @@ export function createActions(env: ActionEnv) {
     // Record when this ran, per profile, so it happens once a day rather than
     // on every page load.
     await savePreference(RECURRENCE_LAST_RUN, getTodayString());
+    if (process.env.NEXT_PUBLIC_LIFEOS_BUILD) await savePreference(RECURRENCE_LAST_BUILD, process.env.NEXT_PUBLIC_LIFEOS_BUILD);
 
     return { tasksReset, tasksRescored };
   }

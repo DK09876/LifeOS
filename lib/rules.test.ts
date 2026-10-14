@@ -475,3 +475,43 @@ describe('suggest places occurrences', () => {
     void heavy;
   });
 });
+
+import { occurrenceWindowStart } from './recurrence';
+
+describe('named-day tasks own their week', () => {
+  // "Call grandparents" every Sunday. Today is Thursday the 24th; this week's
+  // call is Sunday the 27th.
+  const call = task({ recurrence: 'Weekly', recurrenceWeekdays: [0] });
+
+  it('can be done any day from the Monday after last Sunday', () => {
+    expect(recurrenceKind(call)).toBe('lapsing');
+    expect(liveOccurrenceDue(call, TODAY)).toBe('2026-09-27');
+    expect(occurrenceWindowStart(call, '2026-09-27')).toBe('2026-09-21');
+    // Two named days split the week between them; daily stays on its day.
+    expect(occurrenceWindowStart({ recurrence: 'Weekly', recurrenceWeekdays: [1, 4] }, '2026-09-24')).toBe('2026-09-22');
+    expect(occurrenceWindowStart({ recurrence: 'Daily', recurrenceWeekdays: null }, '2026-09-24')).toBe('2026-09-24');
+  });
+
+  it('done on Thursday stays done through Sunday and comes back Monday for next Sunday', () => {
+    const done = { ...call, status: 'Done' as const, lastCompleted: at(TODAY, 19) };
+    for (const day of ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27']) expect(checkNeedsReset(done, day)).toBe(false);
+    expect(checkNeedsReset(done, '2026-09-28')).toBe(true);
+    const [next] = upcomingOccurrences(done, '2026-10-05', TODAY);
+    expect(next).toMatchObject({ due: '2026-10-04', windowStart: '2026-09-28' });
+  });
+
+  it('done on its own day comes back the next day', () => {
+    const done = { ...call, status: 'Done' as const, lastCompleted: at('2026-09-27', 18) };
+    expect(checkNeedsReset(done, '2026-09-27')).toBe(false);
+    expect(checkNeedsReset(done, '2026-09-28')).toBe(true);
+  });
+
+  it('suggest may place it on any day of its week, not only Sunday', () => {
+    const days: WeekDayInfo[] = ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].map((d) => ({
+      date: parseLocalDate(d), dateStr: d, existingTasks: [], events: [],
+    }));
+    const result = suggestWeekSchedule([{ ...call, actionPoints: '1' }], days, DEFAULT_SUGGEST_CONTROLS, new Map());
+    const placed = result.get('t1');
+    expect(placed && placed >= TODAY && placed <= '2026-09-27').toBe(true);
+  });
+});

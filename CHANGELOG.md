@@ -2,6 +2,16 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.12.1] - 2026-10-14
+
+### Repeating tasks
+- A **named-day** task ("every Sunday") can be planned, dragged and suggested on any day of its week — from the day after the previous named day up to its own. Daily ones still belong to their day
+- Done early, a named-day task stays done until its day has passed and comes back for the next one; before, ticking Sunday's call on Thursday brought it back the same Sunday
+
+### App
+- The app **reloads itself** when the Pi is running a newer version, so the Home Screen app no longer keeps old code (and old rules) for days
+- After a new version arrives, scores are recomputed once with the current rules
+
 ## [0.12.0] - 2026-10-09
 
 ### Voice
