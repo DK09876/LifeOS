@@ -111,7 +111,7 @@ function normalizeWeights(controls: SuggestControls): { w_score: number; w_deadl
  */
 export function placeBy(task: Task, today = getTodayString()): string | null {
   if (task.dueDate) return task.dueDate;
-  // A daily or named-day occurrence has its own day, not a deadline to race.
+  // A daily occurrence has its own day, not a deadline to race.
   if (recurrenceKind(task) === 'lapsing') return null;
   if (task.plannedDate && task.plannedDate < today) return task.plannedDate;
   return cycleDueDate(task);
@@ -285,9 +285,7 @@ function buildCandidates(tasks: Task[], weekDays: WeekDayInfo[], taken: Set<stri
     // The task itself: unplanned, or a plan already missed.
     if (task.status !== 'Done' && (!task.plannedDate || task.plannedDate < todayStr) && !taken.has(task.id)) {
       if (kind === 'lapsing') {
-        // Today's (or the next named day's) occurrence goes on its own day or not at all.
-        // The occurrence in hand: its own day for a daily task, anywhere in its
-        // week up to its day for a named-day one.
+        // Today's occurrence goes on its own day or not at all.
         const day = liveOccurrenceDue(task, todayStr)!;
         const from = occurrenceWindowStart(task, day);
         out.push({ key: task.id, task, allowed: (d) => d >= from && d >= todayStr && d <= day, by: null });

@@ -227,13 +227,14 @@ export default function HelpPage() {
         <Section title="Repeating tasks">
           <p>A repeating task is one task that comes back. There are three kinds, and they behave differently:</p>
           <ul className="space-y-1">
-            <li><W>Daily, or on named days</W> (Mon/Wed/Fri) — a daily one belongs to its day; a named-day one can be done any day from the day after the previous named day up to its own. Miss one and it is simply gone: no pressure, no rot, not a missed plan.</li>
+            <li><W>Daily</W> — each day&rsquo;s occurrence belongs to that day. Miss one and it is simply gone: no pressure, no rot, not a missed plan.</li>
+            <li><W>On named days</W> (every Sunday, Mon/Wed/Fri) — due on its day and can be done any day before it. Miss it and it stays open and goes overdue, piling up for each named day that goes by, until you do it or skip it.</li>
             <li><W>Every so often, from when you last did it</W> (&ldquo;When I finish it&rdquo;) — due one interval after the last time. Do it early and the next one comes earlier. Missed cycles pile up.</li>
             <li><W>On a fixed period</W> (&ldquo;The due date&rdquo;) — a real deadline that never moves: rent on the 1st. Late is overdue like any deadline.</li>
           </ul>
           <p>
             The occurrences after the current one show faintly (↻) on Plan and Week. They cost no energy until planned.
-            Tap one to <W>plan</W> it or <W>skip</W> it; a daily one only on its own day, a named-day one anywhere in its week. Planned ones
+            Tap one to <W>plan</W> it or <W>skip</W> it; a daily one only on its own day. Planned ones
             are drawn solid and count against their day. Suggest plans occurrences too: daily ones on their own day if
             there is room, the others anywhere in their window.
           </p>
@@ -276,16 +277,20 @@ export default function HelpPage() {
             title="gym prep, Mon/Wed/Fri"
             setup="Weekly on Monday, Wednesday and Friday."
             steps={[
-              ['Missed Mon', <>Monday&rsquo;s lapses. On Tuesday the one in hand is Wednesday&rsquo;s. The score does not change.</>],
+              ['Tue 6th', <>Last done Wednesday; Friday and Monday went by. Friday&rsquo;s is still the one in hand, two days missed: <S i={40} u={77} s={31} />.</>],
+              ['Done Tue', <>That settles it. The next one is Wednesday.</>],
             ]}
           />
           <Example
             title="call grandparents, every Sunday"
-            setup="Weekly on Sunday."
+            setup="Weekly on Sunday. High, Normal, Important."
             steps={[
-              ['Planning', <>This week&rsquo;s call can be planned on any day from Monday to Sunday.</>],
+              ['Thursday', <>Due Sunday, plannable any day before it: <S i={50} u={50} s={25} />.</>],
               ['Done Thursday', <>It stays done through Sunday and comes back on Monday for next Sunday.</>],
-              ['Not done', <>Sunday&rsquo;s lapses quietly on Monday. The next one is the following Sunday.</>],
+              ['Sunday', <>Not done yet: <S i={50} u={62} s={31} />.</>],
+              ['Missed', <>It stays open and is overdue on Monday: <S i={50} u={66} s={33} />. Three Sundays later it is <S i={50} u={79} s={40} /> - the most a repeating task can get, still below a real overdue deadline.</>],
+              ['Done late', <>Done on a Tuesday, the next one is the coming Sunday.</>],
+              ['Skipped', <>Skipping a missed one clears the backlog: the series picks up at the coming Sunday.</>],
             ]}
           />
         </Section>

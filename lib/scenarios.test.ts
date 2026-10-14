@@ -173,11 +173,23 @@ describe('Pay rent — due the 1st, a fixed period', () => {
 });
 
 describe('Gym prep — Mon, Wed, Fri', () => {
-  const gym = { recurrence: 'Weekly' as const, recurrenceWeekdays: [1, 3, 5], lastCompleted: noon('2026-09-30') };
-  it('lets a missed Monday go', () => {
-    expect(on('2026-10-06', gym, '2 - Important')).toEqual([40, 30, 12]);
+  // Last done Wednesday the 30th; Friday and Monday went by.
+  const gym = { recurrence: 'Weekly' as const, recurrenceWeekdays: [1, 3, 5], rotSince: noon('2026-09-30') };
+  it('keeps a missed day open and piles up', () => {
+    expect(on('2026-10-06', gym, '2 - Important')).toEqual([40, 77, 31]);
     vi.setSystemTime(new Date('2026-10-06T12:00:00'));
-    expect(liveOccurrenceDue(task({ ...gym }), '2026-10-06')).toBe('2026-10-07'); // next is Wednesday
+    expect(liveOccurrenceDue(task({ ...gym }), '2026-10-06')).toBe('2026-10-02'); // still Friday's
+  });
+});
+
+describe('Call grandparents — every Sunday', () => {
+  // High, Normal, in an Important domain. The cycle began Wednesday the 23rd.
+  const call = { recurrence: 'Weekly' as const, recurrenceWeekdays: [0], taskPriority: '2 - High' as const, rotSince: noon('2026-09-23') };
+  it('builds up to Sunday and keeps building when missed', () => {
+    expect(on('2026-09-24', call, '2 - Important')).toEqual([50, 50, 25]);  // Thursday before
+    expect(on('2026-09-27', call, '2 - Important')).toEqual([50, 62, 31]);  // Sunday
+    expect(on('2026-09-28', call, '2 - Important')).toEqual([50, 66, 33]);  // missed, Monday
+    expect(on('2026-10-14', call, '2 - Important')).toEqual([50, 79, 40]);  // three Sundays missed
   });
 });
 

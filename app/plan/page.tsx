@@ -11,7 +11,7 @@ import { useToast } from '@/components/Toast';
 import SuggestControlsComponent from '@/components/SuggestControls';
 import { FilterButton, SortButton, FilterDef, multiLevelSort, usePersistedSortLevels, usePersistedFilters, matchesFilter, isFilterActive } from '@/components/ViewControls';
 import { createEvent, createTask, deleteEvent, markTaskDone, planOccurrence, updateEventData, updateTaskData, useDomains, useEnergySettings, useEvents, useHabits, useProjects, useTasks, useVisibleFilterPresets } from '@/lib/hooks';
-import { liveOccurrenceDue, occurrenceWindowStart, recurrenceKind, upcomingOccurrences, Occurrence } from '@/lib/recurrence';
+import { isNamedDays, liveOccurrenceDue, occurrenceWindowStart, recurrenceKind, upcomingOccurrences, Occurrence } from '@/lib/recurrence';
 import { occurrenceKey } from '@/lib/suggest';
 import { cyclesMissed, isMissedPlan, isPressingBlocked, isStrandedBlocked } from '@/lib/scoring';
 import { needsTriageNag } from '@/lib/notifications';
@@ -136,13 +136,16 @@ export default function PlanPage() {
   const { showToast } = useToast();
   // "Plan for…" - the touch-friendly alternative to dragging.
   const [planTarget, setPlanTarget] = useState<PlanTarget | null>(null);
-  // A daily or named-day task is planned one day's occurrence at a time, so
-  // its sheet is for the occurrence in hand rather than for the whole task.
+  // Daily and named-day tasks are planned one occurrence at a time, so
+  // their sheet is for the occurrence in hand rather than the whole task -
+  // which is also where a missed one can be skipped.
   const setPlanTask = (task: Task | null) => {
     if (!task) { setPlanTarget(null); return; }
-    if (recurrenceKind(task) === 'lapsing' && task.status !== 'Done') {
+    const lapsing = recurrenceKind(task) === 'lapsing';
+    if ((lapsing || isNamedDays(task)) && task.status !== 'Done') {
       const due = liveOccurrenceDue(task) ?? getTodayString();
-      setPlanTarget({ task, occurrence: { due, windowStart: occurrenceWindowStart(task, due), plannedDate: task.plannedDate, skipped: false } });
+      const windowStart = lapsing ? occurrenceWindowStart(task, due) : getTodayString();
+      setPlanTarget({ task, occurrence: { due, windowStart, plannedDate: task.plannedDate, skipped: false } });
       return;
     }
     setPlanTarget({ task });
