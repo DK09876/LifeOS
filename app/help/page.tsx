@@ -227,13 +227,13 @@ export default function HelpPage() {
         <Section title="Repeating tasks">
           <p>A repeating task is one task that comes back. There are three kinds, and they behave differently:</p>
           <ul className="space-y-1">
-            <li><W>Daily, or on named days</W> (Mon/Wed/Fri) — each day&rsquo;s occurrence belongs to that day. Miss one and it is simply gone: no pressure, no rot, not a missed plan.</li>
+            <li><W>Daily, or on named days</W> (Mon/Wed/Fri) — a daily one belongs to its day; a named-day one can be done any day from the day after the previous named day up to its own. Miss one and it is simply gone: no pressure, no rot, not a missed plan.</li>
             <li><W>Every so often, from when you last did it</W> (&ldquo;When I finish it&rdquo;) — due one interval after the last time. Do it early and the next one comes earlier. Missed cycles pile up.</li>
             <li><W>On a fixed period</W> (&ldquo;The due date&rdquo;) — a real deadline that never moves: rent on the 1st. Late is overdue like any deadline.</li>
           </ul>
           <p>
             The occurrences after the current one show faintly (↻) on Plan and Week. They cost no energy until planned.
-            Tap one to <W>plan</W> it or <W>skip</W> it; a daily one can only be planned on its own day. Planned ones
+            Tap one to <W>plan</W> it or <W>skip</W> it; a daily one only on its own day, a named-day one anywhere in its week. Planned ones
             are drawn solid and count against their day. Suggest plans occurrences too: daily ones on their own day if
             there is room, the others anywhere in their window.
           </p>
@@ -277,6 +277,15 @@ export default function HelpPage() {
             setup="Weekly on Monday, Wednesday and Friday."
             steps={[
               ['Missed Mon', <>Monday&rsquo;s lapses. On Tuesday the one in hand is Wednesday&rsquo;s. The score does not change.</>],
+            ]}
+          />
+          <Example
+            title="call grandparents, every Sunday"
+            setup="Weekly on Sunday."
+            steps={[
+              ['Planning', <>This week&rsquo;s call can be planned on any day from Monday to Sunday.</>],
+              ['Done Thursday', <>It stays done through Sunday and comes back on Monday for next Sunday.</>],
+              ['Not done', <>Sunday&rsquo;s lapses quietly on Monday. The next one is the following Sunday.</>],
             ]}
           />
         </Section>

@@ -97,6 +97,28 @@ function withoutReadTime(body: string): string {
   return body.replace(/,?"exportedAt":"[^"]*"/, '');
 }
 
+/** The build this page's code came from. */
+export const CLIENT_BUILD = process.env.NEXT_PUBLIC_LIFEOS_BUILD ?? '';
+
+/**
+ * Reload when the server is running a newer build than this page. Tried once
+ * per server build, so a mismatch that a reload cannot fix (a cache serving
+ * old code) never turns into a reload loop. Never mid-write.
+ */
+function reloadIfOutdated(serverBuild: string | null): boolean {
+  if (!serverBuild || !CLIENT_BUILD || serverBuild === CLIENT_BUILD) return false;
+  if (typeof window === 'undefined' || writesInFlight > 0) return false;
+  const key = 'lifeos-reloaded-for';
+  try {
+    if (sessionStorage.getItem(key) === serverBuild) return false;
+    sessionStorage.setItem(key, serverBuild);
+  } catch {
+    return false;
+  }
+  window.location.reload();
+  return true;
+}
+
 export async function hydrate(): Promise<void> {
   const profile = getProfile();
   if (!profile) return;
@@ -104,6 +126,8 @@ export async function hydrate(): Promise<void> {
     cache: 'no-store',
   });
   if (!response.ok) throw new Error(`Could not load data (HTTP ${response.status})`);
+
+  if (reloadIfOutdated(response.headers?.get?.('x-lifeos-build') ?? null)) return;
 
   const text = await response.text();
   if (hydrated && unchanged(text, lastBody)) return; // nothing moved

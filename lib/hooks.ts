@@ -7,7 +7,7 @@ import { getTodayString } from './dates';
 import { getPreference, savePreference } from './store';
 import { projectProgress } from './progress';
 import { CAPACITY_PREF, WEEKDAY_BUDGET_PREF } from './capacity';
-import { createActions, RECURRENCE_LAST_RUN } from './actions';
+import { createActions, RECURRENCE_LAST_BUILD, RECURRENCE_LAST_RUN } from './actions';
 
 // The app's actions, bound to the browser's copy of the data. The same
 // functions run on the Pi for the voice assistant (lib/server/assistant.ts).
@@ -70,7 +70,10 @@ export function useEnergySettings() {
 export function useRecurrenceCheck() {
   useEffect(() => {
     (async () => {
-      if (getPreference(RECURRENCE_LAST_RUN) === getTodayString()) return;
+      // Once a day - and again after a deploy, so scores stored by older
+      // rules are recomputed rather than lingering until tomorrow.
+      const sameBuild = (getPreference(RECURRENCE_LAST_BUILD) ?? null) === (process.env.NEXT_PUBLIC_LIFEOS_BUILD ?? null);
+      if (getPreference(RECURRENCE_LAST_RUN) === getTodayString() && sameBuild) return;
       await runRecurrenceCheckCore();
     })();
   }, []);

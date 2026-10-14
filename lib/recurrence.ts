@@ -193,8 +193,11 @@ export function checkNeedsReset(task: Task, today = getTodayString()): boolean {
 
   const doneDay = localDay(task.lastCompleted)!;
 
-  // Named days reopen on the next named day, not seven days on.
+  // Named days: the occurrence finished is the first named day on or after
+  // the day it was done, and the next one opens the day after that. Calling
+  // grandparents on Thursday for Sunday must not bring it back on Sunday.
   if (task.recurrence === 'Weekly' && task.recurrenceWeekdays?.length) {
+    if (recurrenceKind(task) === 'lapsing') return today > lapsingDayFrom(task, doneDay);
     const next = advanceDate(parseLocalDate(doneDay), 'Weekly', task.recurrenceWeekdays);
     return !!next && today >= toDateString(next);
   }
@@ -287,10 +290,31 @@ export function liveOccurrenceDue(task: Task, today = getTodayString()): string 
 function nextNaturalAfterDone(task: Task): string | null {
   const kind = recurrenceKind(task);
   const doneDay = task.lastCompleted ? localDay(task.lastCompleted)! : getTodayString();
-  if (kind === 'lapsing') return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(doneDay), 1)));
+  if (kind === 'lapsing') {
+    // Done early counts for the occurrence it was early for; the next one is
+    // the named day after that, not after the day it was done.
+    const doneFor = lapsingDayFrom(task, doneDay);
+    return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(doneFor), 1)));
+  }
   if (task.dueDate) return nextRecurrenceDates(task).dueDate;
   const next = advanceDate(parseLocalDate(doneDay), task.recurrence, task.recurrenceWeekdays);
   return next ? toDateString(next) : null;
+}
+
+/**
+ * The first day an occurrence of a daily or named-day task can be planned
+ * on: the day after the named day before it. A daily occurrence's window is
+ * its own day; "every Sunday" can be done any day of the week leading up to
+ * its Sunday.
+ */
+export function occurrenceWindowStart(task: Pick<Task, 'recurrence' | 'recurrenceWeekdays'>, due: string): string {
+  if (task.recurrence === 'Daily' || !task.recurrenceWeekdays?.length) return due;
+  const wanted = new Set(task.recurrenceWeekdays);
+  for (let back = 1; back <= 7; back++) {
+    const d = addDays(parseLocalDate(due), -back);
+    if (wanted.has(d.getDay())) return toDateString(addDays(d, 1));
+  }
+  return due;
 }
 
 function advanceNatural(task: Task, due: string): string | null {
@@ -341,7 +365,9 @@ export function upcomingOccurrences(task: Task, until: string, today = getTodayS
       plannedDate: plan?.plannedDate ?? null,
       skipped: !!plan?.skipped,
       date,
-      windowStart: toDateString(addDays(parseLocalDate(previous), 1)),
+      windowStart: recurrenceKind(task) === 'lapsing'
+        ? occurrenceWindowStart(task, cursor)
+        : toDateString(addDays(parseLocalDate(previous), 1)),
     });
     previous = cursor;
     cursor = advanceNatural(task, cursor);
