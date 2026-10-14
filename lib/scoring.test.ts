@@ -324,11 +324,14 @@ describe('a repeating task is due by the end of its cycle', () => {
   });
 
   // A daily task's missed days lapse: reading yesterday's page is not owed.
-  it('does not pile up for a daily or named-day task', () => {
+  it('does not pile up for a daily task', () => {
     expect(pressure({ recurrence: 'Daily', lastCompleted: daysAgo(5) })).toBe(0);
-    expect(pressure({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], lastCompleted: daysAgo(9) })).toBe(0);
     expect(pressure({ recurrence: 'Daily', createdAt: daysAgo(200) })).toBe(0);
     expect(pressure({ recurrence: 'Daily', plannedDate: dueIn(-2) })).toBe(0);
+  });
+
+  it('piles up for a named-day task left undone', () => {
+    expect(pressure({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], rotSince: daysAgo(9) })).toBeGreaterThan(0);
   });
 
   it('outgrows neglect but never a real overdue deadline', () => {

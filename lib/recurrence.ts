@@ -96,15 +96,74 @@ export function intervalDays(recurrence: Task['recurrence'], weekdays?: number[]
  * date, so anything with a real deadline keeps it.
  */
 export function cycleDueDate(
-  task: Partial<Pick<Task, 'recurrence' | 'lastCompleted' | 'createdAt' | 'recurrenceWeekdays' | 'rotSince'>>,
+  task: Partial<Pick<Task, 'recurrence' | 'lastCompleted' | 'createdAt' | 'recurrenceWeekdays' | 'rotSince' | 'occurrencePlans' | 'status'>>,
 ): string | null {
   if (!task.recurrence || task.recurrence === 'None') return null;
+  if (isNamedDays(task)) {
+    // Open: the named day after the cycle began. Finished: the one after
+    // the day the completion settled.
+    if (task.status !== 'Done') {
+      return namedOpenDue({ ...task, rotSince: task.rotSince || task.lastCompleted });
+    }
+    const open = namedOpenDue(task);
+    if (!open || !task.lastCompleted) return open;
+    return namedDayAfter(task, namedDoneFor(task, open)!);
+  }
   // rotSince is restarted when an occurrence comes back, so it is the start of
   // the current cycle; lastCompleted is cleared at that moment.
   const since = task.lastCompleted || task.rotSince || task.createdAt;
   if (!since) return null;
   const next = advanceDate(parseLocalDate(localDay(since)!), task.recurrence, task.recurrenceWeekdays);
   return next ? toDateString(next) : null;
+}
+
+/**
+ * Named days ("every Sunday", "Mon/Wed/Fri") with no due date of their own.
+ * Each occurrence is due on its named day and can be done any day since the
+ * one before. One left undone stays open and goes overdue - it does not
+ * quietly vanish - and the next named day only comes once it is dealt with.
+ */
+export function isNamedDays(task: Partial<Pick<Task, 'recurrence' | 'recurrenceWeekdays'>> & { dueDate?: string | null }): boolean {
+  return task.recurrence === 'Weekly' && !!task.recurrenceWeekdays?.length && !task.dueDate;
+}
+
+/** How many named days from `due` up to (not including) `today`. */
+export function namedDaysMissed(weekdays: number[], due: string, today: string): number {
+  const wanted = new Set(weekdays);
+  let n = 0;
+  for (let d = parseLocalDate(due); toDateString(d) < today && n < 400; d = addDays(d, 1)) {
+    if (wanted.has(d.getDay())) n++;
+  }
+  return n;
+}
+
+/** The first named day strictly after `day`, passing over skipped ones. */
+function namedDayAfter(task: Partial<Pick<Task, 'recurrenceWeekdays' | 'occurrencePlans'>>, day: string): string | null {
+  const wanted = new Set(task.recurrenceWeekdays ?? []);
+  let cursor = parseLocalDate(day);
+  for (let guard = 0; guard < 400; guard++) {
+    cursor = addDays(cursor, 1);
+    const date = toDateString(cursor);
+    if (wanted.has(cursor.getDay()) && !(task.occurrencePlans ?? []).some((p) => p.due === date && p.skipped)) return date;
+  }
+  return null;
+}
+
+/** The named day the open occurrence is due: the first after its cycle started. */
+function namedOpenDue(task: Partial<Pick<Task, 'recurrenceWeekdays' | 'occurrencePlans' | 'rotSince' | 'createdAt'>>): string | null {
+  const start = localDay(task.rotSince || task.createdAt);
+  return start ? namedDayAfter(task, start) : null;
+}
+
+/**
+ * Which day a completion settles. Done early, it is for the occurrence it
+ * was early for (Sunday's call made on Thursday); done late, the day it was
+ * actually done, so the next one is the named day after that.
+ */
+function namedDoneFor(task: Partial<Pick<Task, 'lastCompleted'>>, openDue: string): string | null {
+  const doneDay = localDay(task.lastCompleted);
+  if (!doneDay) return null;
+  return doneDay <= openDue ? openDue : doneDay;
 }
 
 type RecurringFields = Pick<Task, 'recurrence' | 'recurrenceAnchor' | 'recurrenceWeekdays' | 'dueDate' | 'plannedDate' | 'lastCompleted'>;
@@ -147,6 +206,7 @@ export function nextRecurrenceDates(task: RecurringFields): { dueDate: string | 
  */
 export function followingOccurrence(task: RecurringFields): string | null {
   if (task.recurrence === 'None') return null;
+  if (isNamedDays(task)) return cycleDueDate(task as Partial<Task>);
   const { dueDate, plannedDate } = nextRecurrenceDates(task);
   if (plannedDate || dueDate) return plannedDate ?? dueDate;
   const from = task.lastCompleted ? parseLocalDate(localDay(task.lastCompleted)!) : parseLocalDate(getTodayString());
@@ -193,13 +253,12 @@ export function checkNeedsReset(task: Task, today = getTodayString()): boolean {
 
   const doneDay = localDay(task.lastCompleted)!;
 
-  // Named days: the occurrence finished is the first named day on or after
-  // the day it was done, and the next one opens the day after that. Calling
-  // grandparents on Thursday for Sunday must not bring it back on Sunday.
-  if (task.recurrence === 'Weekly' && task.recurrenceWeekdays?.length) {
-    if (recurrenceKind(task) === 'lapsing') return today > lapsingDayFrom(task, doneDay);
-    const next = advanceDate(parseLocalDate(doneDay), 'Weekly', task.recurrenceWeekdays);
-    return !!next && today >= toDateString(next);
+  // Named days: the next one opens the day after the day the completion
+  // settled. Calling grandparents on Thursday for Sunday must not bring it
+  // back on Sunday.
+  if (isNamedDays(task)) {
+    const open = namedOpenDue(task);
+    return !!open && today > namedDoneFor(task, open)!;
   }
 
   // Counted in calendar days, not elapsed hours. The daily check runs once,
@@ -236,9 +295,12 @@ export function checkNeedsReset(task: Task, today = getTodayString()): boolean {
  *   cycle    - "every two weeks, from when I last did it": water the plants.
  *              Due one interval after the last time; do it early and the
  *              next one moves earlier with it. Missed cycles pile up.
- *   lapsing  - every day, or on named days: read a page, gym prep Mon/Wed/Fri.
- *              Each occurrence belongs to its day. Miss one and it is simply
- *              gone - tomorrow's is a new one, not a debt.
+ *              Named days ("every Sunday") are cycles too: due on the named
+ *              day, doable any day since the one before, and a missed one
+ *              stays open and piles up rather than vanishing.
+ *   lapsing  - every day: read a page. Each occurrence belongs to its day.
+ *              Miss one and it is simply gone - tomorrow's is a new one, not
+ *              a debt.
  */
 export type RecurrenceKind = 'none' | 'lapsing' | 'cycle' | 'fixed';
 
@@ -248,7 +310,7 @@ export function recurrenceKind(
   if (task.recurrence === 'None') return 'none';
   if (task.recurrenceAnchor === 'schedule' && task.dueDate) return 'fixed';
   if (task.dueDate) return 'cycle';
-  if (task.recurrence === 'Daily' || (task.recurrence === 'Weekly' && task.recurrenceWeekdays?.length)) return 'lapsing';
+  if (task.recurrence === 'Daily') return 'lapsing';
   return 'cycle';
 }
 
@@ -297,6 +359,7 @@ function nextNaturalAfterDone(task: Task): string | null {
     return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(doneFor), 1)));
   }
   if (task.dueDate) return nextRecurrenceDates(task).dueDate;
+  if (isNamedDays(task)) return cycleDueDate(task);
   const next = advanceDate(parseLocalDate(doneDay), task.recurrence, task.recurrenceWeekdays);
   return next ? toDateString(next) : null;
 }
@@ -319,6 +382,7 @@ export function occurrenceWindowStart(task: Pick<Task, 'recurrence' | 'recurrenc
 
 function advanceNatural(task: Task, due: string): string | null {
   if (recurrenceKind(task) === 'lapsing') return lapsingDayFrom(task, toDateString(addDays(parseLocalDate(due), 1)));
+  if (isNamedDays(task)) return namedDayAfter({ recurrenceWeekdays: task.recurrenceWeekdays }, due);
   const next = advanceDate(parseLocalDate(due), task.recurrence, task.recurrenceWeekdays);
   return next ? toDateString(next) : null;
 }
@@ -400,12 +464,16 @@ export function comeBack(task: Task): {
   const carried = nextRecurrenceDates(task);
   let natural = nextNaturalAfterDone(task);
   let plans = [...(task.occurrencePlans ?? [])].sort((a, b) => a.due.localeCompare(b.due));
-  let rotSince = task.lastCompleted;
+  // The next cycle starts from the day the completion settled - for named
+  // days that is the named day it was done early for.
+  const namedOpen = isNamedDays(task) ? namedOpenDue(task) : null;
+  let rotSince = namedOpen && task.lastCompleted ? `${namedDoneFor(task, namedOpen)}T12:00:00` : task.lastCompleted;
 
   // A cycle counted from completion moves when you finish early or late, so
   // its plans follow by position - "the next one on Saturday" stays the next
   // one - rather than by a date that no longer exists.
-  if (kind === 'cycle' && !task.dueDate && natural && plans.length) {
+  // Named days keep their dates, so their plans need no re-keying.
+  if (kind === 'cycle' && !task.dueDate && !namedOpen && natural && plans.length) {
     const seq: string[] = [natural];
     while (seq.length < plans.length) {
       const next = advanceNatural(task, seq[seq.length - 1]);
@@ -435,6 +503,9 @@ export function comeBack(task: Task): {
     break;
   }
   if (kind === 'lapsing') dueDate = null;
+  // Skipped named days are dropped from the plans here, so the new cycle
+  // starts the day before the one now in hand rather than re-finding them.
+  if (namedOpen && natural) rotSince = `${toDateString(addDays(parseLocalDate(natural), -1))}T12:00:00`;
   return { dueDate, plannedDate, occurrencePlans: plans, rotSince };
 }
 
@@ -561,7 +632,7 @@ export function pruneCompletionDates(dates: string[], retentionDays: number = 90
 export function thenOn(task: Task, today = getTodayString()): string | null {
   if (task.recurrence === 'None') return null;
   if (task.status === 'Done' || task.status === 'Archived') return nextOnDate(task);
-  const asIfDone = { ...task, lastCompleted: `${today}T12:00:00` };
+  const asIfDone = { ...task, status: 'Done' as const, lastCompleted: `${today}T12:00:00` };
   if (seriesEnded(asIfDone)) return null;
   return followingOccurrence(asIfDone);
 }

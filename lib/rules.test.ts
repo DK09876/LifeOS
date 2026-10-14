@@ -109,9 +109,9 @@ describe('projected occurrences', () => {
   });
 
   it('follows named weekdays', () => {
-    const mwf = task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], plannedDate: '2026-09-21' });
-    // Monday's was missed and lapsed; the one in hand is Friday's, then Mon and Wed.
-    expect(projectOccurrences(mwf, '2026-09-21', '2026-09-30', TODAY)).toEqual(['2026-09-28', '2026-09-30']);
+    const mwf = task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5], rotSince: at('2026-09-20') });
+    // Monday's was missed and is still the one in hand; later ones from today on.
+    expect(projectOccurrences(mwf, '2026-09-21', '2026-09-30', TODAY)).toEqual(['2026-09-25', '2026-09-28', '2026-09-30']);
   });
 
   it('projects nothing for one-off or blocked work', () => {
@@ -384,7 +384,7 @@ describe('kinds of repeating task', () => {
     expect(recurrenceKind(task({ recurrence: 'Monthly', recurrenceAnchor: 'schedule', dueDate: '2026-10-17' }))).toBe('fixed');
     expect(recurrenceKind(task({ recurrence: 'Biweekly' }))).toBe('cycle');
     expect(recurrenceKind(task({ recurrence: 'Daily' }))).toBe('lapsing');
-    expect(recurrenceKind(task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5] }))).toBe('lapsing');
+    expect(recurrenceKind(task({ recurrence: 'Weekly', recurrenceWeekdays: [1, 3, 5] }))).toBe('cycle');
   });
 
   it('never lists a lapsing task as a missed plan', () => {
@@ -476,37 +476,53 @@ describe('suggest places occurrences', () => {
   });
 });
 
-import { occurrenceWindowStart } from './recurrence';
+import { namedDaysMissed } from './recurrence';
+import { calculateTaskScores, cyclesMissed } from './scoring';
 
-describe('named-day tasks own their week', () => {
-  // "Call grandparents" every Sunday. Today is Thursday the 24th; this week's
-  // call is Sunday the 27th.
-  const call = task({ recurrence: 'Weekly', recurrenceWeekdays: [0] });
+describe('named-day tasks stay open until done', () => {
+  // "Call grandparents" every Sunday, cycle started Wednesday the 23rd. Today
+  // is Thursday the 24th; the call is due Sunday the 27th.
+  const call = task({ recurrence: 'Weekly', recurrenceWeekdays: [0], rotSince: at('2026-09-23') });
 
-  it('can be done any day from the Monday after last Sunday', () => {
-    expect(recurrenceKind(call)).toBe('lapsing');
+  it('is due on its named day and can be planned any day before it', () => {
+    expect(recurrenceKind(call)).toBe('cycle');
     expect(liveOccurrenceDue(call, TODAY)).toBe('2026-09-27');
-    expect(occurrenceWindowStart(call, '2026-09-27')).toBe('2026-09-21');
-    // Two named days split the week between them; daily stays on its day.
-    expect(occurrenceWindowStart({ recurrence: 'Weekly', recurrenceWeekdays: [1, 4] }, '2026-09-24')).toBe('2026-09-22');
-    expect(occurrenceWindowStart({ recurrence: 'Daily', recurrenceWeekdays: null }, '2026-09-24')).toBe('2026-09-24');
   });
 
   it('done on Thursday stays done through Sunday and comes back Monday for next Sunday', () => {
     const done = { ...call, status: 'Done' as const, lastCompleted: at(TODAY, 19) };
     for (const day of ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27']) expect(checkNeedsReset(done, day)).toBe(false);
     expect(checkNeedsReset(done, '2026-09-28')).toBe(true);
+    const back = comeBack(done);
+    expect(liveOccurrenceDue({ ...call, status: 'Backlog', rotSince: back.rotSince }, '2026-09-28')).toBe('2026-10-04');
     const [next] = upcomingOccurrences(done, '2026-10-05', TODAY);
-    expect(next).toMatchObject({ due: '2026-10-04', windowStart: '2026-09-28' });
+    expect(next.due).toBe('2026-10-04');
   });
 
-  it('done on its own day comes back the next day', () => {
-    const done = { ...call, status: 'Done' as const, lastCompleted: at('2026-09-27', 18) };
-    expect(checkNeedsReset(done, '2026-09-27')).toBe(false);
-    expect(checkNeedsReset(done, '2026-09-28')).toBe(true);
+  it('missed, it stays open, goes overdue and piles up', () => {
+    // Three Sundays gone by: 27th, 4th, 11th.
+    expect(liveOccurrenceDue(call, '2026-10-14')).toBe('2026-09-27');
+    expect(namedDaysMissed([0], '2026-09-27', '2026-10-14')).toBe(3);
+    expect(cyclesMissed(call, '2026-10-14')).toBe(3);
+    const late = calculateTaskScores(call, '2 - Important', '2026-10-14');
+    const onTime = calculateTaskScores(call, '2 - Important', '2026-09-24');
+    expect(late.urgencyScore).toBeGreaterThan(onTime.urgencyScore);
+    expect(late.urgencyScore).toBe(30 + 49);
   });
 
-  it('suggest may place it on any day of its week, not only Sunday', () => {
+  it('done late, the next is the named day after the day it was done', () => {
+    const done = { ...call, status: 'Done' as const, lastCompleted: at('2026-09-29', 18) }; // Tuesday after
+    expect(checkNeedsReset(done, '2026-09-29')).toBe(false);
+    expect(checkNeedsReset(done, '2026-09-30')).toBe(true);
+    const back = comeBack(done);
+    expect(liveOccurrenceDue({ ...call, status: 'Backlog', rotSince: back.rotSince }, '2026-09-30')).toBe('2026-10-04');
+  });
+
+  it('a missed plan for it is a missed plan', () => {
+    expect(isMissedPlan({ ...call, status: 'Planned', plannedDate: '2026-09-23' }, TODAY)).toBe(true);
+  });
+
+  it('suggest may place it on any day before its day', () => {
     const days: WeekDayInfo[] = ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'].map((d) => ({
       date: parseLocalDate(d), dateStr: d, existingTasks: [], events: [],
     }));

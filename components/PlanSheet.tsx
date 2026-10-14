@@ -57,8 +57,7 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
   const kind = recurrenceKind(task);
   const current = occurrence ? occurrence.plannedDate : task.plannedDate;
   // A daily occurrence belongs to its own day - moving it would just double
-  // up another day. A named-day one ("every Sunday") can go anywhere from the
-  // day after the previous one up to its own day.
+  // up another day.
   const earliest = occurrence ? (occurrence.windowStart > today ? occurrence.windowStart : today) : today;
   const latest = occurrence && kind === 'lapsing' ? occurrence.due : null;
   const fixedDay = latest && earliest >= latest ? latest : null;
@@ -104,9 +103,6 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
         <div className="space-y-1.5">
           {shown.length === 0 && latest && (
             <p className="text-sm text-[var(--muted)]">{format(parseLocalDate(latest), 'EEEE d MMM')} is more than a week out — plan it nearer the time.</p>
-          )}
-          {latest && !fixedDay && shown.length > 0 && (
-            <p className="text-xs text-[var(--muted)]">This one can be done any day up to {format(parseLocalDate(latest), 'EEEE d MMM')}.</p>
           )}
           {shown.map(({ date, load, budget }) => {
             const i = days.findIndex(d => d.date === date);
@@ -161,7 +157,7 @@ export default function PlanSheet({ target, onClose }: { target: PlanTarget | nu
         {occurrence && (
           <button onClick={() => skip(!occurrence.skipped)}
                   className="flex-1 py-2 text-sm rounded-lg bg-[var(--background)] text-amber-300 hover:text-amber-200">
-            {occurrence.skipped ? 'Unskip' : 'Skip this one'}
+            {occurrence.skipped ? 'Unskip' : occurrence.due < today ? 'Skip — pick up at the next one' : 'Skip this one'}
           </button>
         )}
       </div>

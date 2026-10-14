@@ -12,9 +12,10 @@ import type { Task, Domain, Project, Habit, Event, Note } from '@/types';
 import type { FilterPreset } from './db';
 import { checkNeedsReset, pruneCompletionDates, checkEventNeedsReset, currentEventDate, localDay } from './recurrence';
 import { calculateTaskScores } from './scoring';
-import { comeBack, liveOccurrenceDue, recurrenceKind } from './recurrence';
+import { comeBack, isNamedDays, liveOccurrenceDue, recurrenceKind } from './recurrence';
 import type { OccurrencePlan } from '@/types';
-import { getTodayString, parseLocalDate } from './dates';
+import { getTodayString, parseLocalDate, toDateString } from './dates';
+import { addDays } from 'date-fns';
 import type { Table } from './store';
 import { bestStreakSoFar, currentStreak } from './streaks';
 import { logProgress, projectProgress } from './progress';
@@ -168,7 +169,7 @@ export function createActions(env: ActionEnv) {
   }
 
   /**
-   * A daily or named-day task whose day went by undone: that occurrence lapses.
+   * A daily task whose day went by undone: that occurrence lapses.
    * Its plan for the gone day is dropped (not a missed plan, not a slip) and
    * the plan for the occurrence now in hand, if one was made, takes its place.
    */
@@ -213,12 +214,30 @@ export function createActions(env: ActionEnv) {
       // next one, as if this one had been dealt with - without recording it
       // as done.
       const next = comeBack({ ...task, status: 'Done', lastCompleted: `${due}T12:00:00` });
-      await db.tasks.update(taskId, {
-        status: next.plannedDate ? 'Planned' : 'Backlog',
+      // Skipping a named day that has already gone by skips everything missed
+      // since: the series picks up at the next named day from today, rather
+      // than handing back the next missed week one skip at a time.
+      const yesterday = `${toDateString(addDays(parseLocalDate(getTodayString()), -1))}T12:00:00`;
+      if (isNamedDays(task) && next.rotSince && next.rotSince < yesterday) {
+        next.rotSince = yesterday;
+        next.plannedDate = null;
+        next.occurrencePlans = next.occurrencePlans.filter(p => p.due >= getTodayString());
+      }
+      const moved = {
+        status: (next.plannedDate ? 'Planned' : 'Backlog') as Task['status'],
         dueDate: next.dueDate,
         plannedDate: next.plannedDate,
         occurrencePlans: next.occurrencePlans,
-        rotSince: recurrenceKind(task) === 'lapsing' ? task.rotSince ?? null : `${due}T12:00:00`,
+        rotSince: recurrenceKind(task) === 'lapsing' ? task.rotSince ?? null : next.rotSince ?? `${due}T12:00:00`,
+      };
+      // Rescored now, so a skipped missed one stops weighing straight away.
+      const domainPriority = task.domainId ? (await db.domains.get(task.domainId))?.priority : undefined;
+      const scores = calculateTaskScores({ ...task, ...moved }, domainPriority);
+      await db.tasks.update(taskId, {
+        ...moved,
+        importanceScore: scores.importanceScore,
+        urgencyScore: scores.urgencyScore,
+        taskScore: scores.combinedScore,
         updatedAt: new Date().toISOString(),
       });
       return;
@@ -674,7 +693,7 @@ export function createActions(env: ActionEnv) {
   function isSlip(task: Pick<Task, 'plannedDate' | 'status'>, updates: Partial<Task>, today = getTodayString()): boolean {
     if (task.status === 'Done' || task.status === 'Archived') return false;
     if (updates.status === 'Done' || updates.status === 'Archived') return false;
-    // A daily or named-day task's missed day lapses; moving it is not sliding it.
+    // A daily task's missed day lapses; moving it is not sliding it.
     if (recurrenceKind({ recurrence: (task as Task).recurrence ?? 'None', recurrenceAnchor: (task as Task).recurrenceAnchor ?? null,
       recurrenceWeekdays: (task as Task).recurrenceWeekdays ?? null, dueDate: (task as Task).dueDate ?? null }) === 'lapsing') return false;
     if (!task.plannedDate || task.plannedDate >= today) return false;

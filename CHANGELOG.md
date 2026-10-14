@@ -2,6 +2,14 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.12.2] - 2026-10-14
+
+### Repeating tasks
+- A **named-day** task ("every Sunday", "Mon/Wed/Fri") no longer lapses quietly when missed. The missed one stays open and goes overdue, and its pressure piles up for each named day that goes by, up to the cap for repeating tasks (still below a real overdue deadline). Missed plans and slips count for it too
+- The ↻ badge says how many are **missed**
+- Done late, the next one is the named day after the day it was done. **Skipping** a missed one picks the series up at the coming named day
+- Daily tasks still lapse
+
 ## [0.12.1] - 2026-10-14
 
 ### Repeating tasks

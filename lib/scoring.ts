@@ -8,7 +8,7 @@ import { differenceInCalendarDays } from 'date-fns';
 
 import type { Task } from '@/types';
 import { getTodayString, parseLocalDate } from './dates';
-import { cycleDueDate, intervalDays, localDay, recurrenceKind } from './recurrence';
+import { cycleDueDate, intervalDays, isNamedDays, localDay, namedDaysMissed, recurrenceKind } from './recurrence';
 
 /**
  * How time pressure is ranked, loudest first:
@@ -80,10 +80,12 @@ function cycleLadder(days: number, cyclesMissed: number): number {
 
 /** How many whole cycles have gone by since a cycle fell due. */
 export function cyclesMissed(task: Partial<Task>, today = getTodayString()): number {
-  // A daily or named-day task does not owe its missed days; they lapse.
+  // A daily task does not owe its missed days; they lapse.
   if (isLapsing(task)) return 0;
   const due = cycleDueDate(task);
   if (!due || due >= today) return 0;
+  // Named days count the actual days gone by: missed Friday and Monday is two.
+  if (isNamedDays(task)) return namedDaysMissed(task.recurrenceWeekdays!, due, today);
   const late = differenceInCalendarDays(parseLocalDate(today), parseLocalDate(due));
   const interval = intervalDays(task.recurrence ?? 'None', task.recurrenceWeekdays) || 1;
   return 1 + Math.floor(late / interval);
@@ -133,7 +135,7 @@ export function calculateTaskScores(
     deadline = Math.max(deadline, dueLadder(daysTo(task.followUpDate)));
   }
 
-  // Daily and named-day tasks: each day's occurrence is optional practice,
+  // Daily tasks: each day's occurrence is optional practice,
   // not a debt. No cycle pressure, no rot, and a plan for a day that has gone
   // simply lapses.
   const lapsing = isLapsing(task);
@@ -196,7 +198,7 @@ export function isPressingBlocked(task: Pick<Task, 'dueDate' | 'status' | 'delet
 
 /**
  * A plan whose day went by without it - the "plans you missed" list. Daily
- * and named-day tasks are left out: their missed day lapses instead.
+ * tasks are left out: their missed day lapses instead.
  */
 export function isMissedPlan(task: Task, today = getTodayString()): boolean {
   if (task.deletedAt || task.status === 'Done' || task.status === 'Archived' || task.status === 'Blocked') return false;
