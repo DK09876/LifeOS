@@ -18,6 +18,7 @@ import { suggestWeekSchedule, DEFAULT_SUGGEST_CONTROLS, WeekDayInfo } from './su
 import { isOnToday } from './schedule';
 import { spentOn } from './history';
 import { parseLocalDate } from './dates';
+import { describeSchedule, nextFiring, Reminder } from './reminders';
 
 // Thursday 24 September 2026, mid-morning local.
 const NOW = new Date(2026, 8, 24, 10, 0, 0);
@@ -260,7 +261,8 @@ describe('notices', () => {
     expect(brief.pushAt).toBe(`${TODAY}T08:00`);
     expect(brief.body).toContain('1 overdue');
     expect(brief.body).toContain('1 blocked & pressing');
-    expect(notices.filter((n) => n.pushAt).map((n) => n.kind)).toEqual(['brief']);
+    // The brief, and the midday check because a task is still left today.
+    expect(notices.filter((n) => n.pushAt).map((n) => n.kind)).toEqual(['brief', 'midday']);
     expect(notices.map((n) => n.kind)).toEqual(expect.arrayContaining(['overdue', 'blocked']));
   });
 
@@ -281,6 +283,66 @@ describe('notices', () => {
     expect(isDueToPush(reminder, new Date(2026, 8, 24, 18, 0))).toBe(false);
   });
 
+  it('checks in at midday on what is left, and only if anything is', () => {
+    const left = buildNotices({ ...base, tasks: [task({ id: 'b', taskName: 'Email', plannedDate: TODAY })] }).find((n) => n.kind === 'midday')!;
+    expect(left).toMatchObject({ pushAt: `${TODAY}T12:00`, title: '1 task left today', body: 'Email · 2 AP' });
+    expect(buildNotices({ ...base, tasks: [task({ status: 'Done', plannedDate: TODAY })] }).some((n) => n.kind === 'midday')).toBe(false);
+    const off = { ...DEFAULT_NOTICE_SETTINGS, push: { ...DEFAULT_NOTICE_SETTINGS.push, midday: false } };
+    expect(buildNotices({ ...base, settings: off, tasks: [task({ plannedDate: TODAY })] }).some((n) => n.kind === 'midday')).toBe(false);
+  });
+
+  it('looks at tomorrow in the evening when switched on', () => {
+    const on = { ...DEFAULT_NOTICE_SETTINGS, push: { ...DEFAULT_NOTICE_SETTINGS.push, tomorrow: true } };
+    expect(buildNotices({ ...base, tasks: [] }).some((n) => n.kind === 'tomorrow')).toBe(false); // off by default
+    const n = buildNotices({ ...base, settings: on, tasks: [task({ taskName: 'Gym', plannedDate: '2026-09-25' })] }).find((x) => x.kind === 'tomorrow')!;
+    expect(n).toMatchObject({ pushAt: `${TODAY}T21:00`, title: 'Tomorrow: 1 task', body: 'Gym · 2 AP' });
+  });
+});
+
+describe('your own reminders', () => {
+  const base = { tasks: [], habits: [], events: [], settings: DEFAULT_NOTICE_SETTINGS, budget: 10, defaultAP: 2, now: NOW };
+  const r = (over: Partial<Reminder>): Reminder => ({
+    id: 'r1', title: 'Bins', note: '', time: '19:00', repeat: 'daily', date: null, weekdays: [], enabled: true,
+    createdAt: at('2026-09-01'), updatedAt: at('2026-09-01'), ...over,
+  });
+  const fired = (reminder: Reminder, now = NOW) => buildNotices({ ...base, now, reminders: [reminder] }).filter((n) => n.kind === 'reminder');
+
+  it('goes off once, every day, or on chosen days', () => {
+    expect(fired(r({ repeat: 'once', date: TODAY }))[0]).toMatchObject({ pushAt: `${TODAY}T19:00`, title: '⏰ Bins' });
+    expect(fired(r({ repeat: 'once', date: '2026-09-25' }))).toHaveLength(0);
+    expect(fired(r({ repeat: 'daily' }))).toHaveLength(1);
+    expect(fired(r({ repeat: 'days', weekdays: [4] }))).toHaveLength(1); // Thursday
+    expect(fired(r({ repeat: 'days', weekdays: [1, 2] }))).toHaveLength(0);
+    expect(fired(r({ enabled: false }))).toHaveLength(0);
+  });
+
+  it('is pushed at its time and shown in the list from then', () => {
+    const [n] = fired(r({}));
+    expect(isVisible(n, NOW)).toBe(false);
+    expect(isDueToPush(n, new Date(2026, 8, 24, 19, 0))).toBe(true);
+    expect(isVisible(n, new Date(2026, 8, 24, 19, 1))).toBe(true);
+  });
+
+  it('does not go off late when set up after its time today', () => {
+    const late = r({ time: '09:00', updatedAt: new Date(2026, 8, 24, 9, 30).toISOString() });
+    expect(fired(late)).toHaveLength(0);
+    expect(fired(late, new Date(2026, 8, 25, 10, 0))).toHaveLength(1); // tomorrow it does
+  });
+
+  it('a new time on the same day is a new push', () => {
+    expect(fired(r({ time: '19:00' }))[0].key).not.toBe(fired(r({ time: '20:00' }))[0].key);
+  });
+
+  it('describes and finds its next time', () => {
+    expect(describeSchedule(r({ repeat: 'days', weekdays: [1, 2, 3, 4, 5] }))).toBe('Weekdays at 7:00 pm');
+    expect(describeSchedule(r({ repeat: 'days', weekdays: [3, 1] }))).toBe('Mon, Wed at 7:00 pm');
+    expect(describeSchedule(r({ repeat: 'once', date: '2026-09-26', time: '09:30' }))).toBe('Sat 26 Sep at 9:30 am');
+    expect(nextFiring(r({ repeat: 'days', weekdays: [1] }), NOW)).toBe('2026-09-28T19:00');
+    expect(nextFiring(r({ repeat: 'once', date: '2026-09-23' }), NOW)).toBeNull();
+  });
+});
+
+describe('rollover', () => {
   it('applies the recurring rollover before judging the day', () => {
     const doneLastNight = task({ recurrence: 'Daily', status: 'Done', lastCompleted: at('2026-09-23', 21), plannedDate: '2026-09-23' });
     const [rolled] = rolledOver([doneLastNight], TODAY);

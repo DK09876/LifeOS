@@ -34,6 +34,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: SidebarProps) {
     { href: '/events', icon: '🕐', label: 'Events' },
     { href: '/habits', icon: '🔄', label: 'Habits' },
     { href: '/notes', icon: '📝', label: 'Notes & Lists' },
+    { href: '/reminders', icon: '⏰', label: 'Reminders' },
     { href: '/domains', icon: '🗂️', label: 'Domains' },
     { href: '/retrospect', icon: '📈', label: 'Review' },
     { type: 'divider' as const },

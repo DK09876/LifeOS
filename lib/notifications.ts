@@ -23,10 +23,12 @@ import { isOnToday } from './schedule';
 import { isMissedPlan, isOverdue, isPressingBlocked } from './scoring';
 import { apOf, HABIT_DEFAULT_AP } from './capacity';
 import { milestoneLabel } from './milestones';
+import { describeSchedule, occursOn, Reminder } from './reminders';
 
 export type NoticeKind =
   | 'brief' | 'overdue' | 'missed' | 'followup' | 'blocked' | 'triage'
-  | 'yesterday' | 'event' | 'habits' | 'review' | 'milestone';
+  | 'yesterday' | 'event' | 'habits' | 'review' | 'milestone'
+  | 'midday' | 'tomorrow' | 'reminder';
 
 export interface Notice {
   /** Stable for the thing and the day, so it is pushed and dismissed once. */
@@ -42,20 +44,27 @@ export interface Notice {
 
 export interface NoticeSettings {
   briefTime: string;        // HH:mm
+  middayTime: string;       // HH:mm
   eveningTime: string;      // HH:mm
+  tomorrowTime: string;     // HH:mm
   eventLeadMinutes: number;
   /** Which pushes to send. The in-app list always shows everything. */
-  push: Record<'brief' | 'event' | 'habits' | 'review', boolean>;
+  push: Record<BuiltIn, boolean>;
 }
+
+/** The reminders that come with the app, each switched on or off. */
+export type BuiltIn = 'brief' | 'midday' | 'event' | 'habits' | 'tomorrow' | 'review';
 
 export const NOTICE_SETTINGS_PREF = 'notifications.settings';
 export const NOTICE_DISMISSED_PREF = 'notifications.dismissed';
 
 export const DEFAULT_NOTICE_SETTINGS: NoticeSettings = {
   briefTime: '08:00',
+  middayTime: '12:00',
   eveningTime: '20:00',
+  tomorrowTime: '21:00',
   eventLeadMinutes: 15,
-  push: { brief: true, event: true, habits: true, review: true },
+  push: { brief: true, midday: true, event: true, habits: true, tomorrow: false, review: true },
 };
 
 export function parseNoticeSettings(raw: string | undefined): NoticeSettings {
@@ -159,6 +168,8 @@ export interface NoticeInput {
   budget: number;
   defaultAP: number;
   now: Date;
+  /** Your own reminders. */
+  reminders?: Reminder[];
 }
 
 export function buildNotices(input: NoticeInput): Notice[] {
@@ -257,6 +268,18 @@ export function buildNotices(input: NoticeInput): Notice[] {
     });
   }
 
+  // Midday: what is still left of today's tasks, while there is time for it.
+  const tasksLeft = todays.filter((t) => t.status !== 'Done');
+  if (settings.push.midday && tasksLeft.length) {
+    const apLeft = tasksLeft.reduce((n, t) => n + apOf(t, defaultAP), 0);
+    out.push({
+      key: `midday:${today}`, kind: 'midday', level: 'info',
+      pushAt: at(today, settings.middayTime),
+      title: `${plural(tasksLeft.length, 'task')} left today`,
+      body: `${names(tasksLeft.map(tname))} · ${apLeft} AP`, href: '/',
+    });
+  }
+
   const habitsLeft = habitsToday;
   if (habitsLeft.length) out.push({
     key: `habits:${today}`, kind: 'habits', level: 'info',
@@ -264,6 +287,36 @@ export function buildNotices(input: NoticeInput): Notice[] {
     title: `${plural(habitsLeft.length, 'habit')} left today`,
     body: names(habitsLeft.map((h) => ({ name: `${h.icon ? h.icon + ' ' : ''}${h.habitName}` }))), href: '/habits',
   });
+
+  // Evening: a look at tomorrow, while there is still time to change it.
+  const tomorrow = toDateString(addDays(parseLocalDate(today), 1));
+  const tasksTomorrow = tasks.filter((t) => isOnToday(t, tomorrow));
+  const eventsTomorrow = events.filter((e) => e.date === tomorrow);
+  const apTomorrow = tasksTomorrow.reduce((n, t) => n + apOf(t, defaultAP), 0)
+    + eventsTomorrow.reduce((n, e) => n + apOf(e, defaultAP), 0);
+  if (settings.push.tomorrow) out.push({
+    key: `tomorrow:${today}`, kind: 'tomorrow', level: 'info',
+    pushAt: at(today, settings.tomorrowTime),
+    title: tasksTomorrow.length || eventsTomorrow.length
+      ? `Tomorrow: ${[tasksTomorrow.length ? plural(tasksTomorrow.length, 'task') : null, eventsTomorrow.length ? plural(eventsTomorrow.length, 'event') : null].filter(Boolean).join(', ')}`
+      : 'Nothing planned for tomorrow yet',
+    body: tasksTomorrow.length || eventsTomorrow.length
+      ? `${names([...eventsTomorrow.map((e) => ({ name: e.time ? `${e.eventName} ${e.time}` : e.eventName })), ...tasksTomorrow.map(tname)])} · ${apTomorrow} AP`
+      : 'Plan it now, or leave it free.',
+    href: '/plan',
+  });
+
+  // Your own reminders, at their time. One edited after its time today
+  // waits for its next day rather than going off late the moment it is saved.
+  for (const r of input.reminders ?? []) {
+    if (!r.enabled || !occursOn(r, today)) continue;
+    const stamp = at(today, r.time);
+    if (r.updatedAt && format(new Date(r.updatedAt), "yyyy-MM-dd'T'HH:mm") > stamp) continue;
+    out.push({
+      key: `reminder:${r.id}:${stamp}`, kind: 'reminder', level: 'info', pushAt: stamp,
+      title: `⏰ ${r.title}`, body: r.note || describeSchedule(r), href: '/reminders',
+    });
+  }
 
   const weekday = parseLocalDate(today).getDay();
   if (weekday === 0) out.push({
