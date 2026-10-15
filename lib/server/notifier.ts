@@ -7,7 +7,7 @@
  */
 
 import type { Event, Habit, Task } from '@/types';
-import { buildNotices, isDueToPush, NOTICE_SETTINGS_PREF, parseNoticeSettings } from '@/lib/notifications';
+import { buildNotices, combineNotices, isDueToPush, NOTICE_SETTINGS_PREF, parseNoticeSettings } from '@/lib/notifications';
 import { CAPACITY_PREF, WEEKDAY_BUDGET_PREF, capacityFor, parseCapacityMap, parseWeekdayBudget } from '@/lib/capacity';
 import { DEFAULT_SUGGEST_CONTROLS } from '@/lib/suggest';
 import { toDateString } from '@/lib/dates';
@@ -59,23 +59,21 @@ async function tickProfile(userId: string, now: Date): Promise<number> {
     reminders: parseReminders(prefs[REMINDERS_PREF]),
   });
 
-  let pushed = 0;
-  for (const notice of notices) {
-    if (!isDueToPush(notice, now) || wasPushed(userId, notice.key)) continue;
-    const attemptKey = `${userId}:${notice.key}`;
-    const tries = (attempts.get(attemptKey) ?? 0) + 1;
-    attempts.set(attemptKey, tries);
-    const result = await pushToProfile(userId, { title: notice.title, body: notice.body, url: notice.href, tag: notice.key });
-    pushed += result.sent;
-    // Delivered, or tried enough: never again. A failure used to be marked as
-    // sent too, so a week of rejected pushes looked exactly like a week of
-    // delivered ones. Now a failure gets a few more tries a few minutes apart.
-    if (result.sent > 0 || result.failed === 0 || tries >= MAX_TRIES) {
-      markPushed(userId, notice.key);
-      attempts.delete(attemptKey);
-    }
+  // Everything due now goes out as one push, not a burst of them.
+  const due = notices.filter((n) => isDueToPush(n, now) && !wasPushed(userId, n.key));
+  if (!due.length) return 0;
+  const attemptKey = `${userId}:${due.map((n) => n.key).sort().join('|')}`;
+  const tries = (attempts.get(attemptKey) ?? 0) + 1;
+  attempts.set(attemptKey, tries);
+  const result = await pushToProfile(userId, combineNotices(due));
+  // Delivered, or tried enough: never again. A failure used to be marked as
+  // sent too, so a week of rejected pushes looked exactly like a week of
+  // delivered ones. Now a failure gets a few more tries a few minutes apart.
+  if (result.sent > 0 || result.failed === 0 || tries >= MAX_TRIES) {
+    for (const n of due) markPushed(userId, n.key);
+    attempts.delete(attemptKey);
   }
-  return pushed;
+  return result.sent;
 }
 
 const MAX_TRIES = 3;

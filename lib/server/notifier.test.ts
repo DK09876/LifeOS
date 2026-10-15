@@ -46,3 +46,25 @@ it('pushes a reminder at its time, and only once', async () => {
   await tick(new Date('2026-10-15T19:01:00'));
   expect(pushToProfile).toHaveBeenCalledTimes(1);
 });
+
+it('sends everything due at the same minute as one push', async () => {
+  vi.setSystemTime(new Date('2026-10-15T08:00:00'));
+  const store = await import('./store');
+  const { tick } = await import('./notifier');
+  store.savePushSubscription('dk', 'https://push.example/1', '{}', 'iPhone');
+  store.setPreference('dk', 'notifications.settings', JSON.stringify({ push: { brief: false, midday: true, event: false, habits: false, tomorrow: false, review: false } }));
+  store.setPreference('dk', 'reminders.custom', JSON.stringify([{
+    id: 'meds', title: 'Take meds', note: '', time: '12:00', repeat: 'daily', date: null, weekdays: [],
+    enabled: true, createdAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-10-01T12:00:00.000Z',
+  }]));
+  store.putRecord('dk', 'tasks', {
+    id: 'email', taskName: 'Email', status: 'Planned', plannedDate: '2026-10-15', dueDate: null, recurrence: 'None',
+    actionPoints: '2', deletedAt: null, createdAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-10-01T12:00:00.000Z',
+  } as never);
+
+  await tick(new Date('2026-10-15T12:00:00'));
+  expect(pushToProfile).toHaveBeenCalledTimes(1);
+  expect(pushToProfile).toHaveBeenCalledWith('dk', expect.objectContaining({ title: '⏰ Take meds · 1 task left today' }));
+  await tick(new Date('2026-10-15T12:01:00'));
+  expect(pushToProfile).toHaveBeenCalledTimes(1);
+});
