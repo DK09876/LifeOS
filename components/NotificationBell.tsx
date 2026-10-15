@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import { useEnergySettings, useEvents, useHabits, useTasks } from '@/lib/hooks';
+import { parseReminders, REMINDERS_PREF } from '@/lib/reminders';
 import { useLiveQuery } from '@/lib/live-query';
 import { getPreference, savePreference } from '@/lib/store';
 import { getTodayString } from '@/lib/dates';
@@ -33,6 +34,7 @@ export default function NotificationBell() {
   const energy = useEnergySettings();
   const storedSettings = useLiveQuery(() => getPreference(NOTICE_SETTINGS_PREF), []);
   const storedDismissed = useLiveQuery(() => getPreference(NOTICE_DISMISSED_PREF), []);
+  const storedReminders = useLiveQuery(() => getPreference(REMINDERS_PREF), []);
   const [open, setOpen] = useState(false);
   // Re-evaluated each minute so timed notices appear when they fall due.
   const [now, setNow] = useState(() => new Date());
@@ -59,8 +61,9 @@ export default function NotificationBell() {
       budget: energy.budgetFor(today),
       defaultAP: energy.controls.defaultAP,
       now,
+      reminders: parseReminders(storedReminders),
     }).filter(n => isVisible(n, now) && !dismissed[n.key]);
-  }, [tasks, habits, events, storedSettings, energy, now, dismissed]);
+  }, [tasks, habits, events, storedSettings, storedReminders, energy, now, dismissed]);
 
   // The brief is a summary of the rest, so it does not count toward the badge.
   const count = notices.filter(n => n.kind !== 'brief').length;
@@ -111,8 +114,8 @@ export default function NotificationBell() {
               ))}
             </ul>
           )}
-          <Link href="/settings" onClick={() => setOpen(false)} className="block px-3 py-2 text-xs text-blue-400 hover:text-blue-300 border-t border-[var(--border-color)]">
-            Notification settings →
+          <Link href="/reminders" onClick={() => setOpen(false)} className="block px-3 py-2 text-xs text-blue-400 hover:text-blue-300 border-t border-[var(--border-color)]">
+            Reminders →
           </Link>
         </div>
       )}

@@ -325,12 +325,31 @@ export async function replaceAllOnServer(
 export async function savePreference(key: string, value: string) {
   const profile = getProfile();
   if (!profile) return;
-  await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preferences: { [key]: value } }),
-  });
+  // Shown at once, like record writes. Setting it only after the round trip,
+  // without telling anyone, left screens on the old value until the next
+  // poll - and a second save in that window started from the stale value
+  // and wiped out the first (two reminders added quickly kept only one).
+  const previous = preferences[key];
   preferences[key] = value;
+  notify();
+  writesInFlight++;
+  let ok = false;
+  try {
+    const response = await fetch(`/api/data?profile=${encodeURIComponent(profile)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferences: { [key]: value } }),
+    });
+    ok = response.ok;
+  } finally {
+    writesInFlight--;
+    if (!ok && preferences[key] === value) {
+      if (previous === undefined) delete preferences[key];
+      else preferences[key] = previous;
+      notify();
+    }
+  }
+  if (!ok) throw new Error('Save failed');
 }
 
 export function getPreference(key: string): string | undefined {

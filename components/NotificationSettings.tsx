@@ -10,11 +10,9 @@
 
 import { useEffect, useState } from 'react';
 
-import { useLiveQuery } from '@/lib/live-query';
-import { getPreference, getProfile, savePreference } from '@/lib/store';
-import { NOTICE_SETTINGS_PREF, NoticeSettings, parseNoticeSettings } from '@/lib/notifications';
+import Link from 'next/link';
 
-const inputClass = 'px-2 py-1 bg-[var(--background)] border border-[var(--border-color)] rounded text-sm text-white';
+import { getProfile } from '@/lib/store';
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
@@ -35,8 +33,6 @@ function deviceLabel(): string {
 }
 
 export default function NotificationSettings() {
-  const stored = useLiveQuery(() => getPreference(NOTICE_SETTINGS_PREF), []);
-  const settings = parseNoticeSettings(stored);
   const [status, setStatus] = useState<string>('');
   const [subscribed, setSubscribed] = useState<boolean | null>(null);
   const [devices, setDevices] = useState<Array<{ endpoint: string; label: string | null }>>([]);
@@ -45,8 +41,6 @@ export default function NotificationSettings() {
   const supported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const iosNeedsInstall = typeof window !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) &&
     !window.matchMedia('(display-mode: standalone)').matches;
-
-  const save = (next: NoticeSettings) => savePreference(NOTICE_SETTINGS_PREF, JSON.stringify(next));
 
   async function refresh() {
     const profile = getProfile();
@@ -118,18 +112,6 @@ export default function NotificationSettings() {
     void refresh();
   }
 
-  const toggle = (key: keyof NoticeSettings['push'], label: string, hint: string) => (
-    <label className="flex items-center justify-between gap-4 cursor-pointer py-1">
-      <div>
-        <p className="text-sm text-white">{label}</p>
-        <p className="text-xs text-[var(--muted)]">{hint}</p>
-      </div>
-      <input type="checkbox" checked={settings.push[key]}
-             onChange={(e) => save({ ...settings, push: { ...settings.push, [key]: e.target.checked } })}
-             className="w-5 h-5 cursor-pointer" />
-    </label>
-  );
-
   return (
     <div className="bg-[var(--card-bg)] rounded-lg p-5 mb-6">
       <h2 className="text-lg font-medium text-white mb-1">Notifications</h2>
@@ -169,32 +151,10 @@ export default function NotificationSettings() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <label className="text-sm text-[var(--muted)]">
-          Morning brief at
-          <input type="time" value={settings.briefTime} onChange={(e) => save({ ...settings, briefTime: e.target.value || '08:00' })}
-                 className={`${inputClass} block mt-1 w-full`} />
-        </label>
-        <label className="text-sm text-[var(--muted)]">
-          Evening check at
-          <input type="time" value={settings.eveningTime} onChange={(e) => save({ ...settings, eveningTime: e.target.value || '20:00' })}
-                 className={`${inputClass} block mt-1 w-full`} />
-        </label>
-        <label className="text-sm text-[var(--muted)] col-span-2">
-          Remind me before timed events
-          <select value={settings.eventLeadMinutes} onChange={(e) => save({ ...settings, eventLeadMinutes: parseInt(e.target.value) })}
-                  className={`${inputClass} block mt-1 w-full`}>
-            {[0, 5, 10, 15, 30, 60].map(m => <option key={m} value={m}>{m === 0 ? 'At the start' : `${m} minutes before`}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div className="divide-y divide-[var(--border-color)]">
-        {toggle('brief', 'Morning brief', "Today's load, plus anything overdue, missed, blocked and pressing, to triage, or unticked from yesterday.")}
-        {toggle('event', 'Event reminders', 'Before events that have a time.')}
-        {toggle('habits', 'Evening habit check', 'Only when habits are still left for the day.')}
-        {toggle('review', 'Weekly and monthly review', 'Sunday evening, and the last day of the month.')}
-      </div>
+      <Link href="/reminders" className="flex items-center justify-between rounded border border-[var(--border-color)] px-3 py-2 text-sm text-white hover:bg-[var(--card-hover)]">
+        <span>Reminders and their times<span className="block text-xs text-[var(--muted)]">Morning brief, midday check, evening habits, your own reminders…</span></span>
+        <span aria-hidden className="text-[var(--muted)]">›</span>
+      </Link>
     </div>
   );
 }

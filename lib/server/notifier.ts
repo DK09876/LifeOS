@@ -13,6 +13,7 @@ import { DEFAULT_SUGGEST_CONTROLS } from '@/lib/suggest';
 import { toDateString } from '@/lib/dates';
 import { markPushed, prunePushed, readPayload, usersWithPush, wasPushed } from './store';
 import { pushToProfile } from './push';
+import { parseReminders, REMINDERS_PREF } from '@/lib/reminders';
 
 const TICK_MS = 60_000;
 
@@ -55,6 +56,7 @@ async function tickProfile(userId: string, now: Date): Promise<number> {
     habits: (payload.habits ?? []) as unknown as Habit[],
     events: (payload.events ?? []) as unknown as Event[],
     settings, budget, defaultAP: controls.defaultAP, now,
+    reminders: parseReminders(prefs[REMINDERS_PREF]),
   });
 
   let pushed = 0;

@@ -223,3 +223,27 @@ describe('live updates', () => {
     vi.useRealTimers();
   });
 });
+
+describe('preferences', () => {
+  it('shows a saved preference at once, so a quick second save builds on it', async () => {
+    let release!: (r: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((r) => { release = r; }));
+    const seen: Array<string | undefined> = [];
+    const off = store.subscribe(() => seen.push(store.getPreference('reminders.custom')));
+    const saving = store.savePreference('reminders.custom', '[1]');
+    // Before the server has answered, readers already see the new value.
+    expect(store.getPreference('reminders.custom')).toBe('[1]');
+    expect(seen).toContain('[1]');
+    release(ok());
+    await saving;
+    off();
+  });
+
+  it('puts the old value back when the server refuses', async () => {
+    fetchMock.mockResolvedValueOnce(ok());
+    await store.savePreference('k', 'old');
+    fetchMock.mockResolvedValueOnce(failure());
+    await expect(store.savePreference('k', 'new')).rejects.toThrow();
+    expect(store.getPreference('k')).toBe('old');
+  });
+});

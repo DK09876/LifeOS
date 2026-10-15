@@ -2,6 +2,18 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.13.0] - 2026-10-15
+
+### Reminders
+- A new **Reminders** page (⏰ in the menu, and from the 🔔 list)
+- **Your own reminders**: once on a day, every day, or on chosen days, at a time, with an optional note. Each can be switched off without deleting it; past one-offs move to Done
+- **Built in**, each with an on/off switch and its time: morning brief, a new **midday tasks check** (12:00, what is still left of today — skipped when it is all done), before events, the evening habit check, a new **plan tomorrow** look-ahead (21:00, off by default) and the weekly/monthly review
+- They are pushed by the Pi to every device with notifications on, and appear in the 🔔 list from their time. A reminder set up after its time today waits for its next day instead of going off late
+- Settings keeps the per-device on/off and test; the times moved to Reminders
+
+### Fixes
+- Changing a setting now shows at once. Before, a second change within a couple of seconds could start from the old value and undo the first
+
 ## [0.12.2] - 2026-10-14
 
 ### Repeating tasks
