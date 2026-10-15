@@ -2,6 +2,11 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.13.1] - 2026-10-15
+
+### Reminders
+- Notifications due at the same time now arrive as **one** push listing them all (your own reminders first) instead of several at once
+
 ## [0.13.0] - 2026-10-15
 
 ### Reminders

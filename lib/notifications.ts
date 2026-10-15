@@ -40,6 +40,8 @@ export interface Notice {
   href: string;
   /** Local 'YYYY-MM-DDTHH:mm' this becomes due to push; null = in-app only. */
   pushAt: string | null;
+  /** The body only restates the title's schedule; left out when combined. */
+  bodyIsFiller?: boolean;
 }
 
 export interface NoticeSettings {
@@ -314,7 +316,7 @@ export function buildNotices(input: NoticeInput): Notice[] {
     if (r.updatedAt && format(new Date(r.updatedAt), "yyyy-MM-dd'T'HH:mm") > stamp) continue;
     out.push({
       key: `reminder:${r.id}:${stamp}`, kind: 'reminder', level: 'info', pushAt: stamp,
-      title: `⏰ ${r.title}`, body: r.note || describeSchedule(r), href: '/reminders',
+      title: `⏰ ${r.title}`, body: r.note || describeSchedule(r), href: '/reminders', bodyIsFiller: !r.note,
     });
   }
 
@@ -362,4 +364,28 @@ export function isDueToPush(notice: Notice, now: Date): boolean {
   const due = new Date(`${notice.pushAt}:00`);
   const late = (now.getTime() - due.getTime()) / 60000;
   return late >= 0 && late <= PUSH_GRACE_MINUTES;
+}
+
+/** What one push carries. */
+export interface PushMessage { title: string; body: string; url: string; tag: string }
+
+/**
+ * Notices due at the same moment, as a single push. Several notifications
+ * landing together - the noon meds reminder and the midday check - read as
+ * noise; one that lists them all is easier to take in. Your own reminders
+ * lead, since you asked for those by name.
+ */
+export function combineNotices(notices: Notice[]): PushMessage {
+  const ordered = [...notices].sort((a, b) => Number(b.kind === 'reminder') - Number(a.kind === 'reminder'));
+  if (ordered.length === 1) {
+    const [n] = ordered;
+    return { title: n.title, body: n.body, url: n.href, tag: n.key };
+  }
+  const hrefs = new Set(ordered.map((n) => n.href));
+  return {
+    title: ordered.length === 2 ? `${ordered[0].title} · ${ordered[1].title}` : `${ordered[0].title} +${ordered.length - 1} more`,
+    body: ordered.map((n) => (n.body && !n.bodyIsFiller ? `${n.title} — ${n.body}` : n.title)).join('\n'),
+    url: hrefs.size === 1 ? ordered[0].href : '/',
+    tag: `batch:${ordered.map((n) => n.key).sort().join('|')}`,
+  };
 }

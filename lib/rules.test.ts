@@ -13,7 +13,7 @@ import {
 } from './recurrence';
 import { capacityFor, parseWeekdayBudget } from './capacity';
 import { milestonesFor, newMilestones, nextMilestones } from './milestones';
-import { buildNotices, DEFAULT_NOTICE_SETTINGS, isDueToPush, isVisible, needsTriageNag, rolledOver } from './notifications';
+import { buildNotices, combineNotices, DEFAULT_NOTICE_SETTINGS, Notice, isDueToPush, isVisible, needsTriageNag, rolledOver } from './notifications';
 import { suggestWeekSchedule, DEFAULT_SUGGEST_CONTROLS, WeekDayInfo } from './suggest';
 import { isOnToday } from './schedule';
 import { spentOn } from './history';
@@ -339,6 +339,28 @@ describe('your own reminders', () => {
     expect(describeSchedule(r({ repeat: 'once', date: '2026-09-26', time: '09:30' }))).toBe('Sat 26 Sep at 9:30 am');
     expect(nextFiring(r({ repeat: 'days', weekdays: [1] }), NOW)).toBe('2026-09-28T19:00');
     expect(nextFiring(r({ repeat: 'once', date: '2026-09-23' }), NOW)).toBeNull();
+  });
+});
+
+describe('notices due together', () => {
+  const n = (over: Partial<Notice>): Notice => ({ key: 'k', kind: 'midday', level: 'info', title: 'T', body: 'B', href: '/', pushAt: null, ...over });
+
+  it('a single one goes as it is', () => {
+    expect(combineNotices([n({ key: 'a', title: 'Hi', body: 'There', href: '/x' })])).toEqual({ title: 'Hi', body: 'There', url: '/x', tag: 'a' });
+  });
+
+  it('several become one, your own reminders first', () => {
+    const msg = combineNotices([
+      n({ key: 'midday', title: '3 tasks left today', body: 'Email, Gym, Call · 6 AP', href: '/' }),
+      n({ key: 'meds', kind: 'reminder', title: '⏰ Take meds', body: 'Every day at 12:00 pm', bodyIsFiller: true, href: '/reminders' }),
+    ]);
+    expect(msg.title).toBe('⏰ Take meds · 3 tasks left today');
+    expect(msg.body).toBe('⏰ Take meds\n3 tasks left today — Email, Gym, Call · 6 AP');
+    expect(msg.url).toBe('/');
+  });
+
+  it('counts the rest when there are many', () => {
+    expect(combineNotices([n({ key: 'a', title: 'A' }), n({ key: 'b', title: 'B' }), n({ key: 'c', title: 'C' })]).title).toBe('A +2 more');
   });
 });
 
