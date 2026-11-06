@@ -2,6 +2,11 @@
 
 All notable changes to LifeOS will be documented in this file.
 
+## [0.13.2] - 2026-11-06
+
+### Fixes
+- **Yesterday** no longer lists a task that was due or planned then but already finished on another day (e.g. paid two days early). It showed as unticked, and ticking it would have logged a second completion
+
 ## [0.13.1] - 2026-10-15
 
 ### Reminders
