@@ -73,3 +73,21 @@ export function isOnToday(task: Placeable & Pick<Task, 'deletedAt'>, today: stri
   if (task.status === 'Done' || task.status === 'Archived' || task.status === 'Blocked') return false;
   return task.plannedDate === today || task.dueDate === today;
 }
+
+/**
+ * Whether a task belongs on the Yesterday page for `day`: planned or due
+ * then, or recorded as done then. One already finished on another day is
+ * left out - "Pay the bill", due yesterday but paid on Tuesday, is not
+ * something to tick off for yesterday, and ticking it would log a second
+ * completion.
+ */
+export function belongedTo(
+  task: Pick<Task, 'status' | 'plannedDate' | 'dueDate'>,
+  day: string,
+  completionDays: string[],
+): boolean {
+  if (task.status === 'Archived' || task.status === 'Blocked') return false;
+  if (completionDays.includes(day)) return true;
+  if (task.status === 'Done') return false;
+  return task.plannedDate === day || task.dueDate === day;
+}

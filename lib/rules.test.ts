@@ -15,7 +15,7 @@ import { capacityFor, parseWeekdayBudget } from './capacity';
 import { milestonesFor, newMilestones, nextMilestones } from './milestones';
 import { buildNotices, combineNotices, DEFAULT_NOTICE_SETTINGS, Notice, isDueToPush, isVisible, needsTriageNag, rolledOver } from './notifications';
 import { suggestWeekSchedule, DEFAULT_SUGGEST_CONTROLS, WeekDayInfo } from './suggest';
-import { isOnToday } from './schedule';
+import { belongedTo, isOnToday } from './schedule';
 import { spentOn } from './history';
 import { parseLocalDate } from './dates';
 import { describeSchedule, nextFiring, Reminder } from './reminders';
@@ -206,6 +206,27 @@ describe('milestones', () => {
     const next = nextMilestones(habit(), 5, 9);
     expect(next.streak).toMatchObject({ at: 7, remaining: 2 });
     expect(next.total).toMatchObject({ at: 10, remaining: 1 });
+  });
+});
+
+describe('yesterday page', () => {
+  const Y = '2026-09-23';
+  it('lists what was planned or due yesterday and is still open', () => {
+    expect(belongedTo(task({ dueDate: Y }), Y, [])).toBe(true);
+    expect(belongedTo(task({ plannedDate: Y }), Y, [])).toBe(true);
+  });
+  it('lists what was done yesterday, so it can be unticked', () => {
+    expect(belongedTo(task({ status: 'Done', dueDate: Y }), Y, [Y])).toBe(true);
+  });
+  it('leaves out work finished on another day', () => {
+    // Due yesterday, paid two days before it.
+    expect(belongedTo(task({ status: 'Done', dueDate: Y, plannedDate: '2026-09-21' }), Y, ['2026-09-21'])).toBe(false);
+    // Due yesterday, done today.
+    expect(belongedTo(task({ status: 'Done', dueDate: Y }), Y, [TODAY])).toBe(false);
+  });
+  it('leaves out archived and blocked work', () => {
+    expect(belongedTo(task({ status: 'Archived', dueDate: Y }), Y, [])).toBe(false);
+    expect(belongedTo(task({ status: 'Blocked', dueDate: Y }), Y, [])).toBe(false);
   });
 });
 

@@ -21,6 +21,7 @@ import { getTodayString, parseLocalDate, toDateString } from '@/lib/dates';
 import { isHabitDueOn, previousEventDate } from '@/lib/recurrence';
 import { loggedOn } from '@/lib/progress';
 import { spentOn } from '@/lib/history';
+import { belongedTo } from '@/lib/schedule';
 import type { Event, Habit, Task } from '@/types';
 
 export default function YesterdayPage() {
@@ -38,11 +39,9 @@ export default function YesterdayPage() {
 
   const doneOn = (task: Task) => completionDaysOf(task).includes(day);
 
-  // What belonged to yesterday: planned or due then, or already recorded as done then.
-  const dayTasks = useMemo(() => tasks.filter(t =>
-    t.status !== 'Archived' && t.status !== 'Blocked' &&
-    (t.plannedDate === day || t.dueDate === day || completionDaysOf(t).includes(day)),
-  ).sort((a, b) => a.taskName.localeCompare(b.taskName)), [tasks, day]);
+  // What belonged to yesterday: planned or due then and still open, or done then.
+  const dayTasks = useMemo(() => tasks.filter(t => belongedTo(t, day, completionDaysOf(t)))
+  .sort((a, b) => a.taskName.localeCompare(b.taskName)), [tasks, day]);
 
   // Anything else still open, for "I also did this yesterday".
   const otherOpen = useMemo(() => tasks.filter(t =>
